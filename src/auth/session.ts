@@ -18,6 +18,16 @@ export type AuthUser = {
 export const hashToken = (token: string) => createHash("sha256").update(token).digest();
 
 /**
+ * The session token out of an `Authorization` header, or "" when it carries
+ * none. RFC 7235 makes the scheme case-insensitive; clients do send `bearer`.
+ * Lives here so that the session check and the routes that need the caller's
+ * own token back (logout, "which of these is this device?") read the header
+ * the same way.
+ */
+export const bearerToken = (header = "") =>
+  header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+
+/**
  * Opens a session and returns the raw token — it is not recoverable afterwards.
  *
  * ponytail: nothing collects spent sessions; expired and revoked rows stay.
@@ -46,7 +56,7 @@ export async function verify(token: string): Promise<AuthUser | null> {
   return user ?? null;
 }
 
-/** Kills one session by id (listing sessions is a separate card). */
+/** Kills one session by id. Says nothing about whose it is — the caller checks. */
 export async function revoke(sessionId: string): Promise<void> {
   await sql`update sessions set revoked_at = now() where id = ${sessionId} and revoked_at is null`;
 }

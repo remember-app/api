@@ -1,48 +1,27 @@
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { afterAll, expect, test } from "vitest";
-import { buildApp } from "../app.ts";
 import { sql } from "../db.ts";
 import { hashToken, revokeByToken } from "./session.ts";
+import {
+  buildTestApp,
+  cleanupTestUsers,
+  linkToken,
+  testEmail as sharedTestEmail,
+} from "./testing.ts";
 
 // Every address this file makes is recognisable, so it can clear up after
 // itself in the shared dev database.
-const testEmail = () => `task05-test-${randomUUID()}@example.com`;
+const testEmail = () => sharedTestEmail("task05");
 
 afterAll(async () => {
-  await sql`delete from users where email like 'task05-test-%@example.com'`;
+  await cleanupTestUsers("task05");
   await sql.end();
 });
-
-/** An app with its own log: the magic link is delivered nowhere else. */
-function buildTestApp() {
-  const lines: string[] = [];
-  const app = buildApp({
-    logger: {
-      level: "info",
-      stream: {
-        write(line: string) {
-          lines.push(line);
-        },
-      },
-    },
-  });
-  return { app, lines };
-}
 
 /** Assigning `undefined` to process.env would store the string "undefined". */
 function setEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
-}
-
-/** Takes the token from exactly where a live tester takes it — the log. */
-function linkToken(lines: string[]) {
-  const line = lines
-    .map((l) => JSON.parse(l) as { msg?: string; link?: string })
-    .findLast((l) => l.msg === "magic link issued");
-  expect(line?.link).toMatch(/^remember:\/\/auth\/email\?token=/);
-  return new URL(line?.link ?? "").searchParams.get("token") ?? "";
 }
 
 test("migration 002 applies to a clean schema and is idempotent", async () => {

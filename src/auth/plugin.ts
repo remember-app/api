@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
-import { type AuthUser, issue, verify } from "./session.ts";
+import { type AuthUser, bearerToken, issue, verify } from "./session.ts";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -76,9 +76,7 @@ export function authPlugin(app: FastifyInstance) {
   const mailbox = (email: string) => email.replace(/\+[^@]*(?=@)/, "");
 
   app.decorate("authenticate", async (request, reply) => {
-    const header = request.headers.authorization ?? "";
-    // RFC 7235 makes the scheme case-insensitive; clients do send `bearer`.
-    const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+    const token = bearerToken(request.headers.authorization);
     const user = token ? await verify(token) : null;
     if (!user) {
       reply.code(401).send({ error: "unauthorized" });

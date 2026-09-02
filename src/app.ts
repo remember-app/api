@@ -1,4 +1,5 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
+import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
 
 /**
@@ -27,8 +28,10 @@ export function buildApp(options: FastifyServerOptions = {}) {
   });
 
   // Not `app.register`: the plugin decorates the root instance so that
-  // `app.authenticate` is visible to every route, in any scope.
+  // `app.authenticate` is visible to every route, in any scope. Order matters
+  // — the routes below mount that decorator, so it has to exist by then.
   authPlugin(app);
+  identityRoutes(app);
 
   return app;
 }
