@@ -1,17 +1,34 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
+import { authPlugin } from "./auth/plugin.ts";
 
 /**
- * The HTTP app, with no database and no listener attached — so tests can
- * build it and call `app.inject()` without any external service.
+ * The HTTP app, with no listener attached — so tests can build it and call
+ * `app.inject()`. `options` exists for tests: the magic-link deep link is
+ * delivered through the log, so a test needs to hand in its own log stream.
  */
-export function buildApp() {
-  const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+export function buildApp(options: FastifyServerOptions = {}) {
+  const app = Fastify({ logger: process.env.NODE_ENV !== "test", ...options });
 
   // Cross-repo contract, locked by src/app.test.ts: 200, JSON, body exactly
   // {"status":"ok"}. Fastify always sends `application/json; charset=utf-8`
   // (it re-appends the charset whichever way the header is set), so clients
   // must match the content-type by prefix, not by equality.
   app.get("/health", () => ({ status: "ok" }));
+
+  // Fastify's default handler copies `code` and `message` onto the body, so an
+  // unhandled database failure would answer a stranger with its SQLSTATE and
+  // the text of the failing statement. Client errors it raises itself — schema
+  // validation above all — carry nothing secret and are passed through.
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    const status = error.statusCode ?? 500;
+    if (status < 500) return reply.code(status).send(error);
+    request.log.error({ err: error }, "request failed");
+    return reply.code(500).send({ error: "internal" });
+  });
+
+  // Not `app.register`: the plugin decorates the root instance so that
+  // `app.authenticate` is visible to every route, in any scope.
+  authPlugin(app);
 
   return app;
 }
