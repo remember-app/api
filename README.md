@@ -365,11 +365,18 @@ curl -X POST http://localhost:3000/auth/email/start \
 {"level":30,…,"email":"you@example.com","link":"remember://auth/email?token=GuYNXVEl…","msg":"magic link issued"}
 ```
 
-Дальше либо открыть ссылку на симуляторе (схема `remember://` в приложении уже настроена):
+Дальше либо открыть ссылку на симуляторе:
 
 ```bash
+# dev-билд приложения — схема remember:// принадлежит ему
 xcrun simctl openurl booted "remember://auth/email?token=GuYNXVEl…"
+
+# Expo Go — схема remember:// ему не принадлежит, тот же экран открывается через схему Expo
+xcrun simctl openurl booted "exp://127.0.0.1:8081/--/auth/email?token=GuYNXVEl…"
 ```
+
+В Expo Go первая команда падает с `LSApplicationWorkspaceErrorDomain 115`: `remember://`
+требует dev-билда.
 
 либо обменять токен на сессию руками:
 
