@@ -1,93 +1,148 @@
-# api
+# remember-api
 
+Бэкенд-API продукта **Remember** — единственная точка входа для мобильного приложения.
+TypeScript + [Fastify](https://fastify.dev/) + Postgres.
 
+Сейчас здесь скелет (майлстоун m-7 Foundation): один health-эндпоинт, подключение к базе,
+одна служебная миграция. Продуктовых сущностей нет — каждая приходит со своей фичей.
 
-## Getting started
+Продуктовая плоскость и архитектурные решения — в корневом репозитории (`backlog/`,
+`architecture.md`).
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Требования
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Node.js **≥ 22.18** (TypeScript выполняется движком напрямую, шага сборки нет).
+- Docker — для локального Postgres.
 
-## Add your files
+## Запуск с чистой машины
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+```bash
+npm install
+
+# 1. Поднять локальный Postgres 16 на localhost:5432
+docker compose up -d --wait
+
+# 2. Задать окружение
+cp .env.example .env
+
+# 3. Накатить миграции
+npm run migrate
+
+# 4. Запустить сервер
+npm run dev
+
+# 5. Проверить
+curl -i http://localhost:3000/health
+# HTTP/1.1 200 OK
+# content-type: application/json; charset=utf-8
+# {"status":"ok"}
+```
+
+Тесты:
+
+```bash
+npm test
+```
+
+## Локальный Postgres
+
+`docker-compose.yml` в этом репозитории — **канонная локальная база всего продукта**: на неё
+смотрят и `api`, и `montage`. Не поднимайте себе вторую.
+
+```bash
+docker compose up -d --wait   # поднять и дождаться готовности
+docker compose down           # остановить (данные остаются в volume)
+docker compose down -v        # остановить и стереть данные
+```
+
+Postgres 16, `localhost:5432`, база / пользователь / пароль — `remember` / `remember` / `remember`,
+то есть:
 
 ```
-cd existing_repo
-git remote add origin https://git.dapp-devs.com/nox-labs/nox/remember/api.git
-git branch -M main
-git push -uf origin main
+DATABASE_URL=postgres://remember:remember@localhost:5432/remember
 ```
 
-## Integrate with your tools
+## Окружение
 
-* [Set up project integrations](https://git.dapp-devs.com/nox-labs/nox/remember/api/-/settings/integrations)
+Одна обязательная переменная. Сервер и мигратор падают сразу, если её нет.
 
-## Collaborate with your team
+| Переменная     | Обязательна | По умолчанию | Что это                       |
+|----------------|-------------|--------------|-------------------------------|
+| `DATABASE_URL` | да          | —            | строка подключения к Postgres |
+| `PORT`         | нет         | `3000`       | порт HTTP-сервера             |
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Скрипты читают `.env` через встроенный `--env-file-if-exists` — никакого `dotenv`.
+Значения из окружения перекрывают файл. `.env` в git не попадает.
 
-## Test and Deploy
+## Миграции
 
-Use the built-in continuous integration in GitLab.
+Инструмент — [postgrator](https://github.com/rickbergfalk/postgrator): обычные `.sql`-файлы,
+никакого DSL, состояние в таблице `schema_migrations`.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```bash
+npm run migrate
+```
 
-***
+Файлы лежат в `migrations/` и называются `<версия>.<do|undo>.<имя>.sql`:
 
-# Editing this README
+```
+migrations/001.do.init.sql     # применить
+migrations/001.undo.init.sql   # откатить
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Новая миграция — следующий номер и пара `do`/`undo`. Postgrator считает md5 применённых файлов,
+поэтому **применённую миграцию не редактируют** — добавляют следующую.
 
-## Suggestions for a good README
+Файл целиком уходит в Postgres одним запросом, то есть выполняется как одна неявная транзакция:
+упавшая на середине миграция не оставит половину схемы. Отметка о версии пишется отдельным
+запросом следом — если процесс убить ровно между ними, миграция окажется накатанной, но не
+записанной, и следующий прогон её повторит. Поэтому миграции пишем идемпотентными
+(`IF NOT EXISTS`).
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Команды
 
-## Name
-Choose a self-explaining name for your project.
+| Команда             | Что делает                                                |
+|---------------------|-----------------------------------------------------------|
+| `npm run dev`       | сервер с перезапуском по изменениям                       |
+| `npm start`         | сервер без вотчера                                        |
+| `npm run migrate`   | накатить миграции                                         |
+| `npm test`          | vitest, один прогон                                       |
+| `npm run lint`      | Biome — линт и проверка формата                           |
+| `npm run format`    | Biome — переформатировать                                 |
+| `npm run typecheck` | `tsc --noEmit` (движок типы не проверяет, только срезает) |
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## API
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+### `GET /health`
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Без авторизации. Контракт зафиксирован между репозиториями — мобильное приложение проверяет
+ровно это, поэтому форма ответа не меняется:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```
+200 OK
+content-type: application/json; charset=utf-8
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+{"status":"ok"}
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Тело — ровно `{"status":"ok"}`. Content-type Fastify всегда отдаёт с `; charset=utf-8` и убрать
+его без onSend-хука нельзя, поэтому клиент сверяет заголовок **по префиксу**, а не на равенство.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Это liveness-проба: она отвечает `ok`, пока жив процесс, и ничего не говорит о базе. Связь с
+Postgres проверяется один раз на старте — сервер не поднимется, если база недоступна.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## Устройство
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+```
+src/app.ts          Fastify-приложение и маршруты (без сети и без базы — тестируется через inject)
+src/server.ts       точка входа: проверить базу, слушать порт
+src/db.ts           клиент Postgres из DATABASE_URL
+scripts/migrate.ts  запуск postgrator
+migrations/         .sql-миграции
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Шага сборки нет: Node исполняет `.ts` напрямую, срезая типы. Значит, `enum`, `namespace` и
+параметры-свойства конструктора не работают — `tsconfig.json` включает `erasableSyntaxOnly`,
+так что `npm run typecheck` поймает это раньше рантайма.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Сервер слушает `0.0.0.0`, чтобы телефон или симулятор в той же сети мог до него достучаться.
