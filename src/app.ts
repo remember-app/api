@@ -1,6 +1,7 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
+import { socialRoutes } from "./auth/social.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -32,6 +33,7 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // — the routes below mount that decorator, so it has to exist by then.
   authPlugin(app);
   identityRoutes(app);
+  socialRoutes(app);
 
   return app;
 }

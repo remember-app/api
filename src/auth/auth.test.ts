@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import type { JWTPayload } from "jose";
 import { afterAll, expect, test } from "vitest";
 import { sql } from "../db.ts";
+import { claimsFrom, type Provider, type ProviderClaims, verifier } from "./providers.ts";
 import { hashToken, revokeByToken } from "./session.ts";
 import {
   buildTestApp,
@@ -13,8 +16,16 @@ import {
 // itself in the shared dev database.
 const testEmail = () => sharedTestEmail("task05");
 
+// A social sign-in leaves a user who may carry no address at all, so those are
+// recognised by the provider account id instead.
+const testSub = () => `task07-${randomUUID()}`;
+
 afterAll(async () => {
   await cleanupTestUsers("task05");
+  await sql`
+    delete from users
+    where id in (select user_id from auth_identities where provider_account_id like 'task07-%')
+  `;
   await sql.end();
 });
 
@@ -325,4 +336,289 @@ test("a malformed body is refused, and a server fault leaks nothing", async () =
   expect(boom.body).not.toContain("sessions");
 
   await app.close();
+});
+
+/**
+ * Stands in for the JWKS check. Apple's and Google's signatures cannot be
+ * produced without their private keys, so the one thing these tests cannot
+ * exercise is the verification itself — everything before it and everything
+ * after it is the production path, and the stub is put back afterwards.
+ */
+function stubVerify(fake: typeof verifier.verify) {
+  const real = verifier.verify;
+  verifier.verify = fake;
+  return () => {
+    verifier.verify = real;
+  };
+}
+
+const claims = (over: Partial<ProviderClaims> = {}): ProviderClaims => ({
+  sub: testSub(),
+  name: "Тест Тестов",
+  email: testEmail(),
+  ...over,
+});
+
+test("the claims are taken from a payload by type, not on trust", () => {
+  const full = { sub: "001122.abc", name: "Иван", email: "ivan@privaterelay.appleid.com" };
+  expect(claimsFrom(full)).toEqual(full);
+  // What Apple sends on every sign-in after the first.
+  expect(claimsFrom({ sub: "001122.abc" })).toEqual({ sub: "001122.abc", name: null, email: null });
+
+  // A payload is parsed JSON: jose checks only the claims it is asked to
+  // (`iss`, `aud`, `exp`), so the types declared for the rest are a promise
+  // nobody keeps. `sub` is the binding and must be a real string or nothing.
+  for (const bad of [{}, { sub: "" }, { sub: 123 }, { sub: null }, { sub: ["a"] }]) {
+    expect(() => claimsFrom(bad as JWTPayload)).toThrow(/sub/);
+  }
+  // Anything else that is not a string is dropped rather than stored: an object
+  // in `name` would otherwise reach a text column and come back a 500.
+  const odd = { sub: "x", name: { given: "И" }, email: 42 } as unknown as JWTPayload;
+  expect(claimsFrom(odd)).toEqual({ sub: "x", name: null, email: null });
+});
+
+const signInWith = (
+  app: ReturnType<typeof buildTestApp>["app"],
+  provider: Provider,
+  idToken = "id-token",
+) => app.inject({ method: "POST", url: `/auth/${provider}`, payload: { idToken } });
+
+test("a provider with no client id is off: 501, no verification, and the app still builds", async () => {
+  const previous = [process.env.APPLE_CLIENT_ID, process.env.GOOGLE_CLIENT_ID];
+  setEnv("APPLE_CLIENT_ID", undefined);
+  // A blank value is the same misconfiguration as an absent one: taken as an
+  // audience it would switch the `aud` check off rather than the provider.
+  setEnv("GOOGLE_CLIENT_ID", "   ");
+  let verifications = 0;
+  const restore = stubVerify(async () => {
+    verifications++;
+    return claims();
+  });
+  const { app } = buildTestApp();
+  try {
+    for (const provider of ["apple", "google"] as const) {
+      const res = await signInWith(app, provider);
+      expect(res.statusCode).toBe(501);
+      expect(res.json()).toEqual({ error: "provider not configured" });
+    }
+    // The token was never looked at — an unconfigured provider is refused
+    // before anything is trusted, not after.
+    expect(verifications).toBe(0);
+
+    // And the same guard again inside the verifier, which is the one that
+    // matters: jose skips the audience check entirely when `audience` is
+    // undefined, so an unset client id must fail loudly rather than accept a
+    // token minted for another app.
+    restore();
+    await expect(verifier.verify("apple", "whatever")).rejects.toThrow(/client id/);
+  } finally {
+    restore();
+    setEnv("APPLE_CLIENT_ID", previous[0]);
+    setEnv("GOOGLE_CLIENT_ID", previous[1]);
+    await app.close();
+  }
+});
+
+test("a verified id token makes the user, the identity and a session", async () => {
+  const previous = process.env.GOOGLE_CLIENT_ID;
+  setEnv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com");
+  const given = claims();
+  const seen: [string, string][] = [];
+  const restore = stubVerify(async (provider, idToken) => {
+    seen.push([provider, idToken]);
+    return given;
+  });
+  const { app } = buildTestApp();
+  try {
+    const res = await signInWith(app, "google", "the-id-token");
+    expect(res.statusCode).toBe(200);
+    const { token, user } = res.json() as { token: string; user: Record<string, unknown> };
+
+    // Exactly the shape /auth/email/verify answers with — one contract for the
+    // app whichever provider it signed in through.
+    expect(user).toEqual({
+      id: expect.any(String),
+      username: null,
+      name: given.name,
+      email: given.email,
+    });
+    expect(seen).toEqual([["google", "the-id-token"]]);
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toEqual(user);
+
+    // Bound by the provider's stable id, and nothing else was written.
+    const identities = await sql`
+      select provider, provider_account_id from auth_identities where user_id = ${String(user.id)}
+    `;
+    expect(identities).toEqual([{ provider: "google", provider_account_id: given.sub }]);
+  } finally {
+    restore();
+    setEnv("GOOGLE_CLIENT_ID", previous);
+    await app.close();
+  }
+});
+
+test("the same provider account is the same user, and a token that carries no profile is fine", async () => {
+  const previous = process.env.APPLE_CLIENT_ID;
+  setEnv("APPLE_CLIENT_ID", "com.remember.app");
+  // What Apple actually sends on every sign-in after the first: a sub, and
+  // neither name nor address.
+  const given = claims({ name: null, email: null });
+  const restore = stubVerify(async () => given);
+  const { app } = buildTestApp();
+  try {
+    const first = await signInWith(app, "apple");
+    const second = await signInWith(app, "apple");
+    expect([first.statusCode, second.statusCode]).toEqual([200, 200]);
+
+    const one = first.json() as { token: string; user: { id: string } };
+    const two = second.json() as { token: string; user: { id: string } };
+    expect(two.user.id).toBe(one.user.id);
+    expect(two.token).not.toBe(one.token); // a session per sign-in, both live
+    expect((second.json() as { user: unknown }).user).toEqual({
+      id: one.user.id,
+      username: null,
+      name: null,
+      email: null,
+    });
+
+    const identities = await sql`
+      select count(*)::int as n from auth_identities where provider_account_id = ${given.sub}
+    `;
+    expect(identities).toEqual([{ n: 1 }]);
+
+    for (const token of [one.token, two.token]) {
+      const me = await app.inject({
+        method: "GET",
+        url: "/me",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(me.statusCode).toBe(200);
+    }
+  } finally {
+    restore();
+    setEnv("APPLE_CLIENT_ID", previous);
+    await app.close();
+  }
+});
+
+test("two sign-ins landing at once on a new account still make one user", async () => {
+  const previous = process.env.APPLE_CLIENT_ID;
+  setEnv("APPLE_CLIENT_ID", "com.remember.app");
+  const given = claims();
+  const restore = stubVerify(async () => given);
+  const { app } = buildTestApp();
+  try {
+    // A double-tap on the sign-in button, or the app retrying a request whose
+    // answer it never saw. Both find no account and both go to create one; only
+    // the lock in the transaction keeps that from being two users, or a primary
+    // key violation answered as a 500.
+    const both = await Promise.all([signInWith(app, "apple"), signInWith(app, "apple")]);
+    expect(both.map((r) => r.statusCode)).toEqual([200, 200]);
+    const ids = both.map((r) => (r.json() as { user: { id: string } }).user.id);
+    expect(ids[0]).toBe(ids[1]);
+
+    const [row] = (await sql`
+      select count(*)::int as n from auth_identities where provider_account_id = ${given.sub}
+    `) as [{ n: number }];
+    expect(row.n).toBe(1);
+  } finally {
+    restore();
+    setEnv("APPLE_CLIENT_ID", previous);
+    await app.close();
+  }
+});
+
+test("two provider accounts sharing an address are two people — accounts never merge on email", async () => {
+  const previous = [process.env.APPLE_CLIENT_ID, process.env.GOOGLE_CLIENT_ID];
+  setEnv("APPLE_CLIENT_ID", "com.remember.app");
+  setEnv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com");
+  // One address, three distinct provider accounts: the same person at both
+  // providers, and a second Apple account that merely reached the same relay
+  // address — which Apple can hand out again to somebody else.
+  const email = testEmail();
+  const restore = stubVerify(async () => claims({ email })); // a fresh sub each time
+  const { app } = buildTestApp();
+  try {
+    const ids: string[] = [];
+    for (const provider of ["apple", "google", "apple"] as const) {
+      const res = await signInWith(app, provider);
+      expect(res.statusCode).toBe(200);
+      ids.push((res.json() as { user: { id: string } }).user.id);
+    }
+    expect(new Set(ids).size).toBe(3);
+  } finally {
+    restore();
+    setEnv("APPLE_CLIENT_ID", previous[0]);
+    setEnv("GOOGLE_CLIENT_ID", previous[1]);
+    await app.close();
+  }
+});
+
+test("an id token that does not verify is 401 and leaves nothing behind", async () => {
+  const previous = process.env.GOOGLE_CLIENT_ID;
+  setEnv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com");
+  const { app } = buildTestApp();
+  // This file's own rows only: the other test files run in parallel against
+  // the same database, so a count of everything is a race.
+  const rows = async () =>
+    (
+      await sql<{ n: number }[]>`
+        select count(*)::int as n from auth_identities where provider_account_id like 'task07-%'
+      `
+    )[0]?.n;
+  // Refusing the way jose refuses. In place for the whole test, so that a body
+  // which slips past validation still cannot reach the network.
+  let reason = "";
+  const restore = stubVerify(async () => {
+    throw new Error(reason);
+  });
+  try {
+    const before = await rows();
+    // Every way a token can fail arrives here as a throw — wrong audience,
+    // wrong issuer, expired, bad signature, not a JWT at all — and they must be
+    // one answer, or the difference tells a forger what to fix.
+    for (reason of [
+      'unexpected "aud" claim value',
+      'unexpected "iss" claim value',
+      '"exp" claim timestamp check failed',
+      "signature verification failed",
+      "Invalid Compact JWS",
+    ]) {
+      const res = await signInWith(app, "google");
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: "invalid token" });
+      // Nothing of the reason reaches the caller.
+      expect(res.body).not.toContain("aud");
+      expect(res.body).not.toContain("signature");
+    }
+
+    // A refused token writes nothing: no user, no binding, no session.
+    expect(await rows()).toBe(before);
+
+    // A body without a usable token never gets as far as verifying.
+    for (const payload of [{}, { idToken: "" }, { token: "wrong-field" }]) {
+      const res = await app.inject({ method: "POST", url: "/auth/google", payload });
+      expect(res.statusCode).toBe(400);
+    }
+    // A number is the exception, and harmlessly so: Fastify's ajv coerces it to
+    // a string before the handler sees it, so it lands as a bad token rather
+    // than a bad body.
+    const coerced = await app.inject({
+      method: "POST",
+      url: "/auth/google",
+      payload: { idToken: 42 },
+    });
+    expect(coerced.statusCode).toBe(401);
+  } finally {
+    restore();
+    setEnv("GOOGLE_CLIENT_ID", previous);
+    await app.close();
+  }
 });

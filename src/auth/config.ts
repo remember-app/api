@@ -23,3 +23,15 @@ export const rateMaxPerEmail = () => positive("EMAIL_LOGIN_RATE_MAX", 5);
  * real people who merely signed in after somebody else.
  */
 export const rateMaxPerIp = () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50);
+
+/**
+ * Our client id at a social provider — the `aud` an id token must carry. There
+ * is no fallback here and cannot be: a blank value is the same misconfiguration
+ * as an absent one, and both mean the provider stays off. Obeying an empty
+ * string would leave `aud` unchecked, which is to say it would accept a token
+ * Apple minted for somebody else's app.
+ */
+const clientId = (name: string) => process.env[name]?.trim() || undefined;
+
+export const appleClientId = () => clientId("APPLE_CLIENT_ID");
+export const googleClientId = () => clientId("GOOGLE_CLIENT_ID");
