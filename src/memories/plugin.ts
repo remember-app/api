@@ -41,7 +41,7 @@ declare module "fastify" {
  * params give: ajv's uuid format also passes a `urn:uuid:` prefix, which
  * Postgres cannot cast — that arrives as a 500.
  */
-const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
+export const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
 const createBody = {
   type: "object",

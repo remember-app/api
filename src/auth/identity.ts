@@ -46,6 +46,33 @@ const sessionParams = {
   },
 } as const;
 
+/** What a lookup by username may show: enough to see who is about to be invited. */
+export type PublicUser = Pick<AuthUser, "id" | "username" | "name">;
+
+/**
+ * Somebody by their exact username, or `undefined`. The one place that rule
+ * lives: `GET /users` below and invite-by-username (m-0) both come through
+ * here, because the screen in front of the query is not a formality.
+ *
+ * citext is not the exact match it looks like: it folds through the database's
+ * `lower()`, which maps U+212A KELVIN SIGN onto `k` and `İ` onto `i` — so
+ * `KUBİKPROBE` would otherwise fetch `kubikprobe`. Only ASCII can ever be
+ * registered (see `usernamePattern`), so anything else is «no such user» by
+ * definition. This also keeps a NUL byte away from Postgres, which cannot
+ * compare one and answered 500.
+ */
+export async function findByUsername(username: string): Promise<PublicUser | undefined> {
+  if (!usernameRegex.test(username)) return undefined;
+  // Past that screen citext does the one thing wanted of it — fold ASCII case
+  // — and the unique index behind the column makes this a lookup, not a scan.
+  // Deliberately three fields, no email: a username one may guess must not
+  // yield an address.
+  const [user] = await sql<PublicUser[]>`
+    select id, username, name from users where username = ${username}
+  `;
+  return user;
+}
+
 /**
  * Managing one's own identity: the username, finding somebody by theirs, and
  * the sessions one is signed in through. Mounted from `buildApp` after
@@ -87,25 +114,10 @@ export function identityRoutes(app: FastifyInstance) {
     "/users",
     { preHandler: app.authenticate, schema: { querystring: lookupQuery } },
     async (request, reply) => {
-      // Screened against the rule that governs what may be held, because
-      // citext is not the exact match it looks like: it folds through the
-      // database's `lower()`, which maps U+212A KELVIN SIGN onto `k` and
-      // `İ` onto `i` — so `KUBİKPROBE` would otherwise fetch `kubikprobe`.
-      // Only ASCII can ever be registered, so anything else is a 404 by
-      // definition. This also keeps a NUL byte away from Postgres, which
-      // cannot compare one and answered 500.
-      if (!usernameRegex.test(request.query.username)) {
-        return reply.code(404).send({ error: "not found" });
-      }
-      // Past that screen citext does the one thing wanted of it — fold ASCII
-      // case — and the unique index behind the column makes this a lookup
-      // rather than a scan.
-      const [user] = await sql<Pick<AuthUser, "id" | "username" | "name">[]>`
-        select id, username, name from users where username = ${request.query.username}
-      `;
+      // A username nobody could ever register and one nobody happens to hold
+      // are the same answer: 404, never 400.
+      const user = await findByUsername(request.query.username);
       if (!user) return reply.code(404).send({ error: "not found" });
-      // Deliberately three fields: enough to show who is about to be invited,
-      // and no email — a username one may guess must not yield an address.
       return user;
     },
   );
