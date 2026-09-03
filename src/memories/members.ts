@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { findByUsername } from "../auth/identity.ts";
+import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
@@ -149,6 +149,28 @@ export function memberRoutes(app: FastifyInstance) {
         memory,
       );
       return { ...invitee, role: added.role };
+    },
+  );
+
+  // Who is in this memory. Every member may read it, `viewer` included: the
+  // matrix gives them «смотреть», and seeing who else was at the event is that
+  // — not a power over the memory. No `mayInvite` gate here on purpose.
+  app.get<{ Params: { memoryId: string } }>(
+    "/memories/:memoryId/members",
+    { preHandler: [app.authenticate, app.requireMembership] },
+    async (request) => {
+      // The same three fields `GET /users` hands out and no more — one user
+      // shape for the client, and deliberately no email: whoever followed an
+      // invite link can read this, so a roster must not turn into an address
+      // book. `invited_by` is left out for the same reason it is not on the
+      // invite response: it is a uuid the client has nothing to do with.
+      return sql<(PublicUser & { role: MemberRole })[]>`
+        select u.id, u.username, u.name, mm.role
+        from memory_members mm
+        join users u on u.id = mm.user_id
+        where mm.memory_id = ${request.membership.memory.id}
+        order by mm.created_at, u.id
+      `;
     },
   );
 

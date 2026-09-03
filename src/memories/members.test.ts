@@ -66,6 +66,9 @@ const accept = (app: App, token: string, inviteToken: string) =>
 const remove = (app: App, token: string, memoryId: string, userId: string) =>
   app.inject(as(token, { method: "DELETE", url: `/memories/${memoryId}/members/${userId}` }));
 
+const roster = (app: App, token: string, memoryId: string) =>
+  app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/members` }));
+
 const roleOf = (memoryId: string, userId: string) =>
   sql<{ role: string }[]>`
     select role from memory_members where memory_id = ${memoryId} and user_id = ${userId}
@@ -368,6 +371,70 @@ test("removal: the organizer shows people out, everyone else may only walk out",
   await app.close();
 });
 
+test("the roster is the whole memory, and a viewer may read it too", async () => {
+  const { app, lines } = buildTestApp();
+  const organizer = await person(app, lines);
+  const contributor = await person(app, lines);
+  const viewer = await person(app, lines);
+  const created = await createMemory(app, organizer.token);
+
+  for (const [who, role] of [
+    [contributor, "contributor"],
+    [viewer, "viewer"],
+  ] as const) {
+    expect(
+      (await invite(app, organizer.token, created.id, { username: who.username, role })).statusCode,
+    ).toBe(200);
+  }
+
+  const expected = [
+    { id: organizer.id, username: organizer.username, name: null, role: "organizer" },
+    { id: contributor.id, username: contributor.username, name: null, role: "contributor" },
+    { id: viewer.id, username: viewer.username, name: null, role: "viewer" },
+  ].sort((a, b) => a.id.localeCompare(b.id));
+
+  // Everyone in the memory, each with the level they actually hold — the
+  // organizer among them, because they hold an ordinary membership row.
+  const mine = await roster(app, organizer.token, created.id);
+  expect(mine.statusCode).toBe(200);
+  const sorted = (answer: typeof mine) =>
+    (answer.json() as { id: string }[]).sort((a, b) => a.id.localeCompare(b.id));
+  expect(sorted(mine)).toEqual(expected);
+
+  // A `viewer` reads it as well: seeing who else was there is «смотреть», and
+  // this is deliberately not gated to contributor and up.
+  const theirs = await roster(app, viewer.token, created.id);
+  expect(theirs.statusCode).toBe(200);
+  expect(sorted(theirs)).toEqual(expected);
+
+  // The exact `GET /users` shape and nothing more — an address above all: this
+  // roster is readable by anybody who followed an invite link.
+  for (const member of mine.json()) {
+    expect(Object.keys(member).sort()).toEqual(["id", "name", "role", "username"]);
+  }
+
+  // A stranger and a memory that does not exist are one answer, byte for byte:
+  // the house 404 the membership check already gives, not a 403 here.
+  const stranger = await person(app, lines);
+  for (const answer of await Promise.all([
+    roster(app, stranger.token, created.id),
+    roster(app, organizer.token, randomUUID()),
+    roster(app, organizer.token, "not-a-uuid"),
+  ])) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  // Leaving takes them off it — the roster is the membership table, not a
+  // record of who was ever invited.
+  expect((await remove(app, viewer.token, created.id, viewer.id)).statusCode).toBe(200);
+  expect(
+    (await roster(app, organizer.token, created.id)).json().map((m: { id: string }) => m.id),
+  ).not.toContain(viewer.id);
+
+  await app.close();
+});
+
 test("push tokens register idempotently and follow the device", async () => {
   const { app, lines } = buildTestApp();
   const first = await person(app, lines);
@@ -459,8 +526,13 @@ test("with pushing switched off the intended notification is logged and nothing 
     const logged = lines
       .map((l) => JSON.parse(l) as { msg?: string; message?: { body: string; data: unknown } })
       .findLast((l) => l.msg === "invite push not sent");
-    expect(logged?.message?.body).toContain("добавил вас в");
+    expect(logged?.message?.body).toContain("приглашает вас в");
     expect(logged?.message?.body).toContain(created.title);
+    // Names who invited them and asks for the material — decision-06's whole
+    // point — without ever agreeing with the inviter's gender.
+    expect(logged?.message?.body).toContain(organizer.username);
+    expect(logged?.message?.body).toContain("загрузите свои фото и видео");
+    expect(logged?.message?.body).not.toMatch(/добавил|добавила|пригласил|позвал/);
     expect(logged?.message?.data).toEqual({ memoryId: created.id });
   } finally {
     if (previous === undefined) delete process.env.EXPO_PUSH_URL;
@@ -480,13 +552,14 @@ test("every new route is behind the session check", async () => {
       url: `/memories/${id}/members`,
       payload: { username: "a", role: "viewer" },
     }),
+    app.inject({ method: "GET", url: `/memories/${id}/members` }),
     app.inject({ method: "GET", url: `/memories/${id}/invite` }),
     app.inject({ method: "POST", url: `/memories/${id}/invite`, payload: {} }),
     app.inject({ method: "POST", url: "/invites/accept", payload: { token: "x" } }),
     app.inject({ method: "DELETE", url: `/memories/${id}/members/${id}` }),
     app.inject({ method: "POST", url: "/me/push-tokens", payload: { token: "x" } }),
   ]);
-  expect(answers.map((a) => a.statusCode)).toEqual([401, 401, 401, 401, 401, 401]);
+  expect(answers.map((a) => a.statusCode)).toEqual([401, 401, 401, 401, 401, 401, 401]);
 
   await app.close();
 });

@@ -45,10 +45,15 @@ export async function notifyInvited(
   inviter: string,
   memory: { id: string; title: string },
 ): Promise<void> {
+  // Present tense on purpose: «добавил» would misgender half the people who
+  // ever send this (decision-06's own example reads «Аня добавила»), and
+  // «добавил(а)» reads like a form. «приглашает» agrees with nobody, so the
+  // one string is right for every inviter. The call to upload is part of the
+  // notification, not decoration — it is what decision-06 asks it to do.
   // `data` is what the app reads to open straight at this memory's upload
   // screen — the whole point of the notification (doc-01).
   const message = {
-    body: `${inviter} добавил вас в «${memory.title}»`,
+    body: `${inviter} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
     data: { memoryId: memory.id },
   };
   try {
