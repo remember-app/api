@@ -15,5 +15,30 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local stand-in for Cloudflare R2 — the same S3 API, so the API talks to
+  # both through one code path. The bucket is made by creating its directory
+  # before the server starts: MinIO takes a directory under its data root for a
+  # bucket, which is a line here instead of a second container running `mc`.
+  minio:
+    image: minio/minio
+    entrypoint:
+      ["sh", "-c", "mkdir -p /data/remember && exec minio server /data --console-address :9001"]
+    environment:
+      MINIO_ROOT_USER: remember
+      MINIO_ROOT_PASSWORD: remember-secret
+    ports:
+      - "9000:9000"
+      # The web console — nothing depends on it; it is how one looks at what
+      # actually landed in the bucket.
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
+  miniodata:

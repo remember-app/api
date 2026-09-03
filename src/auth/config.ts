@@ -4,7 +4,7 @@
  * obeyed. A negative window would otherwise clear the rate-limit counters on
  * every request and switch the limiter off without a word.
  */
-const positive = (name: string, fallback: number) => {
+export const positive = (name: string, fallback: number) => {
   const n = Number(process.env[name]);
   // Floored: the TTLs end up as make_interval arguments, which take integers.
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;

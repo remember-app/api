@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "aws4fetch": "^1.0.20",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",
     "postgrator": "^8.0.0",
