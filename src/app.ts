@@ -2,6 +2,7 @@ import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
 import { socialRoutes } from "./auth/social.ts";
+import { memoriesPlugin } from "./memories/plugin.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -34,6 +35,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   authPlugin(app);
   identityRoutes(app);
   socialRoutes(app);
+  // After authPlugin for the same reason: it mounts app.authenticate, and
+  // it also decorates app.requireMembership for every later feature.
+  memoriesPlugin(app);
 
   return app;
 }

@@ -1,0 +1,265 @@
+import { randomUUID } from "node:crypto";
+import type { InjectOptions } from "fastify";
+import { afterAll, expect, test } from "vitest";
+import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
+import { sql } from "../db.ts";
+import type { MemberRole } from "./plugin.ts";
+
+const email = () => testEmail("task11");
+
+/**
+ * Every memory this file makes is tagged in its title, so cleanup is by title
+ * and not by owner: `memories.organizer_id` deliberately does not cascade off
+ * `users`, so the shared user cleanup cannot run until these are gone.
+ */
+const titleTag = "task11-test";
+const title = () => `${titleTag} ${randomUUID()}`;
+
+afterAll(async () => {
+  await sql`delete from memories where title like ${`${titleTag} %`}`;
+  await cleanupTestUsers("task11");
+  await sql.end();
+});
+
+type App = ReturnType<typeof buildTestApp>["app"];
+
+const as = (token: string, options: InjectOptions) => ({
+  ...options,
+  headers: { authorization: `Bearer ${token}` },
+});
+
+const create = (app: App, token: string, payload: Record<string, unknown>) =>
+  app.inject(as(token, { method: "POST", url: "/memories", payload }));
+
+const list = (app: App, token: string) =>
+  app.inject(as(token, { method: "GET", url: "/memories" }));
+
+/**
+ * A throwaway route behind the real check, which is how every later feature
+ * will mount it. Added before the first inject, so it is in place by ready().
+ */
+function withProbe(app: App) {
+  app.get(
+    "/memories/:memoryId/probe",
+    { preHandler: [app.authenticate, app.requireMembership] },
+    async (request) => request.membership,
+  );
+  return (token: string, memoryId: string) =>
+    app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/probe` }));
+}
+
+const start = "2026-09-02T18:00:00+03:00";
+
+test("creating a memory needs a title and a start, and refuses a backwards window", async () => {
+  const { app, lines } = buildTestApp();
+  const { token } = await signIn(app, lines, email());
+
+  const missingTitle = await create(app, token, { event_start: start });
+  expect(missingTitle.statusCode).toBe(400);
+
+  const missingStart = await create(app, token, { title: title() });
+  expect(missingStart.statusCode).toBe(400);
+
+  // Blank is not a title: `minLength: 1` alone would take this.
+  const blank = await create(app, token, { title: "   ", event_start: start });
+  expect(blank.statusCode).toBe(400);
+
+  // Not a timestamp at all — must not reach Postgres as a cast failure.
+  const notADate = await create(app, token, { title: title(), event_start: "2026-09-02" });
+  expect(notADate.statusCode).toBe(400);
+
+  // End before start, and the two are compared as instants: as plain text
+  // this end sorts *after* this start ("01" > "00" at the hour), while in
+  // fact being two hours earlier.
+  const backwards = await create(app, token, {
+    title: title(),
+    event_start: "2026-09-02T00:00:00Z",
+    event_end: "2026-09-02T01:00:00+03:00",
+  });
+  expect(backwards.statusCode).toBe(400);
+  expect(backwards.json()).toEqual({ error: "event_end is before event_start" });
+
+  // Nothing was written by any of the refusals.
+  expect((await list(app, token)).json()).toEqual([]);
+
+  await app.close();
+});
+
+test("creating a memory makes the creator its organizer, with counters at zero", async () => {
+  const { app, lines } = buildTestApp();
+  const { token, user } = await signIn(app, lines, email());
+  const name = title();
+
+  const created = await create(app, token, { title: `  ${name}  `, event_start: start });
+  expect(created.statusCode).toBe(201);
+  const memory = created.json();
+
+  // The title is stored trimmed, and the offset is normalized to UTC.
+  expect(memory.title).toBe(name);
+  expect(memory.event_start).toBe("2026-09-02T15:00:00.000Z");
+  expect(memory.event_end).toBeNull();
+  expect(memory.organizer_id).toBe(user.id);
+  expect(memory.role).toBe("organizer");
+  // storage_bytes is a bigint, so it arrives as a string — pinned here
+  // because the client has to parse it rather than do arithmetic on it.
+  expect(memory.storage_bytes).toBe("0");
+  expect(memory.media_count).toBe(0);
+  expect(memory.montage_count).toBe(0);
+
+  // The organizer holds an ordinary membership row: that is what makes them
+  // visible to the listing and to the permission check without a special case.
+  const [membership] = await sql`
+    select role from memory_members where memory_id = ${memory.id} and user_id = ${user.id}
+  `;
+  expect(membership?.role).toBe("organizer");
+
+  // Creating answers with exactly what listing answers, so the client can
+  // prepend the one to the other.
+  expect((await list(app, token)).json()).toEqual([memory]);
+
+  await app.close();
+});
+
+test("the listing holds the caller's memories and nobody else's", async () => {
+  const { app, lines } = buildTestApp();
+  const mine = await signIn(app, lines, email());
+  const theirs = await signIn(app, lines, email());
+
+  const older = await create(app, mine.token, {
+    title: title(),
+    event_start: "2026-01-01T12:00:00Z",
+  });
+  const newer = await create(app, mine.token, {
+    title: title(),
+    event_start: "2026-06-01T12:00:00Z",
+    event_end: "2026-06-03T12:00:00Z",
+  });
+  const strangers = await create(app, theirs.token, { title: title(), event_start: start });
+  expect([older, newer, strangers].map((r) => r.statusCode)).toEqual([201, 201, 201]);
+
+  // Newest event first, and the stranger's memory is absent entirely.
+  const listed = await list(app, mine.token);
+  expect(listed.statusCode).toBe(200);
+  expect(listed.json()).toEqual([newer.json(), older.json()]);
+
+  // A memory one is invited into shows up with the role one was given.
+  await sql`
+    insert into memory_members (memory_id, user_id, role, invited_by)
+    values (${strangers.json().id}, ${mine.user.id}, 'viewer', ${theirs.user.id})
+  `;
+  const withInvite = await list(app, mine.token);
+  expect(withInvite.json().map((m: { id: string; role: string }) => [m.id, m.role])).toEqual([
+    [strangers.json().id, "viewer"],
+    [newer.json().id, "organizer"],
+    [older.json().id, "organizer"],
+  ]);
+
+  await app.close();
+});
+
+test("the membership check hands the caller's role to the route", async () => {
+  const { app, lines } = buildTestApp();
+  const probe = withProbe(app);
+  const organizer = await signIn(app, lines, email());
+
+  const created = await create(app, organizer.token, {
+    title: title(),
+    event_start: start,
+    event_end: null,
+  });
+  expect(created.statusCode).toBe(201);
+  const memory = created.json();
+
+  const roles: MemberRole[] = ["organizer", "contributor", "viewer"];
+  for (const role of roles) {
+    let token = organizer.token;
+    if (role !== "organizer") {
+      const member = await signIn(app, lines, email());
+      token = member.token;
+      await sql`
+        insert into memory_members (memory_id, user_id, role, invited_by)
+        values (${memory.id}, ${member.user.id}, ${role}, ${organizer.user.id})
+      `;
+    }
+    const seen = await probe(token, memory.id);
+    expect(seen.statusCode).toBe(200);
+    expect(seen.json().role).toBe(role);
+    // The whole memory row travels with it, organizer_id included — that is
+    // what a downstream route reads instead of fetching it again.
+    expect(seen.json().memory).toMatchObject({
+      id: memory.id,
+      organizer_id: organizer.user.id,
+      title: memory.title,
+    });
+  }
+
+  await app.close();
+});
+
+test("a non-member, a missing memory and a malformed id are one and the same 404", async () => {
+  const { app, lines } = buildTestApp();
+  const probe = withProbe(app);
+  const organizer = await signIn(app, lines, email());
+  const stranger = await signIn(app, lines, email());
+
+  const memory = (
+    await create(app, organizer.token, { title: title(), event_start: start })
+  ).json();
+
+  // Somebody else's memory, a memory that never existed, and an id that is
+  // not a uuid at all: byte for byte the same answer, or holding an id would
+  // tell a stranger whether it names anything.
+  const answers = await Promise.all([
+    probe(stranger.token, memory.id),
+    probe(stranger.token, randomUUID()),
+    probe(stranger.token, "not-a-uuid"),
+  ]);
+  for (const answer of answers) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  // And it is a 401, not a 404, when there is no session at all: the check
+  // never runs ahead of the session check.
+  const anonymous = await app.inject({
+    method: "GET",
+    url: `/memories/${memory.id}/probe`,
+  });
+  expect(anonymous.statusCode).toBe(401);
+
+  await app.close();
+});
+
+test("mounting the check without the session check ahead of it is a loud failure", async () => {
+  const { app, lines } = buildTestApp();
+  // The one way a later feature can misuse this: right decorator, wrong order.
+  app.get(
+    "/memories/:memoryId/misordered",
+    { preHandler: app.requireMembership },
+    async () => ({}),
+  );
+  const { token } = await signIn(app, lines, email());
+
+  const answer = await app.inject(
+    as(token, { method: "GET", url: `/memories/${randomUUID()}/misordered` }),
+  );
+  // A server misconfiguration, not a bad request — and the log says which.
+  expect(answer.statusCode).toBe(500);
+  expect(lines.some((l) => l.includes("must be mounted after app.authenticate"))).toBe(true);
+
+  await app.close();
+});
+
+test("both routes are behind the session check", async () => {
+  const { app } = buildTestApp();
+
+  expect((await app.inject({ method: "GET", url: "/memories" })).statusCode).toBe(401);
+  const created = await app.inject({
+    method: "POST",
+    url: "/memories",
+    payload: { title: title(), event_start: start },
+  });
+  expect(created.statusCode).toBe(401);
+
+  await app.close();
+});
