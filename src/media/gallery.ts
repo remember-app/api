@@ -3,7 +3,7 @@ import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { downloadTtlSeconds } from "./config.ts";
-import { deleteObjects, downloadUrl, storageConfigured } from "./r2.ts";
+import { abortUploads, deleteObjects, downloadUrl, storageConfigured } from "./r2.ts";
 import type { MediaItem } from "./upload.ts";
 
 /**
@@ -21,7 +21,16 @@ type MediaKeys = {
   original_key: string;
   thumbnail_key: string | null;
   preview_key: string | null;
+  status: MediaItem["status"];
+  upload_id: string | null;
 };
+
+/**
+ * What a removal leaves behind in R2: objects that were assembled, and uploads
+ * that never were. The two are freed differently — a `DELETE` on the key leaves
+ * a multipart in progress untouched — which is why they are counted apart.
+ */
+export type Leftovers = { keys: string[]; uploads: { key: string; uploadId: string }[] };
 
 /**
  * Takes media out of a memory for good — the rows, the memory's counters, the
@@ -43,7 +52,7 @@ export async function removeMedia(
   tx: TransactionSql,
   memoryId: string,
   target: { mediaId: string } | { uploadedBy: string },
-): Promise<string[]> {
+): Promise<Leftovers> {
   const mediaId = "mediaId" in target ? target.mediaId : null;
   const uploadedBy = "uploadedBy" in target ? target.uploadedBy : null;
 
@@ -88,12 +97,24 @@ export async function removeMedia(
     queued as (
       delete from jobs where type = 'media_preview' and ref in (select id::text from gone)
     )
-    select original_key, thumbnail_key, preview_key from gone
+    select original_key, thumbnail_key, preview_key, status, upload_id from gone
   `;
 
-  return gone
-    .flatMap((row) => [row.original_key, row.thumbnail_key, row.preview_key])
-    .filter((key): key is string => key !== null);
+  return {
+    keys: gone
+      .flatMap((row) => [row.original_key, row.thumbnail_key, row.preview_key])
+      .filter((key): key is string => key !== null),
+    // Only the records still in `pending_upload` — past that the upload was
+    // sealed into an object and the id names nothing. This row is the only
+    // place that id was ever written down, so an upload left un-aborted here
+    // is one the hourly sweep will never see either: it works off `media_items`
+    // rows, and this one is on its way out.
+    uploads: gone.flatMap((row) =>
+      row.status === "pending_upload" && row.upload_id !== null
+        ? [{ key: row.original_key, uploadId: row.upload_id }]
+        : [],
+    ),
+  };
 }
 
 /**
@@ -107,12 +128,16 @@ export async function removeMedia(
  * the caller with a failure would tell them the deletion did not happen when
  * it did. What is left behind goes in the log instead.
  */
-export async function dropKeys(log: FastifyBaseLogger, keys: string[]): Promise<void> {
-  if (keys.length === 0 || !storageConfigured()) return;
+export async function dropKeys(log: FastifyBaseLogger, left: Leftovers): Promise<void> {
+  if (!storageConfigured()) return;
   try {
-    await deleteObjects(keys);
+    // The aborts first: a `DELETE` on a key that a multipart is still writing
+    // to leaves the parts behind, so releasing the upload is the half that
+    // cannot be skipped.
+    if (left.uploads.length > 0) await abortUploads(left.uploads);
+    if (left.keys.length > 0) await deleteObjects(left.keys);
   } catch (error) {
-    log.warn({ err: error, keys }, "media records are gone but their objects are not");
+    log.warn({ err: error, ...left }, "media records are gone but their objects are not");
   }
 }
 
@@ -204,8 +229,8 @@ export function galleryRoutes(app: FastifyInstance) {
       // Deleted by id and not by the row already read: two callers racing must
       // move the counters once, and whoever the delete returns a row to is the
       // one who moves them.
-      const keys = await sql.begin((tx) => removeMedia(tx, memory.id, { mediaId: item.id }));
-      await dropKeys(request.log, keys);
+      const left = await sql.begin((tx) => removeMedia(tx, memory.id, { mediaId: item.id }));
+      await dropKeys(request.log, left);
       return { ok: true };
     },
   );

@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
 import { sql } from "../db.ts";
 import type { MemberRole } from "../memories/plugin.ts";
-import { headSize } from "./r2.ts";
+import { completeUpload, headSize } from "./r2.ts";
 
 /**
  * Live against the real Postgres and the real object store — MinIO from
@@ -73,7 +73,7 @@ async function intent(app: App, token: string, memoryId: string, capturedAt: str
   expect(asked.statusCode).toBe(201);
   return asked.json() as {
     id: string;
-    upload: { key: string; parts: { part_number: number; url: string }[] };
+    upload: { key: string; upload_id: string; parts: { part_number: number; url: string }[] };
   };
 }
 
@@ -268,6 +268,12 @@ test("leaving and being excluded both take the person's material with them", asy
   // A record still on its way out when she goes. It never moved a counter, so
   // it must go without moving one either — the tally below is the check.
   const inFlight = await intent(app, anna.token, memory.id, "2026-09-02T19:15:00+03:00");
+  // One part actually in the bucket, so the multipart she leaves behind is a
+  // real one with real bytes in it and not an empty shell.
+  const midPart = inFlight.upload.parts[0];
+  if (!midPart) throw new Error("the intent handed out no part to upload");
+  const midSent = await fetch(midPart.url, { method: "PUT", body: Buffer.alloc(4096, 5) });
+  expect(midSent.status).toBe(200);
   const his = await upload(app, boris.token, memory.id, "2026-09-02T19:30:00+03:00");
 
   expect(await counters(memory.id)).toEqual({ storage_bytes: "8192", media_count: 2 });
@@ -286,6 +292,15 @@ test("leaving and being excluded both take the person's material with them", asy
   expect(await headSize(hers.key)).toBeNull();
   expect(await headSize(inFlight.upload.key)).toBeNull();
   expect(await headSize(his.key)).toBe(4096);
+  // The upload she never finished is released, not merely unreferenced: a
+  // `DELETE` on the key leaves a multipart's parts in the bucket, and the row
+  // that named this one is gone, so nothing could ever abort it afterwards.
+  // Sealing it now is what must fail.
+  await expect(
+    completeUpload(inFlight.upload.key, inFlight.upload.upload_id, [
+      { part_number: 1, etag: midSent.headers.get("etag") ?? "" },
+    ]),
+  ).rejects.toThrow();
   // And she is out: the gallery she could read a moment ago is now 404.
   expect((await gallery(app, anna.token, memory.id)).statusCode).toBe(404);
 

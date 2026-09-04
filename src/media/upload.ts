@@ -10,6 +10,7 @@ import {
   partBytes,
   uploadTtlSeconds,
 } from "./config.ts";
+import { dropKeys } from "./gallery.ts";
 import {
   completeUpload,
   createUpload,
@@ -80,7 +81,17 @@ const completeBody = {
         additionalProperties: false,
         properties: {
           part_number: { type: "integer", minimum: 1, maximum: 10000 },
-          etag: { type: "string", minLength: 1, maxLength: 200 },
+          // The shape S3 actually receipts a part with — a hex digest, quoted
+          // by the header the client reads it out of, sometimes with a part
+          // count after a dash. Pinned rather than «any string» because this
+          // value is interpolated into the XML the api signs with its own
+          // credentials (`completeUpload`), and `<`, `>` and `&` have no
+          // business in an etag.
+          etag: {
+            type: "string",
+            pattern: '^"?[A-Za-z0-9]{1,64}(-[0-9]{1,5})?"?$',
+            maxLength: 200,
+          },
         },
       },
     },
@@ -142,7 +153,6 @@ export function uploadRoutes(app: FastifyInstance) {
   const notFound = { error: "not found" };
 
   /** Without a bucket there is nothing to sign, and saying so is not the caller's fault. */
-  const storageOff = () => !storageConfigured();
   const unconfigured = { error: "storage not configured" };
 
   /**
@@ -177,7 +187,7 @@ export function uploadRoutes(app: FastifyInstance) {
       // The matrix: a viewer looks, a contributor brings. A non-member never
       // reaches this line — they were answered 404 by the membership check.
       if (role === "viewer") return reply.code(403).send({ error: "forbidden" });
-      if (storageOff()) return reply.code(503).send(unconfigured);
+      if (!storageConfigured()) return reply.code(503).send(unconfigured);
 
       const { kind, size_bytes, captured_at } = request.body;
       // A video's length can only be checked against the limit if the client
@@ -240,7 +250,7 @@ export function uploadRoutes(app: FastifyInstance) {
     "/memories/:memoryId/media/:mediaId/upload",
     { preHandler: [app.authenticate, app.requireMembership] },
     async (request, reply) => {
-      if (storageOff()) return reply.code(503).send(unconfigured);
+      if (!storageConfigured()) return reply.code(503).send(unconfigured);
       const item = await ownItem(
         request.membership.memory.id,
         request.user.id,
@@ -262,7 +272,7 @@ export function uploadRoutes(app: FastifyInstance) {
     "/memories/:memoryId/media/:mediaId/complete",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: completeBody } },
     async (request, reply) => {
-      if (storageOff()) return reply.code(503).send(unconfigured);
+      if (!storageConfigured()) return reply.code(503).send(unconfigured);
       const { memory } = request.membership;
       const item = await ownItem(memory.id, request.user.id, request.params.mediaId);
       if (!item) return reply.code(404).send(notFound);
@@ -288,6 +298,29 @@ export function uploadRoutes(app: FastifyInstance) {
       const size = await headSize(item.original_key);
       if (size === null) {
         return reply.code(409).send({ error: "the upload is not in storage" });
+      }
+
+      // The limits again, and this time against the only number that is not the
+      // client's. The intent weighed what was *declared*, and a presigned part
+      // carries no length of its own — so a file announced as one byte and then
+      // filled with a gigabyte would sail past both ceilings and be counted in
+      // at its real size, leaving the memory permanently over. Refused here the
+      // record and the object both go, exactly as a refusal at intent leaves
+      // neither.
+      const overSized = size > maxFileBytes();
+      const overMemory = BigInt(memory.storage_bytes) + BigInt(size) > BigInt(memoryMaxBytes());
+      if (overSized || overMemory) {
+        await sql`delete from media_items where id = ${item.id} and status = 'pending_upload'`;
+        await dropKeys(request.log, { keys: [item.original_key], uploads: [] });
+        request.log.warn(
+          { media: item.id, declared: item.size_bytes, measured: size },
+          "an upload arrived larger than it was declared and was refused",
+        );
+        return overSized
+          ? reply.code(413).send({ error: "file is too large", limit_bytes: maxFileBytes() })
+          : reply
+              .code(409)
+              .send({ error: "memory is out of space", limit_bytes: memoryMaxBytes() });
       }
 
       await sql.begin(async (tx) => {
@@ -329,6 +362,12 @@ export function uploadRoutes(app: FastifyInstance) {
       const [current] = await sql<{ id: string; status: string }[]>`
         select id, status from media_items where id = ${item.id}
       `;
+      // Gone between the transaction and this line: the worker's hourly sweep
+      // reached a record this callback was a day late for, or its owner walked
+      // out while it was in the air. Answering `undefined` would leave the
+      // request hanging with no body at all, so it is the one 404 this route
+      // family gives everything that is not there.
+      if (!current) return reply.code(404).send(notFound);
       return current;
     },
   );

@@ -281,7 +281,7 @@ export function memberRoutes(app: FastifyInstance) {
       // the person — or the reverse — is worse than either half. The membership
       // row goes first so that «нет такого участника» costs one statement and
       // touches nothing else.
-      const keys = await sql.begin(async (tx) => {
+      const left = await sql.begin(async (tx) => {
         const removed = await tx`
           delete from memory_members
           where memory_id = ${memory.id} and user_id = ${userId}
@@ -290,10 +290,10 @@ export function memberRoutes(app: FastifyInstance) {
         if (removed.length === 0) return null;
         return removeMedia(tx, memory.id, { uploadedBy: userId });
       });
-      if (keys === null) return reply.code(404).send(notFound);
+      if (left === null) return reply.code(404).send(notFound);
 
       // Outside the transaction, and best effort — see `dropKeys`.
-      await dropKeys(request.log, keys);
+      await dropKeys(request.log, left);
       return { ok: true };
     },
   );

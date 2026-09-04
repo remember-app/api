@@ -4,6 +4,7 @@ import { afterAll, afterEach, expect, test } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
 import { sql } from "../db.ts";
 import type { MemberRole } from "../memories/plugin.ts";
+import { headSize } from "./r2.ts";
 
 /**
  * Live against the real Postgres and the real object store — MinIO from
@@ -371,6 +372,66 @@ test("a file bigger than one part is handed one signed link per part", async () 
   for (const part of upload.parts) {
     expect(new URL(part.url).searchParams.get("partNumber")).toBe(String(part.part_number));
   }
+
+  await app.close();
+});
+
+// The declared size is the client's number; the measured one is R2's. Between
+// them sits a presigned PUT that carries no length of its own, which is what
+// this refuses to let through.
+test("a file that arrives larger than it was declared is refused, not counted", async () => {
+  const { app, lines } = buildTestApp();
+  const organizer = await signIn(app, lines, email());
+  const memory = await createMemory(app, organizer.token);
+
+  process.env.MEDIA_MAX_FILE_BYTES = "1024";
+
+  // Announced as 100 bytes, so the ceiling of 1024 is never troubled and one
+  // part link comes back.
+  const asked = await intent(app, organizer.token, memory.id, { ...photo, size_bytes: 100 });
+  expect(asked.statusCode).toBe(201);
+  const { id, upload } = asked.json();
+
+  // And then filled with four kilobytes, four times the ceiling.
+  const parts = await sendParts(upload.parts, [Buffer.alloc(4096, 1)]);
+  const done = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/media/${id}/complete`,
+      payload: { parts },
+    }),
+  );
+
+  expect(done.statusCode).toBe(413);
+  expect(done.json()).toEqual({ error: "file is too large", limit_bytes: 1024 });
+
+  // Nothing counted, nothing kept — the same as a refusal at intent.
+  const [row] = await sql`select storage_bytes, media_count from memories where id = ${memory.id}`;
+  expect(row).toEqual({ storage_bytes: "0", media_count: 0 });
+  expect(await mediaCount(memory.id)).toBe(0);
+  expect(await headSize(upload.key)).toBeNull();
+
+  await app.close();
+});
+
+// The etag goes into the XML the api signs with its own credentials, so it is
+// pinned to the shape S3 receipts a part with rather than «any string».
+test("an etag that is not one is refused at the door", async () => {
+  const { app, lines } = buildTestApp();
+  const organizer = await signIn(app, lines, email());
+  const memory = await createMemory(app, organizer.token);
+
+  const asked = await intent(app, organizer.token, memory.id, photo);
+  const { id } = asked.json();
+
+  const bad = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/media/${id}/complete`,
+      payload: { parts: [{ part_number: 1, etag: '"a"</ETag></Part><Part><PartNumber>2' }] },
+    }),
+  );
+  expect(bad.statusCode).toBe(400);
 
   await app.close();
 });

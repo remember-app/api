@@ -129,6 +129,34 @@ export async function downloadUrl(key: string, ttlSeconds: number): Promise<stri
 }
 
 /**
+ * Releases uploads that will never be finished. A plain `DELETE` on the key
+ * does **not** touch a multipart in progress — the parts already sent stay in
+ * the bucket, billed, until the upload is aborted. That matters most where the
+ * row is going too: `media_items.upload_id` is the only record of the id, so an
+ * upload not aborted here can never be named by anything again, the worker's
+ * hourly sweep included (montage `sweep_stale_uploads`).
+ *
+ * `NoSuchUpload` is not a failure, for the reason a missing key is not one
+ * below: an upload aborted twice, or one that completed after all, is already
+ * the outcome this wanted.
+ */
+export async function abortUploads(uploads: { key: string; uploadId: string }[]): Promise<void> {
+  const aws = client();
+  const answers = await Promise.all(
+    uploads.map(({ key, uploadId }) =>
+      aws.fetch(`${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`, { method: "DELETE" }),
+    ),
+  );
+  const refused = answers.filter((answer) => !answer.ok && answer.status !== 404);
+  if (refused.length > 0) {
+    throw new Error(
+      `R2 refused ${refused.length} of ${uploads.length} aborts: ` +
+        refused.map((answer) => answer.status).join(", "),
+    );
+  }
+}
+
+/**
  * Drops objects by key. A key that is not there is **not** a failure: a record
  * may well be deleted before the worker has made its preview, and a missing
  * derivative must not stop the original from going — S3 answers a delete of
