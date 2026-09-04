@@ -190,11 +190,75 @@ export function galleryRoutes(app: FastifyInstance) {
           duration_seconds: item.duration_seconds,
           created_at: item.created_at,
           // Derivatives only. The original is deliberately not linked from
-          // here — the gallery shows the light version, and «скачать оригинал»
-          // is m-6 (architecture.md, «Хранилище и медиа-пайплайн»). Null until
-          // the worker has made them.
+          // here — the gallery shows the light version, and the original goes
+          // out only when somebody asks for it, through the two `/download`
+          // routes below (architecture.md, «Хранилище и медиа-пайплайн»). Null
+          // until the worker has made them.
           thumbnail_url: item.thumbnail_key ? await downloadUrl(item.thumbnail_key, ttl) : null,
           preview_url: item.preview_key ? await downloadUrl(item.preview_key, ttl) : null,
+        })),
+      );
+    },
+  );
+
+  // «Скачать» — the one place the original itself is handed out. Every member
+  // may, `viewer` included: the matrix gives them «скачивать оригиналы», and
+  // the link is the file, so there is nothing further to check beyond standing
+  // in the memory (architecture.md, «Проверка прав»).
+  //
+  // Note the two routes are one path apart — `/media/download` and
+  // `/media/:mediaId/download`. The router prefers the literal segment, so the
+  // whole-gallery route is never read as a record whose id is «download».
+  app.get<{ Params: { memoryId: string; mediaId: string } }>(
+    "/memories/:memoryId/media/:mediaId/download",
+    { preHandler: [app.authenticate, app.requireMembership] },
+    async (request, reply) => {
+      if (!storageConfigured()) {
+        return reply.code(503).send({ error: "storage not configured" });
+      }
+      const { mediaId } = request.params;
+      // Not a uuid is «no such record», as everywhere in this family (README,
+      // «404 один на всех»), and for the reason the delete route gives: a
+      // params schema would answer before the membership check had run.
+      if (!uuidPattern.test(mediaId)) return reply.code(404).send(notFound);
+
+      // `pending_upload` is filtered here rather than answered separately: the
+      // bytes are not in the store yet, so a link to them would sign nothing —
+      // which, to the caller, is exactly «no such record».
+      const [item] = await sql<Pick<MediaItem, "original_key">[]>`
+        select original_key from media_items
+        where id = ${mediaId} and memory_id = ${request.membership.memory.id}
+          and status <> 'pending_upload'
+      `;
+      if (!item) return reply.code(404).send(notFound);
+
+      return { url: await downloadUrl(item.original_key, downloadTtlSeconds()) };
+    },
+  );
+
+  // «Скачать всю галерею» in one answer: the client saves the files itself, and
+  // asking for a link per file would be a round trip per file. Ordered as the
+  // gallery is, so what arrives on the phone lines up with what was on screen.
+  app.get<{ Params: { memoryId: string } }>(
+    "/memories/:memoryId/media/download",
+    { preHandler: [app.authenticate, app.requireMembership] },
+    async (request, reply) => {
+      if (!storageConfigured()) {
+        return reply.code(503).send({ error: "storage not configured" });
+      }
+
+      const items = await sql<Pick<MediaItem, "id" | "kind" | "original_key">[]>`
+        select id, kind, original_key from media_items
+        where memory_id = ${request.membership.memory.id} and status <> 'pending_upload'
+        order by coalesce(captured_at, created_at), id
+      `;
+
+      const ttl = downloadTtlSeconds();
+      return Promise.all(
+        items.map(async (item) => ({
+          id: item.id,
+          kind: item.kind,
+          url: await downloadUrl(item.original_key, ttl),
         })),
       );
     },
