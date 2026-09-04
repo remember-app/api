@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
+import { dropKeys, removeMedia } from "../media/gallery.ts";
 import { type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
 
@@ -270,28 +271,30 @@ export function memberRoutes(app: FastifyInstance) {
       // for this route family is 404.
       if (!uuidPattern.test(userId)) return reply.code(404).send(notFound);
 
-      // m-1 attaches here: delete everything this person uploaded to this
-      // memory (originals and derivatives in R2), take the counters down and
-      // kill their queued `jobs` — before the membership row, and in its
-      // database part inside one transaction with the delete below
-      // (architecture.md, «Выход / исключение участника»).
-      await removeMemberMedia(memory.id, userId);
+      // Everything this person brought to this memory goes out with them: the
+      // records, the counters, their queued previews and — after the commit —
+      // the originals and derivatives in R2 (architecture.md, «Выход /
+      // исключение участника»). Montages already cut are left alone, even
+      // where their frames are in them (m-2).
+      //
+      // One transaction, because a departure that took the material but left
+      // the person — or the reverse — is worse than either half. The membership
+      // row goes first so that «нет такого участника» costs one statement and
+      // touches nothing else.
+      const keys = await sql.begin(async (tx) => {
+        const removed = await tx`
+          delete from memory_members
+          where memory_id = ${memory.id} and user_id = ${userId}
+          returning user_id
+        `;
+        if (removed.length === 0) return null;
+        return removeMedia(tx, memory.id, { uploadedBy: userId });
+      });
+      if (keys === null) return reply.code(404).send(notFound);
 
-      const removed = await sql`
-        delete from memory_members
-        where memory_id = ${memory.id} and user_id = ${userId}
-        returning user_id
-      `;
-      if (removed.length === 0) return reply.code(404).send(notFound);
+      // Outside the transaction, and best effort — see `dropKeys`.
+      await dropKeys(request.log, keys);
       return { ok: true };
     },
   );
-}
-
-/**
- * The media cascade a departure owes, which m-1 owns and fills in — today a
- * memory holds no media, so removing the membership row is the whole of it.
- */
-async function removeMemberMedia(_memoryId: string, _userId: string): Promise<void> {
-  return;
 }

@@ -34,6 +34,15 @@ export type MediaItem = {
   upload_id: string | null;
   size_bytes: string;
   captured_at: Date | null;
+  // Written by the montage worker when it probes the original and makes the
+  // derivatives; null until then, which the gallery shows as a record still
+  // being worked on.
+  width: number | null;
+  height: number | null;
+  duration_seconds: number | null;
+  thumbnail_key: string | null;
+  preview_key: string | null;
+  created_at: Date;
 };
 
 const intentBody = {

@@ -2,6 +2,7 @@ import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
 import { socialRoutes } from "./auth/social.ts";
+import { galleryRoutes } from "./media/gallery.ts";
 import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
@@ -45,6 +46,7 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // app.requireMembership, which that one decorates.
   memberRoutes(app);
   uploadRoutes(app);
+  galleryRoutes(app);
   pushRoutes(app);
 
   return app;

@@ -26,3 +26,11 @@ export const partBytes = () => positive("MEDIA_UPLOAD_PART_BYTES", 8 * 1024 ** 2
 
 /** How long a handed-out upload link lives — ~1 h, per architecture.md. */
 export const uploadTtlSeconds = () => positive("R2_UPLOAD_TTL_SECONDS", 3600);
+
+/**
+ * And a handed-out download link — ~15 min, per the same. Far shorter than the
+ * upload one because it is handed out by the screenful: a gallery link that
+ * outlived the membership behind it would keep opening after the person was
+ * excluded, so it expires long before that matters.
+ */
+export const downloadTtlSeconds = () => positive("R2_DOWNLOAD_TTL_SECONDS", 900);

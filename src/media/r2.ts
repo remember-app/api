@@ -114,3 +114,41 @@ export async function headSize(key: string): Promise<number | null> {
   const length = Number(response.headers.get("content-length"));
   return Number.isFinite(length) ? length : null;
 }
+
+/**
+ * A presigned `GET` — the only way anything is read out of a private bucket.
+ * Whoever holds the link needs no credentials and the API is not on the path
+ * the bytes take, exactly as with the upload links above.
+ */
+export async function downloadUrl(key: string, ttlSeconds: number): Promise<string> {
+  const signed = await client().sign(`${objectUrl(key)}?X-Amz-Expires=${ttlSeconds}`, {
+    method: "GET",
+    aws: { signQuery: true },
+  });
+  return signed.url;
+}
+
+/**
+ * Drops objects by key. A key that is not there is **not** a failure: a record
+ * may well be deleted before the worker has made its preview, and a missing
+ * derivative must not stop the original from going — S3 answers a delete of
+ * nothing with 204 anyway.
+ *
+ * ponytail: one request per key instead of S3's multi-object delete. That call
+ * brings an XML body, a Content-MD5 header and an error shape of its own, to
+ * save round trips nobody is counting — one departure on this pilot is tens of
+ * files. Swap it in if a departure ever means thousands.
+ */
+export async function deleteObjects(keys: string[]): Promise<void> {
+  const aws = client();
+  const answers = await Promise.all(
+    keys.map((key) => aws.fetch(objectUrl(key), { method: "DELETE" })),
+  );
+  const refused = answers.filter((answer) => !answer.ok && answer.status !== 404);
+  if (refused.length > 0) {
+    throw new Error(
+      `R2 refused ${refused.length} of ${keys.length} deletes: ` +
+        refused.map((answer) => answer.status).join(", "),
+    );
+  }
+}
