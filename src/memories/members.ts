@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { dropKeys, removeMedia } from "../media/gallery.ts";
-import { type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
+import { type ContributionStatus, type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
 
 /**
@@ -46,6 +46,19 @@ const acceptBody = {
   // Bounded so that an unknown token is a cheap index probe and not a long
   // string carried into the database.
   properties: { token: { type: "string", minLength: 1, maxLength: 200 } },
+} as const;
+
+/**
+ * What a member may say about themselves. Only the two terminal answers: the
+ * other two are the api's to write — `not_started` is what an invite leaves
+ * behind, and `more_coming` is set by the first upload that lands. An unknown
+ * value is a 400 from here rather than a CHECK violation from Postgres.
+ */
+const contributionStatusBody = {
+  type: "object",
+  required: ["status"],
+  additionalProperties: false,
+  properties: { status: { type: "string", enum: ["done", "nothing"] } },
 } as const;
 
 type Invite = { token: string; role: InviteRole };
@@ -98,9 +111,10 @@ const memoryFor = async (memoryId: string, userId: string) => {
 };
 
 /**
- * Getting into a memory and out of one: by username, by link, and removal.
- * Called from `buildApp` after `memoriesPlugin`, which decorates the
- * membership check these routes mount.
+ * Getting into a memory and out of one — by username, by link and removal —
+ * and the standing of whoever is in it: the roster, and the contribution status
+ * a member sets on themselves. Called from `buildApp` after `memoriesPlugin`,
+ * which decorates the membership check these routes mount.
  */
 export function memberRoutes(app: FastifyInstance) {
   // Inviting is `contributor` and up — the matrix in architecture.md gives
@@ -165,13 +179,42 @@ export function memberRoutes(app: FastifyInstance) {
       // invite link can read this, so a roster must not turn into an address
       // book. `invited_by` is left out for the same reason it is not on the
       // invite response: it is a uuid the client has nothing to do with.
-      return sql<(PublicUser & { role: MemberRole })[]>`
-        select u.id, u.username, u.name, mm.role
+      //
+      // `contribution_status` and not `status`: on the client this object sits
+      // next to media items, which carry a `status` of their own meaning
+      // something else entirely (doc-06 is «кто уже скинул», not «загрузилось
+      // ли»). Readable by every member for the same reason the roles are —
+      // «кто ещё грузит» is «смотреть», not a power over the memory.
+      return sql<(PublicUser & { role: MemberRole; contribution_status: ContributionStatus })[]>`
+        select u.id, u.username, u.name, mm.role, mm.status as contribution_status
         from memory_members mm
         join users u on u.id = mm.user_id
         where mm.memory_id = ${request.membership.memory.id}
         order by mm.created_at, u.id
       `;
+    },
+  );
+
+  // «Это всё» / «ждать нечего» — the member's own word about their material,
+  // whether the app asked after their first upload (doc-06) or they said it
+  // unprompted. No role gate at all, `viewer` included: a status grants
+  // nothing, so refusing to let somebody say «у меня ничего нет» would only
+  // leave the organizer waiting.
+  app.post<{ Params: { memoryId: string }; Body: { status: "done" | "nothing" } }>(
+    "/memories/:memoryId/contribution-status",
+    {
+      preHandler: [app.authenticate, app.requireMembership],
+      schema: { body: contributionStatusBody },
+    },
+    async (request) => {
+      const { status } = request.body;
+      // Theirs and nobody else's: a status is not something one member sets on
+      // another, so there is no `:userId` in this route to begin with.
+      await sql`
+        update memory_members set status = ${status}
+        where memory_id = ${request.membership.memory.id} and user_id = ${request.user.id}
+      `;
+      return { status };
     },
   );
 

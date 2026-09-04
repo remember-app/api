@@ -250,7 +250,9 @@ test("the callback moves the counters, queues the preview, and repeats harmlessl
 
   const done = await complete({ parts });
   expect(done.statusCode).toBe(200);
-  expect(done.json()).toEqual({ id, status: "processing" });
+  // `first_upload` is m-6: this contributor had brought nothing to this memory
+  // until now, so this callback is the one the app hangs «всё загрузили?» on.
+  expect(done.json()).toEqual({ id, status: "processing", first_upload: true });
 
   const [item] = await sql`select * from media_items where id = ${id}`;
   expect(item?.status).toBe("processing");
@@ -281,7 +283,8 @@ test("the callback moves the counters, queues the preview, and repeats harmlessl
   // nothing counted twice — no second job, no doubled bytes.
   const again = await complete({ parts });
   expect(again.statusCode).toBe(200);
-  expect(again.json()).toEqual({ id, status: "processing" });
+  // …and not a first upload the second time round: the question is asked once.
+  expect(again.json()).toEqual({ id, status: "processing", first_upload: false });
   expect(await counted()).toEqual({
     row: { storage_bytes: "4096", media_count: 1 },
     usage: { storage_bytes: "4096", upload_count: 1 },

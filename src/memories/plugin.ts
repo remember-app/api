@@ -5,6 +5,14 @@ import { sql } from "../db.ts";
 export type MemberRole = "organizer" | "contributor" | "viewer";
 
 /**
+ * Where a member stands on bringing their material (doc-06). Per membership,
+ * not per person. `more_coming` is the only one the api sets by itself — on the
+ * first upload that lands; the two terminal ones are the member's own word.
+ * It grants and denies nothing: «статус не режет права».
+ */
+export type ContributionStatus = "not_started" | "more_coming" | "done" | "nothing";
+
+/**
  * A `memories` row exactly as the database holds it. `storage_bytes` is a
  * string and not a number: it is `bigint`, and postgres.js hands those over as
  * strings rather than silently rounding past 2^53.
@@ -32,7 +40,7 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     /** Populated only behind `app.requireMembership` — see the README. */
-    membership: { memory: Memory; role: MemberRole };
+    membership: { memory: Memory; role: MemberRole; status: ContributionStatus };
   }
 }
 
@@ -89,16 +97,20 @@ export function memoriesPlugin(app: FastifyInstance) {
     // Membership first, memory second: joining off memory_members means a
     // non-member never reaches the memories row at all, so there is no shape
     // of this query that can leak one.
-    const [row] = await sql<(Memory & { role: MemberRole })[]>`
-      select m.*, mm.role
+    // `status` rides along on the same join rather than being read where it is
+    // needed: it costs nothing here, and it is the status the caller held when
+    // the request started — which is exactly what «первая загрузка» in
+    // src/media/upload.ts has to compare against.
+    const [row] = await sql<(Memory & { role: MemberRole; status: ContributionStatus })[]>`
+      select m.*, mm.role, mm.status
       from memory_members mm
       join memories m on m.id = mm.memory_id
       where mm.memory_id = ${memoryId} and mm.user_id = ${request.user.id}
     `;
     if (!row) return notFound();
 
-    const { role, ...memory } = row;
-    request.membership = { memory, role };
+    const { role, status, ...memory } = row;
+    request.membership = { memory, role, status };
   });
 
   app.post<{ Body: { title: string; event_start: string; event_end?: string | null } }>(

@@ -387,10 +387,13 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
     ).toBe(200);
   }
 
+  // `contribution_status` is on every row from m-6: nobody here has uploaded
+  // anything, so all three sit at the initial value an invite leaves behind.
+  const fresh = { name: null, contribution_status: "not_started" };
   const expected = [
-    { id: organizer.id, username: organizer.username, name: null, role: "organizer" },
-    { id: contributor.id, username: contributor.username, name: null, role: "contributor" },
-    { id: viewer.id, username: viewer.username, name: null, role: "viewer" },
+    { ...fresh, id: organizer.id, username: organizer.username, role: "organizer" },
+    { ...fresh, id: contributor.id, username: contributor.username, role: "contributor" },
+    { ...fresh, id: viewer.id, username: viewer.username, role: "viewer" },
   ].sort((a, b) => a.id.localeCompare(b.id));
 
   // Everyone in the memory, each with the level they actually hold — the
@@ -410,7 +413,13 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   // The exact `GET /users` shape and nothing more — an address above all: this
   // roster is readable by anybody who followed an invite link.
   for (const member of mine.json()) {
-    expect(Object.keys(member).sort()).toEqual(["id", "name", "role", "username"]);
+    expect(Object.keys(member).sort()).toEqual([
+      "contribution_status",
+      "id",
+      "name",
+      "role",
+      "username",
+    ]);
   }
 
   // A stranger and a memory that does not exist are one answer, byte for byte:

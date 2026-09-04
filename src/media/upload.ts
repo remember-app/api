@@ -279,8 +279,12 @@ export function uploadRoutes(app: FastifyInstance) {
 
       // The repeat callback, which is the ordinary case for a phone that lost
       // the answer to the first one: whatever the record has become since is
-      // what it hears, and nothing is counted twice.
-      if (item.status !== "pending_upload") return { id: item.id, status: item.status };
+      // what it hears, and nothing is counted twice. `first_upload` is false
+      // rather than absent so that the answer to this route has one shape —
+      // the client reads the field, not the branch it came from.
+      if (item.status !== "pending_upload") {
+        return { id: item.id, status: item.status, first_upload: false };
+      }
       if (!item.upload_id) return reply.code(409).send({ error: "upload was never started" });
 
       // Failure here is not fatal on its own: two callbacks racing means the
@@ -323,7 +327,7 @@ export function uploadRoutes(app: FastifyInstance) {
               .send({ error: "memory is out of space", limit_bytes: memoryMaxBytes() });
       }
 
-      await sql.begin(async (tx) => {
+      const firstUpload = await sql.begin(async (tx) => {
         // The whole of the idempotency, and it is atomic: whoever flips the
         // status owns moving the counters. A second caller updates no row and
         // therefore counts nothing.
@@ -333,7 +337,7 @@ export function uploadRoutes(app: FastifyInstance) {
           where id = ${item.id} and status = 'pending_upload'
           returning id
         `;
-        if (!claimed) return;
+        if (!claimed) return false;
 
         await tx`
           update memories
@@ -354,6 +358,23 @@ export function uploadRoutes(app: FastifyInstance) {
         // reached `processing` would have the worker chasing nothing.
         // The table belongs to montage — api only inserts here.
         await tx`insert into jobs (type, ref) values ('media_preview', ${item.id})`;
+
+        // doc-06: bringing something is what takes a member off the initial
+        // status, and only ever the first time — anything they have said since
+        // is their word and this must not overwrite it. Hence the guard in the
+        // WHERE and not only in the `if`: two callbacks of the same person
+        // racing both mean `more_coming`, and exactly one of them reports it as
+        // the first. Same transaction as the counters, because a member counted
+        // as having brought material while still reading «ничего не загрузил»
+        // is the drift doc-06 exists to remove.
+        if (request.membership.status !== "not_started") return false;
+        const moved = await tx`
+          update memory_members set status = 'more_coming'
+          where memory_id = ${memory.id} and user_id = ${request.user.id}
+            and status = 'not_started'
+          returning user_id
+        `;
+        return moved.length > 0;
       });
 
       // Read back rather than assumed: by now the worker may already have taken
@@ -368,7 +389,10 @@ export function uploadRoutes(app: FastifyInstance) {
       // request hanging with no body at all, so it is the one 404 this route
       // family gives everything that is not there.
       if (!current) return reply.code(404).send(notFound);
-      return current;
+      // `first_upload` is the api telling the app to ask «всё загрузили или
+      // ещё будете?» — it is the one moment doc-06 hangs that question on, and
+      // the app has no other way to know this upload was the person's first.
+      return { ...current, first_upload: firstUpload };
     },
   );
 }
