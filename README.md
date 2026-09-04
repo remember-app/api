@@ -103,6 +103,9 @@ DATABASE_URL=postgres://remember:remember@localhost:5432/remember
 | `EMAIL_LOGIN_RATE_MAX`             | нет         | `5`          | заявок на вход за окно — на один ящик     |
 | `EMAIL_LOGIN_RATE_MAX_PER_IP`      | нет         | `50`         | то же на один IP — грубый заслон          |
 | `EMAIL_LOGIN_RATE_WINDOW_MINUTES`  | нет         | `15`         | длина этого окна                          |
+| `RESEND_API_KEY`                   | для входа по email | —     | ключ API Resend, которым уходит письмо со ссылкой |
+| `MAIL_FROM`                        | для входа по email | —     | адрес отправителя, вида `Remember <no-reply@…>` |
+| `RESEND_API_URL`                   | нет         | `https://api.resend.com/emails` | куда уходит письмо; переопределяется для тестов |
 | `APPLE_CLIENT_ID`                  | нет         | —            | наш client id у Apple — `aud` id-токена   |
 | `GOOGLE_CLIENT_ID`                 | нет         | —            | то же у Google                            |
 | `EXPO_PUSH_URL`                    | нет         | `https://exp.host/--/api/v2/push/send` | куда уходят пуши; пустая строка — пуши выключены |
@@ -123,6 +126,12 @@ DATABASE_URL=postgres://remember:remember@localhost:5432/remember
 Четыре `R2_*` без значения по умолчанию работают как пара client id: не заданы (или пустые) —
 хранилища нет, и эндпоинты загрузки честно отвечают `503 {"error":"storage not configured"}`
 вместо того, чтобы делать вид, что виноват клиент. Всё остальное работает и без них.
+
+`RESEND_API_KEY` и `MAIL_FROM` — то же правило для почты: нет обоих (или пустые) — письмо слать
+нечем, и `POST /auth/email/start` отвечает `503 {"error":"mail not configured"}`. Сервис при этом
+поднимается как обычно: вход по Apple и Google, сессии и всё остальное почты не касаются. Ключ
+заводит человек в [Resend](https://resend.com), в коде его нет; отправитель должен быть на домене,
+подтверждённом в Resend, иначе провайдер откажет.
 
 Лимиты — предложенные числа из `architecture.md` («Лимиты»). Они в окружении, а не в коде,
 потому что их будут двигать, когда придёт настоящий материал, и админки для этого нет.
@@ -212,7 +221,7 @@ Postgres проверяется один раз на старте — серве
 ### `POST /auth/email/start`
 
 Без авторизации. Тело — `{"email": "..."}`. Заводит пользователя, если такого адреса ещё не
-видели, и выпускает одноразовую ссылку входа.
+видели, выпускает одноразовую ссылку входа и **отправляет её письмом** через Resend.
 
 ```
 200 OK
@@ -225,6 +234,16 @@ Postgres проверяется один раз на старте — серве
 за новый адрес) и отдельно, куда мягче, на IP (`EMAIL_LOGIN_RATE_MAX_PER_IP` — за одним адресом
 сидит целый офис). Сверх лимита — `429 {"error":"too many requests"}`. Кривой адрес — `400`
 в стандартной форме Fastify (`FST_ERR_VALIDATION`).
+
+Почта не настроена (нет `RESEND_API_KEY` или `MAIL_FROM`) — `503 {"error":"mail not configured"}`,
+и это проверяется первым: пользователь не заводится, ссылка не выпускается, лимит не тратится.
+Провайдер не принял письмо (сеть, ключ, отказ API) — `502 {"error":"mail delivery failed"}`:
+это не про адрес и не про клиента, поэтому не 4xx, и не про нас, поэтому не 500. Настоящая
+причина уходит в лог строкой `magic link not sent` и в ответе не появляется. Токен при этом уже
+выпущен и просто протухает — повтор выпускает новый.
+
+Самой ссылки и токена в логе больше нет: ссылка — это ключ от аккаунта, а строка лога живёт
+дольше и видна большему числу людей, чем письмо. В логе остаётся `magic link sent` с адресом.
 
 ### `POST /auth/email/verify`
 
@@ -862,20 +881,24 @@ app.post(
 
 ### Как добыть токен в разработке
 
-Почтового сервиса в MVP нет — ссылка печатается в лог API:
+С ключом Resend в `.env` — обычным письмом, как у настоящего человека:
 
 ```bash
 curl -X POST http://localhost:3000/auth/email/start \
   -H 'content-type: application/json' -d '{"email":"you@example.com"}'
 ```
 
-В логе появляется строка `magic link issued`:
+Без ключа (`503 {"error":"mail not configured"}`) токен выписывается той же функцией, какой его
+выписывает эндпоинт, — почта тут ни при чём:
 
-```
-{"level":30,…,"email":"you@example.com","link":"remember://auth/email?token=GuYNXVEl…","msg":"magic link issued"}
+```bash
+node --env-file=.env --input-type=module \
+  -e "const { startEmailLogin } = await import('./src/auth/email.ts');
+      console.log(await startEmailLogin('you@example.com')); process.exit(0)"
+# 2yuV9wBJQIQoFqSm…
 ```
 
-Дальше либо открыть ссылку на симуляторе:
+Ссылка — это `remember://auth/email?token=<токен>`. Дальше либо открыть её на симуляторе:
 
 ```bash
 # dev-билд приложения — схема remember:// принадлежит ему
@@ -929,6 +952,7 @@ src/server.ts         точка входа: проверить базу, слу
 src/db.ts             клиент Postgres из DATABASE_URL
 src/auth/session.ts   выпуск, проверка и отзыв сессий
 src/auth/email.ts     вход по ссылке на email
+src/auth/mail.ts      отправка письма со ссылкой (Resend, обычный HTTP)
 src/auth/providers.ts проверка id-токенов Apple и Google (jose, JWKS)
 src/auth/social.ts    маршруты входа через Apple и Google
 src/auth/plugin.ts    декоратор app.authenticate и маршруты входа

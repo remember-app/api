@@ -1,6 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
+import { mailConfigured, sendMagicLink } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, verify } from "./session.ts";
 
 declare module "fastify" {
@@ -91,6 +92,12 @@ export function authPlugin(app: FastifyInstance) {
     "/auth/email/start",
     { schema: { body: emailBody } },
     async (request, reply) => {
+      // Before the limiter and before the user is made: with no mail keys
+      // there is no way to finish this request at all, so nothing is written
+      // down and nobody's budget is spent on being told so.
+      if (!mailConfigured()) {
+        return reply.code(503).send({ error: "mail not configured" });
+      }
       const email = normalizeEmail(request.body.email);
       const buckets: [string, number][] = [
         [`email:${mailbox(email)}`, rateMaxPerEmail()],
@@ -100,10 +107,20 @@ export function authPlugin(app: FastifyInstance) {
         return reply.code(429).send({ error: "too many requests" });
       }
       const token = await startEmailLogin(email);
-      // ponytail: the link is delivered to the log. There is no mail service in
-      // the MVP; sending the mail belongs right here, and the token stops
-      // leaking into the logs the moment it exists.
-      request.log.info({ email, link: deepLink(token) }, "magic link issued");
+      try {
+        await sendMagicLink(email, deepLink(token));
+      } catch (error) {
+        // The provider's own words go to the log and no further. 502 and not
+        // 500: nothing here failed, the thing behind us did — and it is not
+        // 4xx either, because the address was never the problem. The token
+        // stays minted and simply expires; a retry mints another.
+        request.log.warn({ err: error, email }, "magic link not sent");
+        return reply.code(502).send({ error: "mail delivery failed" });
+      }
+      // The link itself is never logged: it is a bearer credential for the
+      // account, and a log line holding it is one copy too many now that there
+      // is a real way to deliver it.
+      request.log.info({ email }, "magic link sent");
       // The answer is the same for a fresh address and a known one — otherwise
       // this route answers the question "is this person registered with you?".
       return { ok: true };

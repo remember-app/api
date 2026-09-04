@@ -1,16 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { JWTPayload } from "jose";
-import { afterAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { sql } from "../db.ts";
 import { claimsFrom, type Provider, type ProviderClaims, verifier } from "./providers.ts";
 import { hashToken, revokeByToken } from "./session.ts";
-import {
-  buildTestApp,
-  cleanupTestUsers,
-  linkToken,
-  testEmail as sharedTestEmail,
-} from "./testing.ts";
+import { buildTestApp, cleanupTestUsers, testEmail as sharedTestEmail } from "./testing.ts";
 
 // Every address this file makes is recognisable, so it can clear up after
 // itself in the shared dev database.
@@ -20,7 +17,41 @@ const testEmail = () => sharedTestEmail("task05");
 // recognised by the provider account id instead.
 const testSub = () => `task07-${randomUUID()}`;
 
+/**
+ * Resend, stood in for. `/auth/email/start` really posts the letter now, so
+ * these tests give it somewhere to post to — a host of their own, aimed at
+ * through `RESEND_API_URL`, so that nothing here needs mail keys or a way out
+ * to the network. The link comes back out of what was posted, because that is
+ * the only place it exists: the log no longer carries it.
+ */
+const letters: { to: string[]; text: string }[] = [];
+const mailServer = createServer((request, response) => {
+  const chunks: Buffer[] = [];
+  request.on("data", (chunk: Buffer) => chunks.push(chunk));
+  request.on("end", () => {
+    letters.push(JSON.parse(Buffer.concat(chunks).toString()));
+    response.writeHead(200, { "content-type": "application/json" }).end('{"id":"stub"}');
+  });
+});
+
+beforeAll(async () => {
+  await new Promise<void>((resolve) => {
+    mailServer.listen(0, "127.0.0.1", resolve);
+  });
+  process.env.RESEND_API_URL = `http://127.0.0.1:${(mailServer.address() as AddressInfo).port}`;
+  process.env.RESEND_API_KEY = "test-key";
+  process.env.MAIL_FROM = "Remember <no-reply@example.com>";
+});
+
+/** The token out of the last letter — where a person takes it from as well. */
+function linkToken() {
+  const link = letters.at(-1)?.text.match(/remember:\/\/\S+/)?.[0];
+  expect(link).toMatch(/^remember:\/\/auth\/email\?token=/);
+  return new URL(link ?? "").searchParams.get("token") ?? "";
+}
+
 afterAll(async () => {
+  mailServer.close();
   await cleanupTestUsers("task05");
   await sql`
     delete from users
@@ -68,8 +99,8 @@ test("migration 002 applies to a clean schema and is idempotent", async () => {
   }
 });
 
-test("the whole magic link: start -> link in the log -> verify -> session -> GET /me", async () => {
-  const { app, lines } = buildTestApp();
+test("the whole magic link: start -> link in the letter -> verify -> session -> GET /me", async () => {
+  const { app } = buildTestApp();
   const email = testEmail();
 
   const start = await app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
@@ -79,7 +110,7 @@ test("the whole magic link: start -> link in the log -> verify -> session -> GET
   const verified = await app.inject({
     method: "POST",
     url: "/auth/email/verify",
-    payload: { token: linkToken(lines) },
+    payload: { token: linkToken() },
   });
   expect(verified.statusCode).toBe(200);
   const { token, user } = verified.json() as { token: string; user: Record<string, unknown> };
@@ -111,7 +142,7 @@ test("the whole magic link: start -> link in the log -> verify -> session -> GET
 });
 
 test("signing in again with the same address does not make a second user", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const email = testEmail();
 
   const ids: string[] = [];
@@ -126,7 +157,7 @@ test("signing in again with the same address does not make a second user", async
     const res = await app.inject({
       method: "POST",
       url: "/auth/email/verify",
-      payload: { token: linkToken(lines) },
+      payload: { token: linkToken() },
     });
     ids.push((res.json() as { user: { id: string } }).user.id);
   }
@@ -141,10 +172,10 @@ test("signing in again with the same address does not make a second user", async
 });
 
 test("the link token is single-use: a second verify with it is 401", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
 
   await app.inject({ method: "POST", url: "/auth/email/start", payload: { email: testEmail() } });
-  const token = linkToken(lines);
+  const token = linkToken();
 
   const first = await app.inject({ method: "POST", url: "/auth/email/verify", payload: { token } });
   expect(first.statusCode).toBe(200);
@@ -161,7 +192,7 @@ test("the link token is single-use: a second verify with it is 401", async () =>
 });
 
 test("app.authenticate: 401 for missing, malformed, expired and revoked", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
 
   // Mounted exactly the way the next feature mounts it, and counting its own
   // calls: a 401 must never reach the handler, not merely overwrite its answer.
@@ -175,7 +206,7 @@ test("app.authenticate: 401 for missing, malformed, expired and revoked", async 
   const verified = await app.inject({
     method: "POST",
     url: "/auth/email/verify",
-    payload: { token: linkToken(lines) },
+    payload: { token: linkToken() },
   });
   const { token } = verified.json() as { token: string };
 

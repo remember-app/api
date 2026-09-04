@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import { buildApp } from "../app.ts";
 import { sql } from "../db.ts";
+import { startEmailLogin } from "./email.ts";
 import type { AuthUser } from "./session.ts";
 
 /**
@@ -15,7 +16,7 @@ export const testEmail = (tag: string) => `${tag}-test-${randomUUID()}@example.c
 export const cleanupTestUsers = (tag: string) =>
   sql`delete from users where email like ${`${tag}-test-%@example.com`}`;
 
-/** An app with its own log: the magic link is delivered nowhere else. */
+/** An app with its own log, for the tests that read what it wrote. */
 export function buildTestApp() {
   const lines: string[] = [];
   const app = buildApp({
@@ -31,30 +32,30 @@ export function buildTestApp() {
   return { app, lines };
 }
 
-/** Takes the token from exactly where a live tester takes it — the log. */
-export function linkToken(lines: string[]) {
-  const line = lines
-    .map((l) => JSON.parse(l) as { msg?: string; link?: string })
-    .findLast((l) => l.msg === "magic link issued");
-  expect(line?.link).toMatch(/^remember:\/\/auth\/email\?token=/);
-  return new URL(line?.link ?? "").searchParams.get("token") ?? "";
-}
-
 /**
  * A whole sign-in, for tests that need a live session rather than the route
- * that mints one: start -> link out of the log -> verify.
+ * that mints one: token minted straight from `startEmailLogin` -> verify.
+ *
+ * It does **not** go through `/auth/email/start`, and that is the point: that
+ * route now really posts the link to a mail provider, so every test file in
+ * the package that merely wants somebody signed in would otherwise need mail
+ * keys and a way out to the network. That route is exercised in `auth.test.ts`,
+ * which stands a host of its own in for the provider.
+ *
+ * `_lines` is unused and stays in the signature because the whole package
+ * calls this with it; taking it out is a rename across files that belong to
+ * other work right now.
  */
 export async function signIn(
   app: ReturnType<typeof buildTestApp>["app"],
-  lines: string[],
+  _lines: string[],
   email: string,
 ): Promise<{ token: string; user: AuthUser }> {
-  const start = await app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
-  expect(start.statusCode).toBe(200);
+  const token = await startEmailLogin(email);
   const verified = await app.inject({
     method: "POST",
     url: "/auth/email/verify",
-    payload: { token: linkToken(lines) },
+    payload: { token },
   });
   expect(verified.statusCode).toBe(200);
   return verified.json();
