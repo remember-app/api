@@ -7,6 +7,7 @@ import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
 import { pushRoutes } from "./memories/push.ts";
+import { montageRoutes } from "./montages/montages.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -48,6 +49,10 @@ export function buildApp(options: FastifyServerOptions = {}) {
   uploadRoutes(app);
   galleryRoutes(app);
   pushRoutes(app);
+  // Its `/memories/:memoryId/…` routes mount app.requireMembership too; the
+  // internal one the montage worker knocks on mounts neither check and carries
+  // its own shared secret instead.
+  montageRoutes(app);
 
   return app;
 }
