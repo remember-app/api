@@ -26,18 +26,75 @@ const registerBody = {
   },
 } as const;
 
+/** What Expo is handed: the line on the lock screen and what the app opens on. */
+type Message = { body: string; data: Record<string, string> };
+
+/**
+ * The one way a notification leaves this service. Never throws — every failure
+ * (no tokens, pushing off, Expo down, Expo cross, the database refusing the
+ * token query) leaves a line in the log and nothing else, because both callers
+ * notify **after** committing what they notify about: the person is a member,
+ * and the video is assembled, whether or not this lands.
+ *
+ * `kind` is the first word of every line it writes, so «who failed to send» is
+ * readable in the log without the sender's own wording.
+ *
+ * The tokens come as a thunk rather than as a list: reading them is part of
+ * what must not throw, and the two callers read different rows — one person's
+ * devices for an invite, a whole memory's for a finished video.
+ *
+ * ponytail: one shot, no retry. A notification lost to a network blip is lost
+ * for good — the thing it announces is still there, so the cost is that the
+ * person finds it on their own next time they open the app. If they start
+ * getting lost often enough to notice, this moves onto the `jobs` queue
+ * (architecture.md, «Очередь задач»), which already retries with backoff.
+ */
+async function send(
+  log: FastifyBaseLogger,
+  kind: "invite" | "montage",
+  memoryId: string,
+  message: Message,
+  tokensOf: () => Promise<{ token: string }[]>,
+): Promise<void> {
+  try {
+    const url = endpoint();
+    const tokens = await tokensOf();
+    // Nobody to tell, or nowhere to tell it: still worth a line, because this
+    // is the whole of what a developer sees on a machine without push.
+    if (!url || tokens.length === 0) {
+      log.info({ message, devices: tokens.length }, `${kind} push not sent`);
+      return;
+    }
+    // One request for every device: Expo takes an array, and the failure of one
+    // device is not worth a separate round trip.
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(tokens.map(({ token }) => ({ to: token, ...message }))),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    // Expo answers 200 with per-device tickets even when a device is stale, so
+    // a non-200 is about the request itself. Read as text: an error page is
+    // not JSON, and this must not throw on the way to the log.
+    if (!response.ok) {
+      log.warn(
+        { status: response.status, body: (await response.text()).slice(0, 500) },
+        `${kind} push refused`,
+      );
+      return;
+    }
+    log.info({ devices: tokens.length, memoryId }, `${kind} push sent`);
+  } catch (error) {
+    // Nothing here may reach what was already committed.
+    log.warn({ err: error }, `${kind} push failed`);
+  }
+}
+
 /**
  * Tells somebody they were added to a memory (decision-06). Never throws and
  * never makes the caller wait on anything but this: it is called **after** the
  * membership is committed, so the person is a member whether or not this
- * lands. Every failure — no tokens, pushing off, Expo down, Expo cross —
- * leaves a line in the log and nothing else.
- *
- * ponytail: one shot, no retry. A notification lost to a network blip is lost
- * for good — the membership is still there, so the cost is that the person
- * finds the memory on their own next time they open the app. If they start
- * getting lost often enough to notice, this moves onto the `jobs` queue
- * (architecture.md, «Очередь задач»), which already retries with backoff.
+ * lands — see `send`.
  */
 export async function notifyInvited(
   log: FastifyBaseLogger,
@@ -56,40 +113,46 @@ export async function notifyInvited(
     body: `${inviter} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
     data: { memoryId: memory.id },
   };
-  try {
-    const url = endpoint();
-    const tokens = await sql<{ token: string }[]>`
-      select token from push_tokens where user_id = ${invitee}
-    `;
-    // Nobody to tell, or nowhere to tell it: still worth a line, because this
-    // is the whole of what a developer sees on a machine without push.
-    if (!url || tokens.length === 0) {
-      log.info({ message, devices: tokens.length }, "invite push not sent");
-      return;
-    }
-    // One request for every device of theirs: Expo takes an array, and the
-    // failure of one device is not worth a separate round trip.
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(tokens.map(({ token }) => ({ to: token, ...message }))),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    // Expo answers 200 with per-device tickets even when a device is stale, so
-    // a non-200 is about the request itself. Read as text: an error page is
-    // not JSON, and this must not throw on the way to the log.
-    if (!response.ok) {
-      log.warn(
-        { status: response.status, body: (await response.text()).slice(0, 500) },
-        "invite push refused",
-      );
-      return;
-    }
-    log.info({ devices: tokens.length, memoryId: memory.id }, "invite push sent");
-  } catch (error) {
-    // Nothing here may reach the invite: it has already been committed.
-    log.warn({ err: error }, "invite push failed");
-  }
+  await send(
+    log,
+    "invite",
+    memory.id,
+    message,
+    () => sql<{ token: string }[]>`select token from push_tokens where user_id = ${invitee}`,
+  );
+}
+
+/**
+ * «Ролик готов» — to everyone in the memory, not only whoever ordered it
+ * (doc-03). Called from the internal route the montage worker knocks on once it
+ * has uploaded the video and marked the row `ready`; the video is there whether
+ * or not this lands, so this never throws — see `send`.
+ */
+export async function notifyMontageReady(
+  log: FastifyBaseLogger,
+  memory: { id: string; title: string },
+  montageId: string,
+): Promise<void> {
+  // Genderless like the invite line, and for the same reason — one string has
+  // to be right for whoever ordered it. `data` carries both ids: the app opens
+  // the memory's list of videos and puts this one on top.
+  const message = {
+    body: `Ролик из «${memory.title}» готов — посмотрите и поделитесь`,
+    data: { memoryId: memory.id, montageId },
+  };
+  await send(
+    log,
+    "montage",
+    memory.id,
+    message,
+    // Every device of every member, the organizer's included: a video is the
+    // reward for everyone who brought material, so nobody is left off.
+    () => sql<{ token: string }[]>`
+      select pt.token from push_tokens pt
+      join memory_members mm on mm.user_id = pt.user_id
+      where mm.memory_id = ${memory.id}
+    `,
+  );
 }
 
 /** Device registration. Mounted from `buildApp` after `authPlugin`. */
