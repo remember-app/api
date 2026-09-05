@@ -14,7 +14,12 @@ import { type AuthUser, bearerToken, hashToken, revoke, revokeByToken } from "./
 const usernamePattern = "^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,28}[a-zA-Z0-9]$";
 const usernameRegex = new RegExp(usernamePattern, "u");
 
-const usernameBody = {
+/**
+ * One shape for the two places a username is *proposed* — the body that claims
+ * one and the query that asks whether it is free. Both are answering the same
+ * question about the same string, so both are refused by the same rule.
+ */
+const usernameProposal = {
   type: "object",
   required: ["username"],
   additionalProperties: false,
@@ -85,7 +90,7 @@ export function identityRoutes(app: FastifyInstance) {
   // freed one is takeable by the next person the moment this commits.
   app.post<{ Body: { username: string } }>(
     "/me/username",
-    { preHandler: app.authenticate, schema: { body: usernameBody } },
+    { preHandler: app.authenticate, schema: { body: usernameProposal } },
     async (request, reply) => {
       try {
         const [user] = await sql<AuthUser[]>`
@@ -104,6 +109,23 @@ export function identityRoutes(app: FastifyInstance) {
         }
         throw error;
       }
+    },
+  );
+
+  // The same question the POST above answers by trying, asked without trying:
+  // the field can say «free» while it is still being typed. Sits under `/me`
+  // because the answer is about the caller — the one person for whom their own
+  // current username is free.
+  app.get<{ Querystring: { username: string } }>(
+    "/me/username/available",
+    { preHandler: app.authenticate, schema: { querystring: usernameProposal } },
+    async (request) => {
+      const holder = await findByUsername(request.query.username);
+      // Holding it yourself is not a collision: that POST is the same row, and
+      // the unique index has nothing to object to (see the comment above).
+      // A string that could never be held answers 400 from the schema, not
+      // `available: true` — a «free» the submit would then refuse is a lie.
+      return { available: !holder || holder.id === request.user.id };
     },
   );
 
