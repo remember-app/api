@@ -12,6 +12,14 @@ const endpoint = () => (process.env.EXPO_PUSH_URL ?? expoPushUrl).trim();
 /** How long a send may hang before it is somebody else's problem. */
 const timeoutMs = 5_000;
 
+/**
+ * How many messages Expo takes in one request — its own documented ceiling,
+ * and it answers `400` to the whole batch rather than trimming it. One
+ * person's devices never come near it; a memory's do, and a wedding whose
+ * hundred guests all installed the app is the case this product exists for.
+ */
+const expoBatch = 100;
+
 const registerBody = {
   type: "object",
   required: ["token"],
@@ -65,23 +73,32 @@ async function send(
       log.info({ message, devices: tokens.length }, `${kind} push not sent`);
       return;
     }
-    // One request for every device: Expo takes an array, and the failure of one
-    // device is not worth a separate round trip.
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(tokens.map(({ token }) => ({ to: token, ...message }))),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    // Expo answers 200 with per-device tickets even when a device is stale, so
-    // a non-200 is about the request itself. Read as text: an error page is
-    // not JSON, and this must not throw on the way to the log.
-    if (!response.ok) {
-      log.warn(
-        { status: response.status, body: (await response.text()).slice(0, 500) },
-        `${kind} push refused`,
-      );
-      return;
+    // One request for every device it can hold: Expo takes an array, and the
+    // failure of one device is not worth a separate round trip. Cut into
+    // hundreds because that is where Expo stops taking them — over the ceiling
+    // it refuses the batch whole, so an uncut send loses the notification for
+    // everybody rather than for the overflow. Cut here and not in the caller
+    // that needs it: the invite path holds one person's devices and never sees
+    // a second slice, and one rule beats two.
+    for (let from = 0; from < tokens.length; from += expoBatch) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          tokens.slice(from, from + expoBatch).map(({ token }) => ({ to: token, ...message })),
+        ),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      // Expo answers 200 with per-device tickets even when a device is stale,
+      // so a non-200 is about the request itself. Read as text: an error page
+      // is not JSON, and this must not throw on the way to the log.
+      if (!response.ok) {
+        log.warn(
+          { status: response.status, body: (await response.text()).slice(0, 500) },
+          `${kind} push refused`,
+        );
+        return;
+      }
     }
     log.info({ devices: tokens.length, memoryId }, `${kind} push sent`);
   } catch (error) {

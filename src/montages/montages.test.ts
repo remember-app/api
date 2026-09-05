@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { InjectOptions } from "fastify";
 import { afterAll, expect, test } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
@@ -211,6 +213,21 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   expect(bodiless.statusCode).toBe(201);
   expect(bodiless.json().params).toEqual({ target_seconds: 60 });
 
+  // The fourth shape, and the one that is *not* the same: a zero-length body
+  // under `content-type: application/json` is refused by Fastify's own JSON
+  // parser before any schema of ours is consulted. Pinned here because it is
+  // the shape a client produces by accident — a POST with the header set out
+  // of habit and nothing to send — and the README has to name it rather than
+  // promise «без тела» works whatever the headers say.
+  const emptyWithType = await app.inject({
+    method: "POST",
+    url: `/memories/${memory.id}/montages`,
+    headers: { authorization: `Bearer ${organizer.token}`, "content-type": "application/json" },
+    payload: "",
+  });
+  expect(emptyWithType.statusCode).toBe(400);
+  expect(emptyWithType.json().code).toBe("FST_ERR_CTP_EMPTY_JSON_BODY");
+
   const nulled = await app.inject({
     method: "POST",
     url: `/memories/${memory.id}/montages`,
@@ -410,6 +427,14 @@ test("the worker's knock needs the secret and tells the whole memory", async () 
       expect((await knock(app, montage.id, secret)).statusCode).toBe(401);
     }
 
+    // A row nobody has rendered yet. The secret is right, the id is real, and
+    // the answer is still 404: this route only knows how to say «готов», so a
+    // knock over a `queued` row must not light up the memory's phones.
+    const unrendered = (await order(app, organizer.token, memory.id, {})).json();
+    const early = await knock(app, unrendered.id, "s3cret");
+    expect(early.statusCode).toBe(404);
+    expect(early.body).toBe('{"error":"not found"}');
+
     // Pushing switched off, so what would have gone out is in the log — which
     // is also the whole of what a developer sees on a machine without push.
     process.env.EXPO_PUSH_URL = "";
@@ -435,6 +460,16 @@ test("the worker's knock needs the secret and tells the whole memory", async () 
     // the person who ordered it is not the only one told (doc-03).
     expect(logged?.devices).toBe(2);
 
+    // The scheme is case-insensitive here because it is everywhere else in the
+    // service (RFC 7235, and clients do send it lowercase): the same header
+    // must not open the session routes and get turned away by this one.
+    const lowercase = await app.inject({
+      method: "POST",
+      url: `/internal/montages/${montage.id}/ready`,
+      headers: { authorization: "bearer s3cret" },
+    });
+    expect(lowercase.statusCode).toBe(200);
+
     // A montage nobody has, and an id that is not one: the same 404 the rest of
     // the service gives, and no notification behind it.
     for (const id of [randomUUID(), "not-a-uuid"]) {
@@ -458,5 +493,58 @@ test("the worker's knock needs the secret and tells the whole memory", async () 
   }
 
   await sql`delete from push_tokens where token in ${sql(devices)}`;
+  await app.close();
+});
+
+test("a memory with more devices than Expo takes at once is told in slices", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3);
+  const montage = (await order(app, organizer.token, memory.id, {})).json();
+  await assembled(montage.id);
+
+  // One over Expo's ceiling of 100 messages per request. Sent whole it would
+  // come back 400 and nobody at all would hear about the video — the wedding
+  // this product is for is exactly the size that trips it.
+  const devices = Array.from({ length: 101 }, () => ({
+    token: `ExponentPushToken[${randomUUID()}]`,
+    user_id: organizer.user.id,
+  }));
+  await sql`insert into push_tokens ${sql(devices, "token", "user_id")}`;
+
+  // Expo, stood in for, the way auth.test.ts stands in for Resend: a host of
+  // its own, so nothing here needs a way out to the internet. It counts how
+  // many messages each request carried.
+  const batches: number[] = [];
+  const expo = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      batches.push(JSON.parse(Buffer.concat(chunks).toString()).length);
+      response.writeHead(200, { "content-type": "application/json" }).end('{"data":[]}');
+    });
+  });
+  await new Promise<void>((resolve) => {
+    expo.listen(0, "127.0.0.1", resolve);
+  });
+
+  const previousToken = process.env.INTERNAL_WORKER_TOKEN;
+  const previousPush = process.env.EXPO_PUSH_URL;
+  try {
+    process.env.INTERNAL_WORKER_TOKEN = "s3cret";
+    process.env.EXPO_PUSH_URL = `http://127.0.0.1:${(expo.address() as AddressInfo).port}`;
+    expect((await knock(app, montage.id, "s3cret")).statusCode).toBe(200);
+  } finally {
+    if (previousToken === undefined) delete process.env.INTERNAL_WORKER_TOKEN;
+    else process.env.INTERNAL_WORKER_TOKEN = previousToken;
+    if (previousPush === undefined) delete process.env.EXPO_PUSH_URL;
+    else process.env.EXPO_PUSH_URL = previousPush;
+    expo.close();
+  }
+
+  expect(batches).toEqual([100, 1]);
+
+  await sql`delete from push_tokens where token in ${sql(devices.map((d) => d.token))}`;
   await app.close();
 });
