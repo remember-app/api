@@ -69,10 +69,24 @@ const remove = (app: App, token: string, memoryId: string, userId: string) =>
 const roster = (app: App, token: string, memoryId: string) =>
   app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/members` }));
 
+const setStatus = (app: App, token: string, memoryId: string, status: unknown) =>
+  app.inject(
+    as(token, {
+      method: "POST",
+      url: `/memories/${memoryId}/contribution-status`,
+      payload: { status },
+    }),
+  );
+
 const roleOf = (memoryId: string, userId: string) =>
   sql<{ role: string }[]>`
     select role from memory_members where memory_id = ${memoryId} and user_id = ${userId}
   `.then((rows) => rows[0]?.role);
+
+const statusOf = (memoryId: string, userId: string) =>
+  sql<{ status: string }[]>`
+    select status from memory_members where memory_id = ${memoryId} and user_id = ${userId}
+  `.then((rows) => rows[0]?.status);
 
 /**
  * Pushes never leave the test machine: this points the sender at a port
@@ -444,6 +458,57 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   await app.close();
 });
 
+// The route itself has no role gate — a status grants nothing, per members.ts — so what is worth
+// pinning is that every standing may use it, an unknown value is a 400 and not a CHECK violation,
+// and a non-member gets the house 404 rather than a straight write into a row that is not theirs.
+// `«nothing» is overridden by an upload landing` and `«done» survives more material` are covered
+// in upload.test.ts, against this same route.
+test("contribution status: every standing may set it, an unknown value is refused, a stranger gets the house 404", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const viewer = await person(app);
+  const stranger = await person(app);
+  const created = await createMemory(app, organizer.token);
+
+  for (const [who, role] of [
+    [contributor, "contributor"],
+    [viewer, "viewer"],
+  ] as const) {
+    expect(
+      (await invite(app, organizer.token, created.id, { username: who.username, role })).statusCode,
+    ).toBe(200);
+  }
+
+  // Both terminal answers, from all three standings — a viewer above all, since doc-01 gives them
+  // no power to upload and this is exactly the case review m-8 fixed the client's gating for.
+  for (const who of [organizer, contributor, viewer]) {
+    for (const status of ["nothing", "done"] as const) {
+      const said = await setStatus(app, who.token, created.id, status);
+      expect(said.statusCode).toBe(200);
+      expect(said.json()).toEqual({ status });
+      expect(await statusOf(created.id, who.id)).toBe(status);
+    }
+  }
+
+  // Not one of the two terminal answers this route accepts: `not_started` and `more_coming` are
+  // the api's own writes, and anything outside the four is nonsense from the client.
+  for (const bogus of ["not_started", "more_coming", "maybe", ""]) {
+    const refused = await setStatus(app, organizer.token, created.id, bogus);
+    expect(refused.statusCode).toBe(400);
+  }
+
+  // A stranger to this memory, one that never existed, and an id that is not a uuid — the same
+  // 404 the family gives everywhere else, and nothing about the attempt writes a row.
+  for (const id of [created.id, randomUUID(), "not-a-uuid"]) {
+    const refused = await setStatus(app, stranger.token, id, "done");
+    expect(refused.statusCode).toBe(404);
+    expect(refused.body).toBe('{"error":"not found"}');
+  }
+
+  await app.close();
+});
+
 test("push tokens register idempotently and follow the device", async () => {
   const { app } = buildTestApp();
   const first = await person(app);
@@ -567,8 +632,13 @@ test("every new route is behind the session check", async () => {
     app.inject({ method: "POST", url: "/invites/accept", payload: { token: "x" } }),
     app.inject({ method: "DELETE", url: `/memories/${id}/members/${id}` }),
     app.inject({ method: "POST", url: "/me/push-tokens", payload: { token: "x" } }),
+    app.inject({
+      method: "POST",
+      url: `/memories/${id}/contribution-status`,
+      payload: { status: "done" },
+    }),
   ]);
-  expect(answers.map((a) => a.statusCode)).toEqual([401, 401, 401, 401, 401, 401, 401]);
+  expect(answers.map((a) => a.statusCode)).toEqual([401, 401, 401, 401, 401, 401, 401, 401]);
 
   await app.close();
 });

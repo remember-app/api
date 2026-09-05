@@ -100,6 +100,12 @@ async function upload(app: App, token: string, memoryId: string, capturedAt: str
 const gallery = (app: App, token: string, memoryId: string) =>
   app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/media` }));
 
+const download = (app: App, token: string, memoryId: string, mediaId: string) =>
+  app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/media/${mediaId}/download` }));
+
+const downloadAll = (app: App, token: string, memoryId: string) =>
+  app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/media/download` }));
+
 const remove = (app: App, token: string, memoryId: string, mediaId: string) =>
   app.inject(as(token, { method: "DELETE", url: `/memories/${memoryId}/media/${mediaId}` }));
 
@@ -200,6 +206,75 @@ test("the gallery is open to every member and closed to everyone else", async ()
 
   const anonymous = await app.inject({ method: "GET", url: `/memories/${memory.id}/media` });
   expect(anonymous.statusCode).toBe(401);
+
+  await app.close();
+});
+
+test("the original is one signed link away for every member, one file or the whole gallery", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
+  const elsewhere = await createMemory(app, organizer.token);
+
+  // Shot second, uploaded first — the whole-gallery route orders the same way the gallery does.
+  const late = await upload(app, organizer.token, memory.id, "2026-09-02T20:00:00+03:00");
+  const early = await upload(app, contributor.token, memory.id, "2026-09-02T19:00:00+03:00");
+  // Still in flight: no bytes in the store, so neither route may hand out a link to it.
+  const inFlight = await intent(app, contributor.token, memory.id, "2026-09-02T21:00:00+03:00");
+  const stray = await upload(app, organizer.token, elsewhere.id, "2026-09-02T19:00:00+03:00");
+
+  // «скачивать оригиналы» is every member's, `viewer` included — the matrix gives it to all three,
+  // and the link is the whole of what the check gives them.
+  for (const token of [organizer.token, contributor.token, viewer.token]) {
+    const single = await download(app, token, memory.id, early.id);
+    expect(single.statusCode).toBe(200);
+    const url = new URL(single.json().url);
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+
+    const all = await downloadAll(app, token, memory.id);
+    expect(all.statusCode).toBe(200);
+    const items = all.json() as { id: string; kind: string; url: string }[];
+    expect(items.map((item) => item.id)).toEqual([early.id, late.id]);
+    expect(items.some((item) => item.id === inFlight.id)).toBe(false);
+    expect(items[0]).toMatchObject({ id: early.id, kind: "photo" });
+  }
+
+  // Not merely shaped right: the link opens the real bytes that were sent.
+  const opened = await fetch(
+    new URL((await download(app, viewer.token, memory.id, early.id)).json().url),
+  );
+  expect(opened.status).toBe(200);
+  expect((await opened.arrayBuffer()).byteLength).toBe(4096);
+
+  // A stranger to the memory gets the house 404 from both routes, byte for byte — standing in the
+  // memory is the whole of the check, and there is no lesser answer for somebody outside it.
+  for (const answer of [
+    await download(app, stranger.token, memory.id, early.id),
+    await downloadAll(app, stranger.token, memory.id),
+  ]) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  // Still in flight, never existed, not a uuid, and a record that is real but belongs to another
+  // memory — the single-file route gives the same 404 to all four, and the attempt reads nothing.
+  for (const id of [inFlight.id, randomUUID(), "not-a-uuid", stray.id]) {
+    const answer = await download(app, organizer.token, memory.id, id);
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  // No session at all, on both routes.
+  expect(
+    (await app.inject({ method: "GET", url: `/memories/${memory.id}/media/${early.id}/download` }))
+      .statusCode,
+  ).toBe(401);
+  expect(
+    (await app.inject({ method: "GET", url: `/memories/${memory.id}/media/download` })).statusCode,
+  ).toBe(401);
 
   await app.close();
 });
