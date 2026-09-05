@@ -1,5 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { sql } from "../db.ts";
+import { downloadTtlSeconds } from "../media/config.ts";
+import { downloadUrl, storageConfigured } from "../media/r2.ts";
 
 /** The three levels architecture.md fixes; the matrix is in the README. */
 export type MemberRole = "organizer" | "contributor" | "viewer";
@@ -142,19 +144,54 @@ export function memoriesPlugin(app: FastifyInstance) {
         select created.*, 'organizer'::text as role from created
       `;
       if (!memory) throw new Error("insert into memories returned no row");
-      return reply.code(201).send(memory);
+      // Empty rather than absent: the listing answers with exactly this shape,
+      // and the client prepends what it just created to the list it holds.
+      // A memory a moment old has no material, so there is nothing to sign.
+      return reply.code(201).send({ ...memory, recent_thumbnail_urls: [] });
     },
   );
 
   // The main screen. The organizer has a memory_members row like everyone
   // else, so «organizer or member» needs no union — it is one join.
   app.get("/memories", { preHandler: app.authenticate }, async (request) => {
-    return sql<(Memory & { role: MemberRole })[]>`
-      select m.*, mm.role
+    // The card shows a couple of real frames from inside the memory, so the
+    // keys ride along on the listing itself: this screen holds every memory one
+    // is in, and a call per card to fetch them would be a round trip per card.
+    // How many frames the card draws is the client's business — it gets at most
+    // two, and `media_count` above tells it how much else there is («+126»).
+    const rows = await sql<(Memory & { role: MemberRole; thumbnail_keys: string[] })[]>`
+      select m.*, mm.role,
+        array(
+          select mi.thumbnail_key from media_items mi
+          -- Ready and no earlier: the thumbnail key is the montage worker's to
+          -- write, and before it there is nothing behind the column to sign.
+          where mi.memory_id = m.id and mi.status = 'ready' and mi.thumbnail_key is not null
+          -- The gallery's order (src/media/gallery.ts) read backwards: by when
+          -- it was shot, falling back to arrival for a file that carries no
+          -- date. «Последние кадры» must mean on the card what it means at the
+          -- end of the gallery.
+          order by coalesce(mi.captured_at, mi.created_at) desc, mi.id desc
+          limit 2
+        ) as thumbnail_keys
       from memory_members mm
       join memories m on m.id = mm.memory_id
       where mm.user_id = ${request.user.id}
       order by m.event_start desc, m.created_at desc
     `;
+
+    // Signing is a local HMAC and not a request, so two per memory costs
+    // nothing here. An unconfigured bucket is an empty tail rather than the
+    // gallery's 503: there the links are the whole answer, here they are one
+    // field of the main screen, which has to draw either way.
+    const ttl = downloadTtlSeconds();
+    const configured = storageConfigured();
+    return Promise.all(
+      rows.map(async ({ thumbnail_keys, ...memory }) => ({
+        ...memory,
+        recent_thumbnail_urls: configured
+          ? await Promise.all(thumbnail_keys.map((key) => downloadUrl(key, ttl)))
+          : [],
+      })),
+    );
   });
 }
