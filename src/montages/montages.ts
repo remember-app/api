@@ -1,6 +1,7 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { positive } from "../auth/config.ts";
+import { env, positive } from "../auth/config.ts";
+import { bearerToken, hashToken } from "../auth/session.ts";
 import { sql } from "../db.ts";
 import { downloadTtlSeconds } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
@@ -50,32 +51,47 @@ const musicTracks = ["warm", "bright", "calm"] as const;
 const minReadyItems = 3;
 
 /**
- * How long a montage is asked to be. In the environment for the reason the
- * media limits are (src/media/config.ts): these move once real material lands,
- * and there is no admin screen to move them from. The default is the one
- * architecture.md names, ~60 seconds.
+ * How long a montage is asked to be, and the band it may be asked for inside.
+ * In the environment for the reason the media limits are (src/media/config.ts):
+ * these move once real material lands, and there is no admin screen to move
+ * them from. The default is the one architecture.md names, ~60 seconds.
  */
-const targetSeconds = () => positive("MONTAGE_TARGET_SECONDS", 60);
 const minTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS_MIN", 15);
 const maxTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS_MAX", 300);
 
+/**
+ * Held inside that band rather than beside it: a default of 600 against a
+ * maximum of 300 would write into `params` — and so into the worker's job — a
+ * length no client could have asked for, because the schema refuses everyone
+ * else outside it. Clamped rather than obeyed, which is the rule `positive`
+ * itself follows about a value that is a typo instead of an intent.
+ */
+const targetSeconds = () =>
+  Math.min(
+    Math.max(positive("MONTAGE_TARGET_SECONDS", 60), minTargetSeconds()),
+    maxTargetSeconds(),
+  );
+
 /** The shared secret the worker knocks with; unset means nobody may knock. */
-const workerToken = () => process.env.INTERNAL_WORKER_TOKEN?.trim() || undefined;
+const workerToken = () => env("INTERNAL_WORKER_TOKEN");
 
 /**
- * Compared through a digest rather than with `===`: both sides are hashed
- * first, so the comparison is over two 32-byte buffers whatever the lengths
- * were, and `timingSafeEqual` has nothing to bail out of early. A plain string
- * compare leaks the secret's prefix to whoever is willing to measure.
+ * Read with the session check's own two helpers, so this route takes an
+ * `Authorization` header by the same rule as every other one — `bearerToken`
+ * is case-insensitive on the scheme because RFC 7235 is and clients do send
+ * `bearer`, and a second parser here would 401 a worker the rest of the
+ * service would have let in.
+ *
+ * Compared through a digest rather than with `===`: `hashToken` puts both
+ * sides into 32-byte buffers whatever the lengths were, so `timingSafeEqual`
+ * has nothing to bail out of early. A plain string compare leaks the secret's
+ * prefix to whoever is willing to measure.
  */
-const digest = (value: string) => createHash("sha256").update(value).digest();
-
 function knockedWithTheSecret(header: string | undefined): boolean {
   const secret = workerToken();
   // No secret configured is not «let everyone in»: it is «this route is shut».
   if (!secret) return false;
-  const given = header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  return timingSafeEqual(digest(given), digest(secret));
+  return timingSafeEqual(hashToken(bearerToken(header)), hashToken(secret));
 }
 
 /**
@@ -108,7 +124,11 @@ export function montageRoutes(app: FastifyInstance) {
   //
   // Nullable so that «no preferences at all» may arrive as an empty body, a
   // literal `null` or `{}` — three shapes of the same thing, and refusing two
-  // of them would be a client bug over nothing.
+  // of them would be a client bug over nothing. Not four: a zero-length body
+  // sent *with* `content-type: application/json` never reaches this schema,
+  // because Fastify's JSON parser refuses it first. That one is in the README
+  // rather than worked around — undoing it means replacing the JSON parser for
+  // every route in the service to soften one client's habit on one of them.
   const orderBody = {
     type: ["object", "null"],
     additionalProperties: false,
@@ -285,10 +305,17 @@ export function montageRoutes(app: FastifyInstance) {
       // The title is what the notification is about, so it is read here and not
       // in the sender — one query, and the join is also the check that the
       // montage exists at all.
+      //
+      // `ready` is in the WHERE for the reason it is in retry's UPDATE: this
+      // route only knows how to say «ролик готов», so a row that is still
+      // queued, still rendering or fell over has nothing for it to announce.
+      // Without the clause a knock replayed — or aimed at any id at all by
+      // whoever holds the secret — lights up every phone in the memory with a
+      // link to a video that is not there.
       const [row] = await sql<{ memory_id: string; title: string }[]>`
         select m.memory_id, mem.title from montages m
         join memories mem on mem.id = m.memory_id
-        where m.id = ${montageId}
+        where m.id = ${montageId} and m.status = 'ready'
       `;
       if (!row) return reply.code(404).send(notFound);
 
