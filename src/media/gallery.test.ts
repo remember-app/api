@@ -52,8 +52,8 @@ const createMemory = async (app: App, token: string) => {
 };
 
 /** A member of the given standing, put in the way an invite would put them. */
-async function member(app: App, lines: string[], memoryId: string, role: MemberRole, by: string) {
-  const person = await signIn(app, lines, email());
+async function member(app: App, memoryId: string, role: MemberRole, by: string) {
+  const person = await signIn(app, email());
   await sql`
     insert into memory_members (memory_id, user_id, role, invited_by)
     values (${memoryId}, ${person.user.id}, ${role}, ${by})
@@ -138,12 +138,12 @@ const leftovers = async (memoryId: string, userId?: string) => {
 };
 
 test("the gallery is open to every member and closed to everyone else", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
-  const stranger = await signIn(app, lines, email());
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
 
   // Shot second, uploaded first: the gallery is ordered by when a thing was
   // taken, not by when it arrived.
@@ -205,12 +205,12 @@ test("the gallery is open to every member and closed to everyone else", async ()
 });
 
 test("own material anyone deletes, any material the organizer, a neighbour's nobody", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const anna = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const boris = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
+  const anna = await member(app, memory.id, "contributor", organizer.user.id);
+  const boris = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
   const elsewhere = await createMemory(app, organizer.token);
 
   const hers = await upload(app, anna.token, memory.id, "2026-09-02T19:00:00+03:00");
@@ -258,11 +258,11 @@ test("own material anyone deletes, any material the organizer, a neighbour's nob
 });
 
 test("leaving and being excluded both take the person's material with them", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const anna = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const boris = await member(app, lines, memory.id, "contributor", organizer.user.id);
+  const anna = await member(app, memory.id, "contributor", organizer.user.id);
+  const boris = await member(app, memory.id, "contributor", organizer.user.id);
 
   const hers = await upload(app, anna.token, memory.id, "2026-09-02T19:00:00+03:00");
   // A record still on its way out when she goes. It never moved a counter, so

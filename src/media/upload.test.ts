@@ -73,8 +73,8 @@ const intent = (app: App, token: string, memoryId: string, payload: Record<strin
 const photo = { kind: "photo", size_bytes: 1024, captured_at: "2026-09-02T19:30:00+03:00" };
 
 /** A member of the given standing, put in the way an invite would put them. */
-async function member(app: App, lines: string[], memoryId: string, role: MemberRole, by: string) {
-  const person = await signIn(app, lines, email());
+async function member(app: App, memoryId: string, role: MemberRole, by: string) {
+  const person = await signIn(app, email());
   await sql`
     insert into memory_members (memory_id, user_id, role, invited_by)
     values (${memoryId}, ${person.user.id}, ${role}, ${by})
@@ -105,12 +105,12 @@ async function sendParts(
 }
 
 test("who may put material in: viewer no, contributor and organizer yes, stranger sees nothing", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
-  const stranger = await signIn(app, lines, email());
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
 
   for (const token of [organizer.token, contributor.token]) {
     const asked = await intent(app, token, memory.id, photo);
@@ -158,8 +158,8 @@ test("who may put material in: viewer no, contributor and organizer yes, strange
 });
 
 test("every limit refuses before anything is written, and each one comes from the environment", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   process.env.MEDIA_MAX_FILE_BYTES = "1024";
@@ -212,8 +212,8 @@ test("every limit refuses before anything is written, and each one comes from th
 });
 
 test("without a bucket the upload says so rather than blaming the caller", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   delete process.env.R2_ENDPOINT;
@@ -225,10 +225,10 @@ test("without a bucket the upload says so rather than blaming the caller", async
 });
 
 test("the callback moves the counters, queues the preview, and repeats harmlessly", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
 
   const bytes = Buffer.alloc(4096, 3);
   const asked = await intent(app, contributor.token, memory.id, {
@@ -306,8 +306,8 @@ test("the callback moves the counters, queues the preview, and repeats harmlessl
 });
 
 test("a stale link is asked for again: same record, same upload, parts already sent survive", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   const bytes = Buffer.alloc(2048, 9);
@@ -358,8 +358,8 @@ test("a stale link is asked for again: same record, same upload, parts already s
 });
 
 test("a file bigger than one part is handed one signed link per part", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   // 8 MiB parts by default, so this is three of them, the last a stub. Nothing
@@ -383,8 +383,8 @@ test("a file bigger than one part is handed one signed link per part", async () 
 // them sits a presigned PUT that carries no length of its own, which is what
 // this refuses to let through.
 test("a file that arrives larger than it was declared is refused, not counted", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   process.env.MEDIA_MAX_FILE_BYTES = "1024";
@@ -420,8 +420,8 @@ test("a file that arrives larger than it was declared is refused, not counted", 
 // The etag goes into the XML the api signs with its own credentials, so it is
 // pinned to the shape S3 receipts a part with rather than «any string».
 test("an etag that is not one is refused at the door", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
 
   const asked = await intent(app, organizer.token, memory.id, photo);
@@ -435,6 +435,100 @@ test("an etag that is not one is refused at the door", async () => {
     }),
   );
   expect(bad.statusCode).toBe(400);
+
+  await app.close();
+});
+
+// «Ждать нечего» is a claim about the future, and a file landing is the fact
+// that refutes it — doc-06's roster is «от кого ждать нечего», so it may not go
+// on saying that over somebody whose photos are in the gallery. The question is
+// not re-asked: `first_upload` stays false, because the person has already had
+// their say and only the standing needed correcting.
+test("material arriving overrides a «nothing to add», without asking again", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+
+  const said = await app.inject(
+    as(contributor.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/contribution-status`,
+      payload: { status: "nothing" },
+    }),
+  );
+  expect(said.statusCode).toBe(200);
+
+  const standing = async () => {
+    const [row] = await sql<{ status: string }[]>`
+      select status from memory_members
+      where memory_id = ${memory.id} and user_id = ${contributor.user.id}
+    `;
+    return row?.status;
+  };
+  expect(await standing()).toBe("nothing");
+
+  const bytes = Buffer.alloc(2048, 7);
+  const asked = await intent(app, contributor.token, memory.id, {
+    ...photo,
+    size_bytes: bytes.length,
+  });
+  const { id, upload } = asked.json();
+  const parts = await sendParts(upload.parts, [bytes]);
+
+  const done = await app.inject(
+    as(contributor.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/media/${id}/complete`,
+      payload: { parts },
+    }),
+  );
+  expect(done.statusCode).toBe(200);
+  expect(done.json()).toEqual({ id, status: "processing", first_upload: false });
+  expect(await standing()).toBe("more_coming");
+
+  await app.close();
+});
+
+// The other terminal answer is left alone on purpose: «я всё загрузил» is made
+// out of date by more material, not untrue, and re-opening it would re-ask a
+// question already answered.
+test("«done» survives more material arriving", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+
+  await app.inject(
+    as(contributor.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/contribution-status`,
+      payload: { status: "done" },
+    }),
+  );
+
+  const bytes = Buffer.alloc(2048, 9);
+  const asked = await intent(app, contributor.token, memory.id, {
+    ...photo,
+    size_bytes: bytes.length,
+  });
+  const { id, upload } = asked.json();
+  const parts = await sendParts(upload.parts, [bytes]);
+
+  const done = await app.inject(
+    as(contributor.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/media/${id}/complete`,
+      payload: { parts },
+    }),
+  );
+  expect(done.json()).toEqual({ id, status: "processing", first_upload: false });
+
+  const [row] = await sql<{ status: string }[]>`
+    select status from memory_members
+    where memory_id = ${memory.id} and user_id = ${contributor.user.id}
+  `;
+  expect(row?.status).toBe("done");
 
   await app.close();
 });

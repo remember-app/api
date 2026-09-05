@@ -49,9 +49,9 @@ const sessions = (app: App, token: string) =>
 const me = (app: App, token: string) => app.inject(as(token, { method: "GET", url: "/me" }));
 
 test("a username is held case-insensitively: FOO blocks foo", async () => {
-  const { app, lines } = buildTestApp();
-  const a = await signIn(app, lines, email());
-  const b = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const a = await signIn(app, email());
+  const b = await signIn(app, email());
   const name = username();
 
   const claimed = await setUsername(app, a.token, name.toUpperCase());
@@ -74,9 +74,9 @@ test("a username is held case-insensitively: FOO blocks foo", async () => {
 });
 
 test("a freed username is free at once, and the id behind it is stable", async () => {
-  const { app, lines } = buildTestApp();
-  const a = await signIn(app, lines, email());
-  const b = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const a = await signIn(app, email());
+  const b = await signIn(app, email());
   const [first, second] = [username(), username()];
 
   expect((await setUsername(app, a.token, first)).statusCode).toBe(200);
@@ -97,8 +97,8 @@ test("a freed username is free at once, and the id behind it is stable", async (
 });
 
 test("the username format is enforced before the database sees it", async () => {
-  const { app, lines } = buildTestApp();
-  const { token } = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const { token } = await signIn(app, email());
   const name = username();
 
   const bad = [
@@ -140,9 +140,9 @@ test("the username format is enforced before the database sees it", async () => 
 });
 
 test("a nick can be asked about before it is claimed, and one's own reads free", async () => {
-  const { app, lines } = buildTestApp();
-  const a = await signIn(app, lines, email());
-  const b = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const a = await signIn(app, email());
+  const b = await signIn(app, email());
   const name = username();
 
   const free = await isFree(app, b.token, name);
@@ -188,9 +188,9 @@ test("a nick can be asked about before it is claimed, and one's own reads free",
 });
 
 test("GET /users finds a nick whatever its case, and 404s an unknown one", async () => {
-  const { app, lines } = buildTestApp();
-  const a = await signIn(app, lines, email());
-  const b = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const a = await signIn(app, email());
+  const b = await signIn(app, email());
   const name = username();
   await setUsername(app, a.token, name.toUpperCase());
 
@@ -240,15 +240,15 @@ test("GET /users finds a nick whatever its case, and 404s an unknown one", async
 });
 
 test("GET /auth/sessions lists the live ones and marks exactly one current", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const address = email();
   // The same address three times: one user, three sessions.
   const [a, b, c] = [
-    await signIn(app, lines, address),
-    await signIn(app, lines, address),
-    await signIn(app, lines, address),
+    await signIn(app, address),
+    await signIn(app, address),
+    await signIn(app, address),
   ];
-  const stranger = await signIn(app, lines, email());
+  const stranger = await signIn(app, email());
 
   const listed = await sessions(app, c.token);
   expect(listed.statusCode).toBe(200);
@@ -277,10 +277,10 @@ test("GET /auth/sessions lists the live ones and marks exactly one current", asy
 });
 
 test("revoking a session kills that token, and only its owner may do it", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const address = email();
-  const [phone, laptop] = [await signIn(app, lines, address), await signIn(app, lines, address)];
-  const stranger = await signIn(app, lines, email());
+  const [phone, laptop] = [await signIn(app, address), await signIn(app, address)];
+  const stranger = await signIn(app, email());
 
   const [target] = await sql<{ id: string }[]>`
     select id from sessions where token_hash = ${hashToken(phone.token)}
@@ -314,9 +314,9 @@ test("revoking a session kills that token, and only its owner may do it", async 
 });
 
 test("logout kills the token it was called with and leaves the others alone", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const address = email();
-  const [phone, laptop] = [await signIn(app, lines, address), await signIn(app, lines, address)];
+  const [phone, laptop] = [await signIn(app, address), await signIn(app, address)];
 
   const logout = (token: string) => app.inject(as(token, { method: "POST", url: "/auth/logout" }));
 

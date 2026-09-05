@@ -1,4 +1,4 @@
-import { emailLoginTtlMinutes } from "./config.ts";
+import { emailLoginTtlMinutes, env } from "./config.ts";
 
 /**
  * The one letter this product sends: the sign-in link. Resend, over its plain
@@ -9,15 +9,19 @@ import { emailLoginTtlMinutes } from "./config.ts";
  * are a lot of machinery for a pilot of twenty people.)
  */
 
-const env = (name: string) => process.env[name]?.trim() || undefined;
-
 /**
  * Where the letter goes. Overridable only so tests can aim it at a host of
  * their own instead of the real API — the same knob, for the same reason, as
  * `EXPO_PUSH_URL` in `src/memories/push.ts`.
+ *
+ * Through `env` and not `process.env` directly, which is not a tidiness point:
+ * `??` alone lets `RESEND_API_URL=` — present and empty, which `.env.example`
+ * invites by listing the key — through as `""`, and `fetch("")` throws before
+ * a request is made. Every sign-in would then answer 502 with `mailConfigured()`
+ * still saying everything is fine. Blank is unset here, as everywhere else.
  */
 const resendUrl = "https://api.resend.com/emails";
-const endpoint = () => (process.env.RESEND_API_URL ?? resendUrl).trim();
+const endpoint = () => env("RESEND_API_URL") ?? resendUrl;
 
 /** How long a send may hang before the person waiting is told it failed. */
 const timeoutMs = 5_000;

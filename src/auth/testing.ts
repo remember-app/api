@@ -41,14 +41,9 @@ export function buildTestApp() {
  * the package that merely wants somebody signed in would otherwise need mail
  * keys and a way out to the network. That route is exercised in `auth.test.ts`,
  * which stands a host of its own in for the provider.
- *
- * `_lines` is unused and stays in the signature because the whole package
- * calls this with it; taking it out is a rename across files that belong to
- * other work right now.
  */
 export async function signIn(
   app: ReturnType<typeof buildTestApp>["app"],
-  _lines: string[],
   email: string,
 ): Promise<{ token: string; user: AuthUser }> {
   const token = await startEmailLogin(email);

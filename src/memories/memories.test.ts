@@ -51,8 +51,8 @@ function withProbe(app: App) {
 const start = "2026-09-02T18:00:00+03:00";
 
 test("creating a memory needs a title and a start, and refuses a backwards window", async () => {
-  const { app, lines } = buildTestApp();
-  const { token } = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const { token } = await signIn(app, email());
 
   const missingTitle = await create(app, token, { event_start: start });
   expect(missingTitle.statusCode).toBe(400);
@@ -86,8 +86,8 @@ test("creating a memory needs a title and a start, and refuses a backwards windo
 });
 
 test("creating a memory makes the creator its organizer, with counters at zero", async () => {
-  const { app, lines } = buildTestApp();
-  const { token, user } = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
   const name = title();
 
   const created = await create(app, token, { title: `  ${name}  `, event_start: start });
@@ -124,9 +124,9 @@ test("creating a memory makes the creator its organizer, with counters at zero",
 });
 
 test("the listing holds the caller's memories and nobody else's", async () => {
-  const { app, lines } = buildTestApp();
-  const mine = await signIn(app, lines, email());
-  const theirs = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const mine = await signIn(app, email());
+  const theirs = await signIn(app, email());
 
   const older = await create(app, mine.token, {
     title: title(),
@@ -184,8 +184,8 @@ const ready = (
 const keysOf = (urls: string[]) => urls.map((url) => new URL(url).pathname.split("/").pop());
 
 test("the listing carries the last frames of every memory in one answer", async () => {
-  const { app, lines } = buildTestApp();
-  const { token, user } = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
 
   // Three memories, ordered by their event so the listing's order is fixed:
   // one with nothing in it, one with a single frame, one with a pile.
@@ -240,9 +240,9 @@ test("the listing carries the last frames of every memory in one answer", async 
 });
 
 test("the membership check hands the caller's role to the route", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const probe = withProbe(app);
-  const organizer = await signIn(app, lines, email());
+  const organizer = await signIn(app, email());
 
   const created = await create(app, organizer.token, {
     title: title(),
@@ -256,7 +256,7 @@ test("the membership check hands the caller's role to the route", async () => {
   for (const role of roles) {
     let token = organizer.token;
     if (role !== "organizer") {
-      const member = await signIn(app, lines, email());
+      const member = await signIn(app, email());
       token = member.token;
       await sql`
         insert into memory_members (memory_id, user_id, role, invited_by)
@@ -279,10 +279,10 @@ test("the membership check hands the caller's role to the route", async () => {
 });
 
 test("a non-member, a missing memory and a malformed id are one and the same 404", async () => {
-  const { app, lines } = buildTestApp();
+  const { app } = buildTestApp();
   const probe = withProbe(app);
-  const organizer = await signIn(app, lines, email());
-  const stranger = await signIn(app, lines, email());
+  const organizer = await signIn(app, email());
+  const stranger = await signIn(app, email());
 
   const memory = (
     await create(app, organizer.token, { title: title(), event_start: start })
@@ -320,7 +320,7 @@ test("mounting the check without the session check ahead of it is a loud failure
     { preHandler: app.requireMembership },
     async () => ({}),
   );
-  const { token } = await signIn(app, lines, email());
+  const { token } = await signIn(app, email());
 
   const answer = await app.inject(
     as(token, { method: "GET", url: `/memories/${randomUUID()}/misordered` }),

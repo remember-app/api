@@ -54,8 +54,8 @@ const createMemory = async (app: App, token: string) => {
 };
 
 /** A member of the given standing, put in the way an invite would put them. */
-async function member(app: App, lines: string[], memoryId: string, role: MemberRole, by: string) {
-  const person = await signIn(app, lines, email());
+async function member(app: App, memoryId: string, role: MemberRole, by: string) {
+  const person = await signIn(app, email());
   await sql`
     insert into memory_members (memory_id, user_id, role, invited_by)
     values (${memoryId}, ${person.user.id}, ${role}, ${by})
@@ -142,12 +142,12 @@ const fell = (montageId: string) => sql`
 `;
 
 test("the montage is ordered by the organizer alone, and only out of real material", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
-  const stranger = await signIn(app, lines, email());
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
 
   // Nothing uploaded at all, then two files and one still being processed:
   // below three `ready` there is nothing to cut, and the refusal leaves no row
@@ -256,12 +256,12 @@ test("the montage is ordered by the organizer alone, and only out of real materi
 });
 
 test("the list of montages is every member's, and only a ready one carries a link", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
-  const stranger = await signIn(app, lines, email());
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
   const elsewhere = await createMemory(app, organizer.token);
 
   await material(memory.id, organizer.user.id, 3);
@@ -315,11 +315,11 @@ test("the list of montages is every member's, and only a ready one carries a lin
 });
 
 test("only the organizer repeats a montage, and only one that failed", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  const contributor = await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
   const elsewhere = await createMemory(app, organizer.token);
 
   await material(memory.id, organizer.user.id, 3);
@@ -374,11 +374,11 @@ test("only the organizer repeats a montage, and only one that failed", async () 
 
 test("the worker's knock needs the secret and tells the whole memory", async () => {
   const { app, lines } = buildTestApp();
-  const organizer = await signIn(app, lines, email());
+  const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   // In the memory and never notified: they registered no device.
-  await member(app, lines, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, lines, memory.id, "viewer", organizer.user.id);
+  await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
   await material(memory.id, organizer.user.id, 3);
   const montage = (await order(app, organizer.token, memory.id, {})).json();
   await assembled(montage.id);

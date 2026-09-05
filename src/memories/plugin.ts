@@ -8,9 +8,11 @@ export type MemberRole = "organizer" | "contributor" | "viewer";
 
 /**
  * Where a member stands on bringing their material (doc-06). Per membership,
- * not per person. `more_coming` is the only one the api sets by itself — on the
- * first upload that lands; the two terminal ones are the member's own word.
- * It grants and denies nothing: «статус не режет права».
+ * not per person. `more_coming` is the only one the api sets by itself: on the
+ * first upload that lands, and again over a `nothing` that material has since
+ * proved wrong. `done` and `nothing` are otherwise the member's own word and
+ * the api does not overwrite them. It grants and denies nothing: «статус не
+ * режет права».
  */
 export type ContributionStatus = "not_started" | "more_coming" | "done" | "nothing";
 

@@ -282,6 +282,38 @@ test("/auth/email/start is rate-limited per address, and `+tag` does not dodge i
   }
 });
 
+// Gmail ignores dots in the local part and serves googlemail.com from the same
+// inbox, so `a.b@`, `ab@` and `a.b@googlemail.com` are one mailbox. Without the
+// fold each spelling carried its own budget, and since the letter became real
+// that is a way to put four times the mail into somebody else's inbox.
+test("gmail's dots and googlemail.com are one mailbox for the limiter", async () => {
+  const previous = process.env.EMAIL_LOGIN_RATE_MAX;
+  process.env.EMAIL_LOGIN_RATE_MAX = "2";
+  const { app } = buildTestApp();
+  const local = `task05-dots-${randomUUID()}`;
+  try {
+    const start = (email: string) =>
+      app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
+
+    expect((await start(`${local}@gmail.com`)).statusCode).toBe(200);
+    // Dotted, and the dots are not part of the address Gmail delivers to.
+    expect((await start(`${local.slice(0, 4)}.${local.slice(4)}@gmail.com`)).statusCode).toBe(200);
+    // The third spelling finds the budget already spent — which is the point.
+    expect((await start(`${local}@googlemail.com`)).statusCode).toBe(429);
+    expect((await start(`${local}+tag@gmail.com`)).statusCode).toBe(429);
+
+    // A dot elsewhere is still significant: two people, two budgets.
+    expect((await start(`${local}@example.com`)).statusCode).toBe(200);
+    expect((await start(`${local.slice(0, 4)}.${local.slice(4)}@example.com`)).statusCode).toBe(
+      200,
+    );
+  } finally {
+    setEnv("EMAIL_LOGIN_RATE_MAX", previous);
+    await sql`delete from users where email like ${"task05-dots-%"}`;
+    await app.close();
+  }
+});
+
 test("/auth/email/start is also rate-limited per IP, across distinct addresses", async () => {
   const previous = process.env.EMAIL_LOGIN_RATE_MAX_PER_IP;
   // Well under the per-mailbox ceiling, so it is the IP bucket that trips.

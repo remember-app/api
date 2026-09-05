@@ -70,11 +70,29 @@ export function authPlugin(app: FastifyInstance) {
     return limited;
   };
 
-  // The counter keys on the mailbox, not the alias: `me+anything@x` is one
-  // inbox, so subaddressing must not hand out a fresh budget per tag.
-  // ponytail: RFC 5233 `+tag` only. Gmail's dot-folding is provider-specific
-  // and locks people out when guessed wrong — add it if aliasing shows up.
-  const mailbox = (email: string) => email.replace(/\+[^@]*(?=@)/, "");
+  /**
+   * The counter keys on the mailbox, not the alias: `me+anything@x` is one
+   * inbox, so subaddressing must not hand out a fresh budget per tag.
+   *
+   * `+tag` is RFC 5233 and safe everywhere. Dots are not — in a plain address
+   * they are significant, and folding them would put two different people in
+   * one bucket — so that fold is made only for the one provider that documents
+   * ignoring them, Gmail, which also serves `googlemail.com` from the same
+   * inbox. Without it `a.b@`, `ab@` and `a.b.c@gmail.com` are one inbox with
+   * three budgets, and since cfa638e the overflow is not a log line any more
+   * but real letters into somebody's mail.
+   *
+   * The account itself is keyed on `normalizeEmail` and is not touched by any
+   * of this: a coarser bucket can only ever cost an extra wait, never a login.
+   */
+  const mailbox = (email: string) => {
+    const plain = email.replace(/\+[^@]*(?=@)/, "");
+    const [local, domain] = plain.split("@");
+    if (local === undefined || (domain !== "gmail.com" && domain !== "googlemail.com")) {
+      return plain;
+    }
+    return `${local.replaceAll(".", "")}@gmail.com`;
+  };
 
   app.decorate("authenticate", async (request, reply) => {
     const token = bearerToken(request.headers.authorization);

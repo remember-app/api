@@ -25,13 +25,15 @@ export const rateMaxPerEmail = () => positive("EMAIL_LOGIN_RATE_MAX", 5);
 export const rateMaxPerIp = () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50);
 
 /**
- * Our client id at a social provider — the `aud` an id token must carry. There
- * is no fallback here and cannot be: a blank value is the same misconfiguration
- * as an absent one, and both mean the provider stays off. Obeying an empty
- * string would leave `aud` unchecked, which is to say it would accept a token
- * Apple minted for somebody else's app.
+ * A setting that has no fallback and cannot have one: blank is the same
+ * misconfiguration as absent, and both mean «not set». Shared for the reason
+ * `positive` is (see `src/media/config.ts`) — it is one rule and there is one
+ * of it, so a caller cannot half-remember it. Obeying an empty string is the
+ * failure mode it exists to prevent: an unchecked `aud` accepts a token Apple
+ * minted for somebody else's app, and an empty endpoint is a URL that parses
+ * as nothing.
  */
-const clientId = (name: string) => process.env[name]?.trim() || undefined;
+export const env = (name: string) => process.env[name]?.trim() || undefined;
 
-export const appleClientId = () => clientId("APPLE_CLIENT_ID");
-export const googleClientId = () => clientId("GOOGLE_CLIENT_ID");
+export const appleClientId = () => env("APPLE_CLIENT_ID");
+export const googleClientId = () => env("GOOGLE_CLIENT_ID");

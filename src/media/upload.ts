@@ -360,21 +360,35 @@ export function uploadRoutes(app: FastifyInstance) {
         await tx`insert into jobs (type, ref) values ('media_preview', ${item.id})`;
 
         // doc-06: bringing something is what takes a member off the initial
-        // status, and only ever the first time — anything they have said since
-        // is their word and this must not overwrite it. Hence the guard in the
-        // WHERE and not only in the `if`: two callbacks of the same person
-        // racing both mean `more_coming`, and exactly one of them reports it as
-        // the first. Same transaction as the counters, because a member counted
-        // as having brought material while still reading «ничего не загрузил»
-        // is the drift doc-06 exists to remove.
-        if (request.membership.status !== "not_started") return false;
+        // status. Also off `nothing` — that one is a claim about the future
+        // («материала от меня не будет»), and a file landing is the fact that
+        // falsifies it. Left alone, the roster read «ждать нечего» over a
+        // person whose photos were in the gallery, and nothing in the app could
+        // correct it: the question is only asked on a first upload, and the
+        // button that sets a status is hidden once the status is terminal. That
+        // stale line is the exact drift doc-06 exists to remove.
+        //
+        // `done` is deliberately left standing: it says «я всё загрузил», which
+        // more material makes out of date but not untrue, and re-opening it
+        // would re-ask a question the person has already answered.
+        //
+        // The guard is in the WHERE and not only in the `if`: two callbacks of
+        // the same person racing must both leave `more_coming`, and exactly one
+        // of them may report it. Same transaction as the counters — a member
+        // counted as having brought material while still reading «ничего не
+        // загрузил» is the same drift one statement later.
+        if (request.membership.status === "more_coming") return false;
+        if (request.membership.status === "done") return false;
         const moved = await tx`
           update memory_members set status = 'more_coming'
           where memory_id = ${memory.id} and user_id = ${request.user.id}
-            and status = 'not_started'
+            and status in ('not_started', 'nothing')
           returning user_id
         `;
-        return moved.length > 0;
+        // Only a genuine first upload asks «всё загрузили?». Correcting a
+        // «ждать нечего» is not one: the status now tells the truth on its own,
+        // and the person said their piece already.
+        return moved.length > 0 && request.membership.status === "not_started";
       });
 
       // Read back rather than assumed: by now the worker may already have taken

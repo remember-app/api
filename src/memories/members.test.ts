@@ -26,8 +26,8 @@ const as = (token: string, options: InjectOptions) => ({
 const start = "2026-09-02T18:00:00+03:00";
 
 /** A signed-in person who holds a username — invite-by-username needs one. */
-async function person(app: App, lines: string[]) {
-  const { token, user } = await signIn(app, lines, email());
+async function person(app: App) {
+  const { token, user } = await signIn(app, email());
   const username = `t12${randomUUID().replace(/-/g, "").slice(0, 20)}`;
   const named = await app.inject(
     as(token, { method: "POST", url: "/me/username", payload: { username } }),
@@ -81,11 +81,11 @@ const roleOf = (memoryId: string, userId: string) =>
 const deadPushHost = "http://127.0.0.1:1/push";
 
 test("who may invite by username: viewer may not, contributor and organizer may", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const contributor = await person(app, lines);
-  const viewer = await person(app, lines);
-  const invitee = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const viewer = await person(app);
+  const invitee = await person(app);
   const created = await createMemory(app, organizer.token);
 
   // The organizer invites the other two, which is also the happy path.
@@ -127,7 +127,7 @@ test("who may invite by username: viewer may not, contributor and organizer may"
 
   // A stranger to the memory gets the house 404, not a 403: whether this
   // memory exists is not answerable to a non-member.
-  const stranger = await person(app, lines);
+  const stranger = await person(app);
   const byStranger = await invite(app, stranger.token, created.id, {
     username: invitee.username,
     role: "viewer",
@@ -139,9 +139,9 @@ test("who may invite by username: viewer may not, contributor and organizer may"
 });
 
 test("inviting twice changes nothing, and an unknown username is a 404", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const invitee = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const invitee = await person(app);
   const created = await createMemory(app, organizer.token);
 
   const first = await invite(app, organizer.token, created.id, {
@@ -192,8 +192,8 @@ test("inviting twice changes nothing, and an unknown username is a 404", async (
 });
 
 test("the invite link is minted once, comes back the same, and rotation kills the old one", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
   const created = await createMemory(app, organizer.token);
 
   const first = await getLink(app, organizer.token, created.id);
@@ -230,7 +230,7 @@ test("the invite link is minted once, comes back the same, and rotation kills th
   expect(live.length).toBe(1);
 
   // The old token now opens nothing at all.
-  const latecomer = await person(app, lines);
+  const latecomer = await person(app);
   const stale = await accept(app, latecomer.token, first.json().token);
   expect(stale.statusCode).toBe(404);
   expect(stale.body).toBe('{"error":"not found"}');
@@ -240,10 +240,10 @@ test("the invite link is minted once, comes back the same, and rotation kills th
 });
 
 test("only contributor and up may touch the link", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const viewer = await person(app, lines);
-  const contributor = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const viewer = await person(app);
+  const contributor = await person(app);
   const created = await createMemory(app, organizer.token);
 
   for (const [who, role] of [
@@ -267,9 +267,9 @@ test("only contributor and up may touch the link", async () => {
 });
 
 test("accepting a link makes a member once, and says nothing about a token it does not know", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const guest = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const guest = await person(app);
   const created = await createMemory(app, organizer.token);
 
   const link = (await rotateLink(app, organizer.token, created.id, { role: "viewer" })).json();
@@ -308,10 +308,10 @@ test("accepting a link makes a member once, and says nothing about a token it do
 });
 
 test("removal: the organizer shows people out, everyone else may only walk out", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const contributor = await person(app, lines);
-  const viewer = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const viewer = await person(app);
   const created = await createMemory(app, organizer.token);
 
   for (const [who, role] of [
@@ -372,10 +372,10 @@ test("removal: the organizer shows people out, everyone else may only walk out",
 });
 
 test("the roster is the whole memory, and a viewer may read it too", async () => {
-  const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const contributor = await person(app, lines);
-  const viewer = await person(app, lines);
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const viewer = await person(app);
   const created = await createMemory(app, organizer.token);
 
   for (const [who, role] of [
@@ -424,7 +424,7 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
 
   // A stranger and a memory that does not exist are one answer, byte for byte:
   // the house 404 the membership check already gives, not a 403 here.
-  const stranger = await person(app, lines);
+  const stranger = await person(app);
   for (const answer of await Promise.all([
     roster(app, stranger.token, created.id),
     roster(app, organizer.token, randomUUID()),
@@ -445,9 +445,9 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
 });
 
 test("push tokens register idempotently and follow the device", async () => {
-  const { app, lines } = buildTestApp();
-  const first = await person(app, lines);
-  const second = await person(app, lines);
+  const { app } = buildTestApp();
+  const first = await person(app);
+  const second = await person(app);
   const device = `ExponentPushToken[${randomUUID()}]`;
 
   const register = (token: string, payload: Record<string, unknown>) =>
@@ -483,8 +483,8 @@ test("push tokens register idempotently and follow the device", async () => {
 
 test("the invite stands even when the push cannot be sent", async () => {
   const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const invitee = await person(app, lines);
+  const organizer = await person(app);
+  const invitee = await person(app);
   const created = await createMemory(app, organizer.token);
   const device = `ExponentPushToken[${randomUUID()}]`;
   expect(
@@ -518,8 +518,8 @@ test("the invite stands even when the push cannot be sent", async () => {
 
 test("with pushing switched off the intended notification is logged and nothing throws", async () => {
   const { app, lines } = buildTestApp();
-  const organizer = await person(app, lines);
-  const invitee = await person(app, lines);
+  const organizer = await person(app);
+  const invitee = await person(app);
   const created = await createMemory(app, organizer.token);
 
   const previous = process.env.EXPO_PUSH_URL;
