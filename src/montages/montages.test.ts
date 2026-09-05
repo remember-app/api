@@ -272,6 +272,50 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   await app.close();
 });
 
+test("the default length is held inside its own min and max, not merely inside the schema's", async () => {
+  // Env is read once, at `buildApp`, into the very schema that would refuse a
+  // client asking for the same number — so a default outside the band has to
+  // be exercised with its own app, one built after the variable is set.
+  const previous = {
+    default: process.env.MONTAGE_TARGET_SECONDS,
+    min: process.env.MONTAGE_TARGET_SECONDS_MIN,
+    max: process.env.MONTAGE_TARGET_SECONDS_MAX,
+  };
+  try {
+    process.env.MONTAGE_TARGET_SECONDS_MIN = "15";
+    process.env.MONTAGE_TARGET_SECONDS_MAX = "300";
+
+    // Past the ceiling — a typo in the environment, not an intent for a
+    // ten-minute video nobody could have asked the schema for.
+    process.env.MONTAGE_TARGET_SECONDS = "600";
+    const over = buildTestApp().app;
+    const overOrganizer = await signIn(over, email());
+    const overMemory = await createMemory(over, overOrganizer.token);
+    await material(overMemory.id, overOrganizer.user.id, 3);
+    const overAnswer = await order(over, overOrganizer.token, overMemory.id, {});
+    expect(overAnswer.statusCode).toBe(201);
+    expect(overAnswer.json().params).toEqual({ target_seconds: 300 });
+    await over.close();
+
+    // Under the floor, the same way.
+    process.env.MONTAGE_TARGET_SECONDS = "5";
+    const under = buildTestApp().app;
+    const underOrganizer = await signIn(under, email());
+    const underMemory = await createMemory(under, underOrganizer.token);
+    await material(underMemory.id, underOrganizer.user.id, 3);
+    const underAnswer = await order(under, underOrganizer.token, underMemory.id, {});
+    expect(underAnswer.statusCode).toBe(201);
+    expect(underAnswer.json().params).toEqual({ target_seconds: 15 });
+    await under.close();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      const name = `MONTAGE_TARGET_SECONDS${key === "default" ? "" : `_${key.toUpperCase()}`}`;
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
 test("the list of montages is every member's, and only a ready one carries a link", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
@@ -331,6 +375,27 @@ test("the list of montages is every member's, and only a ready one carries a lin
   await app.close();
 });
 
+test("without a bucket the list says so, the way the gallery does", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3);
+  await order(app, organizer.token, memory.id, {});
+
+  const previous = process.env.R2_ENDPOINT;
+  try {
+    delete process.env.R2_ENDPOINT;
+    const answer = await list(app, organizer.token, memory.id);
+    expect(answer.statusCode).toBe(503);
+    expect(answer.json()).toEqual({ error: "storage not configured" });
+  } finally {
+    if (previous === undefined) delete process.env.R2_ENDPOINT;
+    else process.env.R2_ENDPOINT = previous;
+  }
+
+  await app.close();
+});
+
 test("only the organizer repeats a montage, and only one that failed", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
@@ -385,6 +450,15 @@ test("only the organizer repeats a montage, and only one that failed", async () 
     expect(answer.body).toBe('{"error":"not found"}');
   }
   expect(await jobsFor(stray.id)).toEqual([{ type: "montage", status: "queued" }]);
+
+  // No session at all — the same 401 the other three routes give, and no row
+  // moved behind it.
+  const anonymous = await app.inject({
+    method: "POST",
+    url: `/memories/${memory.id}/montages/${montage.id}/retry`,
+  });
+  expect(anonymous.statusCode).toBe(401);
+  expect(await jobsFor(montage.id)).toHaveLength(2);
 
   await app.close();
 });
