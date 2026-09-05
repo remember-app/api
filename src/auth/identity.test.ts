@@ -35,6 +35,14 @@ const setUsername = (app: App, token: string, name: string) =>
 const lookup = (app: App, token: string, name: string) =>
   app.inject(as(token, { method: "GET", url: `/users?username=${encodeURIComponent(name)}` }));
 
+const isFree = (app: App, token: string, name: string) =>
+  app.inject(
+    as(token, {
+      method: "GET",
+      url: `/me/username/available?username=${encodeURIComponent(name)}`,
+    }),
+  );
+
 const sessions = (app: App, token: string) =>
   app.inject(as(token, { method: "GET", url: "/auth/sessions" }));
 
@@ -127,6 +135,54 @@ test("the username format is enforced before the database sees it", async () => 
     // already in a shared database, and 409 is not this test's business.
     expect([candidate, res.statusCode]).not.toEqual([candidate, 400]);
   }
+
+  await app.close();
+});
+
+test("a nick can be asked about before it is claimed, and one's own reads free", async () => {
+  const { app, lines } = buildTestApp();
+  const a = await signIn(app, lines, email());
+  const b = await signIn(app, lines, email());
+  const name = username();
+
+  const free = await isFree(app, b.token, name);
+  expect(free.statusCode).toBe(200);
+  expect(free.json()).toEqual({ available: true });
+
+  expect((await setUsername(app, a.token, name.toUpperCase())).statusCode).toBe(200);
+  // Taken in any case, exactly as the claim itself is refused in any case.
+  expect((await isFree(app, b.token, name)).json()).toEqual({ available: false });
+  expect((await isFree(app, b.token, name.toUpperCase())).json()).toEqual({ available: false });
+  // But never for its holder: sending one's own nick back unchanged — or
+  // restyled — is a 200 from the POST, so it must not read «taken» here.
+  expect((await isFree(app, a.token, name)).json()).toEqual({ available: true });
+  expect((await isFree(app, a.token, name.toUpperCase())).json()).toEqual({ available: true });
+
+  // Asking claims nothing: B is still without a username.
+  expect((await me(app, b.token)).json()).toEqual(b.user);
+
+  // What could never be held is refused outright — not a quiet «free» that the
+  // submit would then answer 400 to, and not a 500 either.
+  const unholdable = [
+    "", // nobody holds an empty nick
+    "ab", // under 3
+    "a".repeat(31), // over 30
+    "_foo", // separator at the front
+    "foo.", // separator at the back
+    "foo!",
+    "приве", // non-ASCII
+    "foo\nbar",
+    `${name} `, // trailing space
+    `${name}\u0000`, // NUL: the byte the database cannot compare at all
+  ];
+  for (const candidate of unholdable) {
+    const res = await isFree(app, b.token, candidate);
+    expect([candidate, res.statusCode]).toEqual([candidate, 400]);
+  }
+  // And leaving the parameter out altogether.
+  expect(
+    (await app.inject(as(b.token, { method: "GET", url: "/me/username/available" }))).statusCode,
+  ).toBe(400);
 
   await app.close();
 });
@@ -280,6 +336,7 @@ test("every route added here sits behind the session check", async () => {
   const { app } = buildTestApp();
   const calls: InjectOptions[] = [
     { method: "POST", url: "/me/username", payload: { username: username() } },
+    { method: "GET", url: `/me/username/available?username=${username()}` },
     { method: "GET", url: `/users?username=${username()}` },
     { method: "GET", url: "/auth/sessions" },
     { method: "POST", url: `/auth/sessions/${randomUUID()}/revoke` },
