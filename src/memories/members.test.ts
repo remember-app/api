@@ -628,6 +628,41 @@ test("with pushing switched off the intended notification is logged and nothing 
   await app.close();
 });
 
+test("an inviter with neither name nor nick is a word of the reader's own language", async () => {
+  const { app, lines } = buildTestApp();
+  // Signed in by email and nothing more: `name` and `username` are both null,
+  // which is every account between its first sign-in and the profile screen.
+  const nameless = await signIn(app, email());
+  const invitee = await person(app);
+  const created = await createMemory(app, nameless.token);
+
+  const previous = process.env.EXPO_PUSH_URL;
+  process.env.EXPO_PUSH_URL = "";
+  try {
+    expect(
+      (
+        await invite(app, nameless.token, created.id, {
+          username: invitee.username,
+          role: "viewer",
+        })
+      ).statusCode,
+    ).toBe(200);
+    const logged = lines
+      .map((l) => JSON.parse(l) as { msg?: string; message?: { body: { ru: string; en: string } } })
+      .findLast((l) => l.msg === "invite push not sent");
+    expect(logged?.message?.body?.ru).toContain("Кто-то приглашает");
+    // The whole point: the stand-in is not the Russian word left standing in
+    // the middle of an English sentence.
+    expect(logged?.message?.body?.en).toContain("Someone invites you to");
+    expect(logged?.message?.body?.en).not.toMatch(/[а-яА-Я]/);
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_PUSH_URL;
+    else process.env.EXPO_PUSH_URL = previous;
+  }
+
+  await app.close();
+});
+
 test("every new route is behind the session check", async () => {
   const { app } = buildTestApp();
   const id = randomUUID();

@@ -139,7 +139,7 @@ async function send(
 export async function notifyInvited(
   log: FastifyBaseLogger,
   invitee: string,
-  inviter: string,
+  inviter: string | null,
   memory: { id: string; title: string },
 ): Promise<void> {
   // Present tense on purpose: «добавил» would misgender half the people who
@@ -156,10 +156,17 @@ export async function notifyInvited(
   // English asks for the same thing — «add your photos and videos», because
   // that is what a person does on the screen this opens, not «upload» them.
   // The title stays in whatever language its author wrote it (doc-8).
+  //
+  // Who invites is their `name`, their username failing that, and a word for
+  // «nobody in particular» when they have neither — an account signed in by
+  // email holds none of the two until the app sets one. That word is picked
+  // here and not at the call site: it is a word *in the line*, and the line is
+  // written twice.
+  const who = { ru: inviter ?? "Кто-то", en: inviter ?? "Someone" };
   const message = {
     body: {
-      ru: `${inviter} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
-      en: `${inviter} invites you to “${memory.title}” — add your photos and videos`,
+      ru: `${who.ru} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
+      en: `${who.en} invites you to “${memory.title}” — add your photos and videos`,
     },
     data: { memoryId: memory.id },
   };

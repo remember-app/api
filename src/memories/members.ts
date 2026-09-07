@@ -157,10 +157,12 @@ export function memberRoutes(app: FastifyInstance) {
       // Committed above, on its own, and only then this — a push that fails
       // must not undo an invite that worked. `notifyInvited` swallows
       // everything for that reason; see the ceiling noted on it.
+      // Nameless and nickless is passed on as null, not as a word: the line is
+      // written in the invitee's language, so the stand-in for a name is too.
       await notifyInvited(
         request.log,
         invitee.id,
-        request.user.name ?? request.user.username ?? "Кто-то",
+        request.user.name ?? request.user.username,
         memory,
       );
       return { ...invitee, role: added.role };
