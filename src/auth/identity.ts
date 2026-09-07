@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
-import { type AuthUser, bearerToken, hashToken, revoke, revokeByToken } from "./session.ts";
+import {
+  type AuthUser,
+  bearerToken,
+  hashToken,
+  type Language,
+  revoke,
+  revokeByToken,
+} from "./session.ts";
 
 /**
  * Letters, digits and the separators `_ . -`; 3 to 30 long; a separator may
@@ -24,6 +31,19 @@ const usernameProposal = {
   required: ["username"],
   additionalProperties: false,
   properties: { username: { type: "string", pattern: usernamePattern } },
+} as const;
+
+/**
+ * The enum is the whole rule, and it is the same two values the column's CHECK
+ * holds (migration 030): a third language is a product decision and a migration,
+ * never something a client may post its way into. So the schema refuses anything
+ * else at the door and the handler has no failure left to translate.
+ */
+const languageChoice = {
+  type: "object",
+  required: ["language"],
+  additionalProperties: false,
+  properties: { language: { type: "string", enum: ["ru", "en"] } },
 } as const;
 
 /**
@@ -79,9 +99,10 @@ export async function findByUsername(username: string): Promise<PublicUser | und
 }
 
 /**
- * Managing one's own identity: the username, finding somebody by theirs, and
- * the sessions one is signed in through. Mounted from `buildApp` after
- * `authPlugin`, which is what puts `app.authenticate` on the instance.
+ * Managing one's own identity: the username, the language one reads in,
+ * finding somebody by their username, and the sessions one is signed in
+ * through. Mounted from `buildApp` after `authPlugin`, which is what puts
+ * `app.authenticate` on the instance.
  */
 export function identityRoutes(app: FastifyInstance) {
   // Claims a username when there is none yet and changes it when there is —
@@ -96,7 +117,7 @@ export function identityRoutes(app: FastifyInstance) {
         const [user] = await sql<AuthUser[]>`
           update users set username = ${request.body.username}
           where id = ${request.user.id}
-          returning id, username, name, email
+          returning id, username, name, email, language
         `;
         if (!user) throw new Error("update users returned no row");
         return user;
@@ -126,6 +147,25 @@ export function identityRoutes(app: FastifyInstance) {
       // A string that could never be held answers 400 from the schema, not
       // `available: true` — a «free» the submit would then refuse is a lie.
       return { available: !holder || holder.id === request.user.id };
+    },
+  );
+
+  // The phone chooses the language — from the system at first run, from the
+  // profile switch afterwards — and keeps this row in step with it. Written
+  // down here rather than left on the device because what the server composes
+  // for a person is composed without them: a push about a memory goes to every
+  // member at once, each in their own language.
+  app.post<{ Body: { language: Language } }>(
+    "/me/language",
+    { preHandler: app.authenticate, schema: { body: languageChoice } },
+    async (request) => {
+      const [user] = await sql<AuthUser[]>`
+        update users set language = ${request.body.language}
+        where id = ${request.user.id}
+        returning id, username, name, email, language
+      `;
+      if (!user) throw new Error("update users returned no row");
+      return user;
     },
   );
 

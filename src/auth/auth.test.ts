@@ -114,7 +114,15 @@ test("the whole magic link: start -> link in the letter -> verify -> session -> 
   });
   expect(verified.statusCode).toBe(200);
   const { token, user } = verified.json() as { token: string; user: Record<string, unknown> };
-  expect(user).toEqual({ id: expect.any(String), username: null, name: null, email });
+  // A language comes with the account from the first moment: what the server
+  // composes for a person is composed without them, so there is no null here.
+  expect(user).toEqual({
+    id: expect.any(String),
+    username: null,
+    name: null,
+    email,
+    language: "ru",
+  });
 
   const me = await app.inject({
     method: "GET",
@@ -504,6 +512,7 @@ test("a verified id token makes the user, the identity and a session", async () 
       username: null,
       name: given.name,
       email: given.email,
+      language: "ru",
     });
     expect(seen).toEqual([["google", "the-id-token"]]);
 
@@ -549,6 +558,7 @@ test("the same provider account is the same user, and a token that carries no pr
       username: null,
       name: null,
       email: null,
+      language: "ru",
     });
 
     const identities = await sql`
