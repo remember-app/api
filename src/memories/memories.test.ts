@@ -256,8 +256,9 @@ test("a tie in captured_at breaks on id, and four ready frames exactly fill the 
   const key = (name: string) => `${titleTag}-${randomUUID()}-${name}.jpg`;
   const insert = async (name: string, capturedAt: string) => {
     const k = key(name);
-    const [{ id }] = await ready(memory.id, user.id, k, capturedAt);
-    return { id, key: k };
+    const [row] = await ready(memory.id, user.id, k, capturedAt);
+    if (!row) throw new Error("insert into media_items returned no row");
+    return { id: row.id, key: k };
   };
 
   // Two moments, two frames tied on each: coalesce(captured_at, created_at)
