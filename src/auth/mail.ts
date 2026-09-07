@@ -1,4 +1,5 @@
 import { emailLoginTtlMinutes, env } from "./config.ts";
+import type { Language } from "./session.ts";
 
 /**
  * The one letter this product sends: the sign-in link. Resend, over its plain
@@ -34,8 +35,13 @@ const timeoutMs = 5_000;
  */
 export const mailConfigured = () => Boolean(env("RESEND_API_KEY") && env("MAIL_FROM"));
 
-/** The two languages the product speaks. There is no third, by design. */
-export type Language = "ru" | "en";
+/**
+ * The two languages the product speaks, and there is no third by design. It is
+ * declared beside the user row that holds a person's choice and passed on from
+ * here, because a caller of this module writes a letter in one and has no other
+ * reason to look at sessions.
+ */
+export type { Language };
 
 type Letter = { subject: string; text: string };
 

@@ -67,7 +67,7 @@ export async function consumeEmailLoginToken(token: string): Promise<AuthUser | 
       where token_hash = ${hashToken(token)} and expires_at > now()
       returning user_id
     )
-    select u.id, u.username, u.name, u.email
+    select u.id, u.username, u.name, u.email, u.language
     from users u join consumed c on c.user_id = u.id
   `;
   return user ?? null;

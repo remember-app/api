@@ -32,6 +32,9 @@ const as = (token: string, options: InjectOptions) => ({
 const setUsername = (app: App, token: string, name: string) =>
   app.inject(as(token, { method: "POST", url: "/me/username", payload: { username: name } }));
 
+const setLanguage = (app: App, token: string, language: unknown) =>
+  app.inject(as(token, { method: "POST", url: "/me/language", payload: { language } }));
+
 const lookup = (app: App, token: string, name: string) =>
   app.inject(as(token, { method: "GET", url: `/users?username=${encodeURIComponent(name)}` }));
 
@@ -187,6 +190,68 @@ test("a nick can be asked about before it is claimed, and one's own reads free",
   await app.close();
 });
 
+test("the language sits on the person: switched, kept, and nobody else's", async () => {
+  const { app } = buildTestApp();
+  const address = email();
+  const a = await signIn(app, address);
+  const b = await signIn(app, email());
+
+  // A new account already has one, because what the server composes for a
+  // person is composed without them — there is no «unset» to fall through to.
+  expect(a.user.language).toBe("ru");
+
+  const switched = await setLanguage(app, a.token, "en");
+  expect(switched.statusCode).toBe(200);
+  // Exactly the body of GET /me, as POST /me/username is.
+  expect(switched.json()).toEqual({ ...a.user, language: "en" });
+  expect((await me(app, a.token)).json()).toEqual(switched.json());
+
+  // It outlives the session it was set in: the choice is on the row, which is
+  // the whole reason for the column — a push has only the row to read.
+  expect((await signIn(app, address)).user.language).toBe("en");
+  // And it is one person's own: B is where B was.
+  expect((await me(app, b.token)).json()).toEqual(b.user);
+
+  // Back again, and saying the same thing twice is not an error.
+  expect((await setLanguage(app, a.token, "ru")).json()).toEqual(a.user);
+  expect((await setLanguage(app, a.token, "ru")).statusCode).toBe(200);
+
+  await app.close();
+});
+
+test("there is no third language: anything else is refused before the database", async () => {
+  const { app } = buildTestApp();
+  const { token } = await signIn(app, email());
+
+  const bad = [
+    "fr", // a third language
+    "RU", // the right one, miscased — the column's CHECK would refuse it too
+    "ru-RU", // a full tag, not the subtag
+    "russian",
+    "", // nothing
+    "ru en",
+    "ru\n",
+    // Not strings at all. An *array* is missing on purpose: fastify's ajv runs
+    // with coerceTypes 'array', so `["ru"]` arrives as "ru" — which the enum
+    // then passes, and it is one of the two values either way.
+    null,
+    true,
+    7,
+  ];
+  for (const candidate of bad) {
+    const res = await setLanguage(app, token, candidate);
+    expect([candidate, res.statusCode]).toEqual([candidate, 400]);
+  }
+  // And a body without the field at all.
+  expect((await app.inject(as(token, { method: "POST", url: "/me/language" }))).statusCode).toBe(
+    400,
+  );
+  // None of that touched the row.
+  expect((await me(app, token)).json()).toMatchObject({ language: "ru" });
+
+  await app.close();
+});
+
 test("GET /users finds a nick whatever its case, and 404s an unknown one", async () => {
   const { app } = buildTestApp();
   const a = await signIn(app, email());
@@ -337,6 +402,7 @@ test("every route added here sits behind the session check", async () => {
   const calls: InjectOptions[] = [
     { method: "POST", url: "/me/username", payload: { username: username() } },
     { method: "GET", url: `/me/username/available?username=${username()}` },
+    { method: "POST", url: "/me/language", payload: { language: "en" } },
     { method: "GET", url: `/users?username=${username()}` },
     { method: "GET", url: "/auth/sessions" },
     { method: "POST", url: `/auth/sessions/${randomUUID()}/revoke` },

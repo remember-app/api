@@ -2,12 +2,21 @@ import { createHash, randomBytes } from "node:crypto";
 import { sql } from "../db.ts";
 import { sessionTtlDays } from "./config.ts";
 
+/**
+ * The two languages the product speaks (doc-8), as the BCP 47 subtags the
+ * phone reports. Kept beside `AuthUser` because it is a property of the person:
+ * what is composed for them — a push, a letter — is written in it, and that
+ * happens where their request is not.
+ */
+export type Language = "ru" | "en";
+
 /** What a handler sees behind `app.authenticate`, and the body of `GET /me`. */
 export type AuthUser = {
   id: string;
   username: string | null;
   name: string | null;
   email: string | null;
+  language: Language;
 };
 
 /**
@@ -46,7 +55,7 @@ export async function issue(userId: string): Promise<string> {
 /** A live session yields its user; expired, revoked or unknown yields null. */
 export async function verify(token: string): Promise<AuthUser | null> {
   const [user] = await sql<AuthUser[]>`
-    select u.id, u.username, u.name, u.email
+    select u.id, u.username, u.name, u.email, u.language
     from sessions s
     join users u on u.id = s.user_id
     where s.token_hash = ${hashToken(token)}
