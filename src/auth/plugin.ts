@@ -1,8 +1,8 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
-import { type Language, mailConfigured, sendMagicLink } from "./mail.ts";
-import { type AuthUser, bearerToken, issue, verify } from "./session.ts";
+import { mailConfigured, sendMagicLink } from "./mail.ts";
+import { type AuthUser, bearerToken, issue, type Language, verify } from "./session.ts";
 
 declare module "fastify" {
   interface FastifyInstance {
