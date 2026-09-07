@@ -156,11 +156,11 @@ export function memoriesPlugin(app: FastifyInstance) {
   // The main screen. The organizer has a memory_members row like everyone
   // else, so «organizer or member» needs no union — it is one join.
   app.get("/memories", { preHandler: app.authenticate }, async (request) => {
-    // The card shows a couple of real frames from inside the memory, so the
-    // keys ride along on the listing itself: this screen holds every memory one
-    // is in, and a call per card to fetch them would be a round trip per card.
-    // How many frames the card draws is the client's business — it gets at most
-    // two, and `media_count` above tells it how much else there is («+126»).
+    // The card shows real frames from inside the memory, so the keys ride along
+    // on the listing itself: this screen holds every memory one is in, and a
+    // call per card to fetch them would be a round trip per card. Four is what
+    // the card draws — enough of the material to speak for itself, so nothing
+    // has to count the rest beside them.
     const rows = await sql<(Memory & { role: MemberRole; thumbnail_keys: string[] })[]>`
       select m.*, mm.role,
         array(
@@ -173,7 +173,7 @@ export function memoriesPlugin(app: FastifyInstance) {
           -- date. «Последние кадры» must mean on the card what it means at the
           -- end of the gallery.
           order by coalesce(mi.captured_at, mi.created_at) desc, mi.id desc
-          limit 2
+          limit 4
         ) as thumbnail_keys
       from memory_members mm
       join memories m on m.id = mm.memory_id
@@ -181,7 +181,7 @@ export function memoriesPlugin(app: FastifyInstance) {
       order by m.event_start desc, m.created_at desc
     `;
 
-    // Signing is a local HMAC and not a request, so two per memory costs
+    // Signing is a local HMAC and not a request, so four per memory costs
     // nothing here. An unconfigured bucket is an empty tail rather than the
     // gallery's 503: there the links are the whole answer, here they are one
     // field of the main screen, which has to draw either way.
