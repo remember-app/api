@@ -522,12 +522,16 @@ test("the worker's knock needs the secret and tells the whole memory", async () 
           JSON.parse(l) as {
             msg?: string;
             devices?: number;
-            message?: { body: string; data: unknown };
+            message?: { body: { ru: string; en: string }; data: unknown };
           },
       )
       .findLast((l) => l.msg === "montage push not sent");
-    expect(logged?.message?.body).toContain(memory.title);
-    expect(logged?.message?.body).toContain("готов");
+    expect(logged?.message?.body?.ru).toContain(memory.title);
+    expect(logged?.message?.body?.ru).toContain("готов");
+    // Both languages are composed before anyone is picked out of the memory —
+    // its members do not share one, so the send carries both (doc-8).
+    expect(logged?.message?.body?.en).toContain(memory.title);
+    expect(logged?.message?.body?.en).toContain("is ready");
     // Both ids: the app opens the memory's videos and puts this one on top.
     expect(logged?.message?.data).toEqual({ memoryId: memory.id, montageId: montage.id });
     // Two phones out of three members — everyone in the memory who has one, and
@@ -620,5 +624,77 @@ test("a memory with more devices than Expo takes at once is told in slices", asy
   expect(batches).toEqual([100, 1]);
 
   await sql`delete from push_tokens where token in ${sql(devices.map((d) => d.token))}`;
+  await app.close();
+});
+
+test("members who read different languages are each told in their own", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const guest = await member(app, memory.id, "viewer", organizer.user.id);
+  await material(memory.id, organizer.user.id, 3);
+  const montage = (await order(app, organizer.token, memory.id, {})).json();
+  await assembled(montage.id);
+
+  // The case a memory is full of and the invite path never sees: its members
+  // are one person's guests, not one country's, so one send has to carry both
+  // languages at once (doc-8). Each says which they read the way the app does,
+  // then registers a phone.
+  const russian = `ExponentPushToken[${randomUUID()}]`;
+  const english = `ExponentPushToken[${randomUUID()}]`;
+  for (const [who, language, device] of [
+    [organizer, "ru", russian],
+    [guest, "en", english],
+  ] as const) {
+    const chose = await app.inject(
+      as(who.token, { method: "POST", url: "/me/language", payload: { language } }),
+    );
+    expect(chose.statusCode).toBe(200);
+    const registered = await app.inject(
+      as(who.token, { method: "POST", url: "/me/push-tokens", payload: { token: device } }),
+    );
+    expect(registered.statusCode).toBe(200);
+  }
+
+  // Expo stood in for, as above — this one keeps every message of every
+  // request, so both who was told and what they were told are readable.
+  const requests: { to: string; body: string }[][] = [];
+  const expo = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+      response.writeHead(200, { "content-type": "application/json" }).end('{"data":[]}');
+    });
+  });
+  await new Promise<void>((resolve) => {
+    expo.listen(0, "127.0.0.1", resolve);
+  });
+
+  const previousToken = process.env.INTERNAL_WORKER_TOKEN;
+  const previousPush = process.env.EXPO_PUSH_URL;
+  try {
+    process.env.INTERNAL_WORKER_TOKEN = "s3cret";
+    process.env.EXPO_PUSH_URL = `http://127.0.0.1:${(expo.address() as AddressInfo).port}`;
+    expect((await knock(app, montage.id, "s3cret")).statusCode).toBe(200);
+  } finally {
+    if (previousToken === undefined) delete process.env.INTERNAL_WORKER_TOKEN;
+    else process.env.INTERNAL_WORKER_TOKEN = previousToken;
+    if (previousPush === undefined) delete process.env.EXPO_PUSH_URL;
+    else process.env.EXPO_PUSH_URL = previousPush;
+    expo.close();
+  }
+
+  // One request, not one per language: a message of Expo's array is whole in
+  // itself, so two languages cost no extra round trip and the batching stays
+  // where it was — one message per device.
+  expect(requests.map((batch) => batch.length)).toEqual([2]);
+  const told = new Map(requests.flat().map((message) => [message.to, message.body]));
+  expect(told.get(russian)).toBe(`Ролик из «${memory.title}» готов — посмотрите и поделитесь`);
+  expect(told.get(english)).toBe(
+    `The movie from “${memory.title}” is ready — take a look and share it`,
+  );
+
+  await sql`delete from push_tokens where token in ${sql([russian, english])}`;
   await app.close();
 });
