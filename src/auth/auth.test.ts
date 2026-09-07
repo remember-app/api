@@ -24,7 +24,7 @@ const testSub = () => `task07-${randomUUID()}`;
  * to the network. The link comes back out of what was posted, because that is
  * the only place it exists: the log no longer carries it.
  */
-const letters: { to: string[]; text: string }[] = [];
+const letters: { to: string[]; subject: string; text: string }[] = [];
 const mailServer = createServer((request, response) => {
   const chunks: Buffer[] = [];
   request.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -139,6 +139,36 @@ test("the whole magic link: start -> link in the letter -> verify -> session -> 
   expect(JSON.stringify(session?.row)).not.toContain(token);
 
   await app.close();
+});
+
+test("the letter goes out in the language the request asked for", async () => {
+  const { app } = buildTestApp();
+  const start = (payload: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: "/auth/email/start", payload });
+  try {
+    // No language at all — what every client sent before the field existed, so
+    // it must still be the Russian letter.
+    expect((await start({ email: testEmail() })).statusCode).toBe(200);
+    expect(letters.at(-1)?.subject).toBe("Вход в Remember");
+    expect(letters.at(-1)?.text).toContain("Ссылка одноразовая");
+
+    expect((await start({ email: testEmail(), language: "ru" })).statusCode).toBe(200);
+    expect(letters.at(-1)?.subject).toBe("Вход в Remember");
+
+    expect((await start({ email: testEmail(), language: "en" })).statusCode).toBe(200);
+    expect(letters.at(-1)?.subject).toBe("Your sign-in link for Remember");
+    expect(letters.at(-1)?.text).toContain("open it on your phone");
+    // One language per letter, not a mixture of both.
+    expect(letters.at(-1)?.text).not.toMatch(/[А-Яа-я]/);
+    // And whichever language it is, the link it exists to carry is in it.
+    expect(letters.at(-1)?.text).toMatch(/remember:\/\/auth\/email\?token=/);
+
+    // A third language is a bug in the client, and it is told so rather than
+    // quietly served the default letter.
+    expect((await start({ email: testEmail(), language: "de" })).statusCode).toBe(400);
+  } finally {
+    await app.close();
+  }
 });
 
 test("signing in again with the same address does not make a second user", async () => {

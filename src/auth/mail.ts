@@ -34,14 +34,56 @@ const timeoutMs = 5_000;
  */
 export const mailConfigured = () => Boolean(env("RESEND_API_KEY") && env("MAIL_FROM"));
 
+/** The two languages the product speaks. There is no third, by design. */
+export type Language = "ru" | "en";
+
+type Letter = { subject: string; text: string };
+
+/**
+ * The letter, in each language, written by hand — the English one is not a
+ * rendering of the Russian one but its own letter, said the way English says
+ * it. A machine translation of the Russian reads like a machine, and this is
+ * the first thing anyone sees of the product.
+ *
+ * The minute count is spelled as «a 15-minute window» in English on purpose:
+ * an attributive number stays singular whatever the TTL is set to, so no
+ * plural rule has to exist here.
+ */
+const letter: Record<Language, (link: string, minutes: number) => Letter> = {
+  ru: (link, minutes) => ({
+    subject: "Вход в Remember",
+    text:
+      `Откройте эту ссылку на телефоне, чтобы войти:\n\n${link}\n\n` +
+      `Ссылка одноразовая и живёт ${minutes} мин. ` +
+      `Если вход запрашивали не вы — просто удалите это письмо.`,
+  }),
+  en: (link, minutes) => ({
+    subject: "Your sign-in link for Remember",
+    text:
+      `Here is the link that signs you in — open it on your phone:\n\n${link}\n\n` +
+      `It works once, and only within a ${minutes}-minute window. ` +
+      `If you did not ask to sign in, ignore this email and the link expires on its own.`,
+  }),
+};
+
 /**
  * Sends the link, or throws. Throwing is the point: the caller must be able to
  * tell «the letter did not go» from «it went», and neither the provider's
  * status nor its body may reach the person who asked — that text carries our
  * own address and API errors, and the answer must be the same for every
  * address anyway.
+ *
+ * The language comes from whoever asked for the link and nowhere else: this is
+ * pre-authentication, so there is no session and, for an address seen for the
+ * first time, no user row to hold a preference either. Russian by default —
+ * that is what every caller got before the field existed.
  */
-export async function sendMagicLink(email: string, link: string): Promise<void> {
+export async function sendMagicLink(
+  email: string,
+  link: string,
+  language: Language = "ru",
+): Promise<void> {
+  const { subject, text } = letter[language](link, emailLoginTtlMinutes());
   const response = await fetch(endpoint(), {
     method: "POST",
     headers: {
@@ -51,15 +93,7 @@ export async function sendMagicLink(email: string, link: string): Promise<void> 
     // Plain text, no HTML part: the link is a `remember://` deep link, and mail
     // clients that strip unknown schemes out of an <a href> would leave a
     // letter with nothing in it. As text it is at worst copied by hand.
-    body: JSON.stringify({
-      from: env("MAIL_FROM"),
-      to: [email],
-      subject: "Вход в Remember",
-      text:
-        `Откройте эту ссылку на телефоне, чтобы войти:\n\n${link}\n\n` +
-        `Ссылка одноразовая и живёт ${emailLoginTtlMinutes()} мин. ` +
-        `Если вход запрашивали не вы — просто удалите это письмо.`,
-    }),
+    body: JSON.stringify({ from: env("MAIL_FROM"), to: [email], subject, text }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {

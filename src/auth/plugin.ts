@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
-import { mailConfigured, sendMagicLink } from "./mail.ts";
+import { type Language, mailConfigured, sendMagicLink } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, verify } from "./session.ts";
 
 declare module "fastify" {
@@ -22,7 +22,14 @@ const emailBody = {
   // maxLength is the RFC 5321 ceiling on an address; format rejects a malformed
   // one. Fastify's ajv runs with removeAdditional, so additionalProperties here
   // strips unknown fields rather than refusing the body.
-  properties: { email: { type: "string", format: "email", maxLength: 254 } },
+  properties: {
+    email: { type: "string", format: "email", maxLength: 254 },
+    // The language the letter is written in — the caller's own, since there is
+    // no session here to read one from. An enum and not a free string: a value
+    // outside the two is a bug in the client, and 400 says so rather than
+    // quietly posting the wrong letter. Absent means Russian, as before.
+    language: { type: "string", enum: ["ru", "en"] },
+  },
 } as const;
 
 const tokenBody = {
@@ -106,7 +113,7 @@ export function authPlugin(app: FastifyInstance) {
     request.user = user;
   });
 
-  app.post<{ Body: { email: string } }>(
+  app.post<{ Body: { email: string; language?: Language } }>(
     "/auth/email/start",
     { schema: { body: emailBody } },
     async (request, reply) => {
@@ -126,7 +133,7 @@ export function authPlugin(app: FastifyInstance) {
       }
       const token = await startEmailLogin(email);
       try {
-        await sendMagicLink(email, deepLink(token));
+        await sendMagicLink(email, deepLink(token), request.body.language);
       } catch (error) {
         // The provider's own words go to the log and no further. 502 and not
         // 500: nothing here failed, the thing behind us did — and it is not
