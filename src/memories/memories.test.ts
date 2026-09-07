@@ -171,13 +171,14 @@ const ready = (
   userId: string,
   key: string | null,
   capturedAt: string | null,
-) => sql`
+) => sql<{ id: string }[]>`
   insert into media_items
     (memory_id, uploaded_by, kind, status, original_key, size_bytes, captured_at, thumbnail_key)
   values (
     ${memoryId}, ${userId}, 'photo', ${key ? "ready" : "processing"},
     ${`${titleTag}/original-${randomUUID()}`}, 4096, ${capturedAt}, ${key}
   )
+  returning id
 `;
 
 /** What each signed link points at: the last segment of its path. */
@@ -239,6 +240,72 @@ test("the listing carries the last frames of every memory in one answer", async 
   // credentials for as long as the signature lives.
   for (const url of seen.flatMap((m) => m.recent_thumbnail_urls)) {
     expect(url).toContain("X-Amz-Signature=");
+  }
+
+  await app.close();
+});
+
+test("a tie in captured_at breaks on id, and four ready frames exactly fill the card", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-04-01T12:00:00Z" })
+  ).json();
+
+  const key = (name: string) => `${titleTag}-${randomUUID()}-${name}.jpg`;
+  const insert = async (name: string, capturedAt: string) => {
+    const k = key(name);
+    const [row] = await ready(memory.id, user.id, k, capturedAt);
+    if (!row) throw new Error("insert into media_items returned no row");
+    return { id: row.id, key: k };
+  };
+
+  // Two moments, two frames tied on each: coalesce(captured_at, created_at)
+  // alone cannot order a pair shot at the same instant, so id desc is the
+  // only thing left to break it. Four rows total — as many as the card
+  // draws, and the limit must not cut one of them just because it is at
+  // the boundary.
+  const laterA = await insert("later-a", "2026-04-01T10:00:00Z");
+  const laterB = await insert("later-b", "2026-04-01T10:00:00Z");
+  const earlierA = await insert("earlier-a", "2026-04-01T08:00:00Z");
+  const earlierB = await insert("earlier-b", "2026-04-01T08:00:00Z");
+
+  const byIdDesc = (a: { id: string }, b: { id: string }) => (a.id > b.id ? -1 : 1);
+  const expectedKeys = [
+    ...[laterA, laterB].sort(byIdDesc).map((r) => r.key),
+    ...[earlierA, earlierB].sort(byIdDesc).map((r) => r.key),
+  ];
+
+  const listed = await list(app, token);
+  expect(listed.statusCode).toBe(200);
+  const [seen] = listed.json();
+  expect(keysOf(seen.recent_thumbnail_urls)).toEqual(expectedKeys);
+
+  await app.close();
+});
+
+test("an unconfigured bucket still answers, with empty tails and not a smaller cap", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: start })
+  ).json();
+  await ready(memory.id, user.id, `${titleTag}-${randomUUID()}-solo.jpg`, null);
+
+  const original = process.env.R2_ENDPOINT;
+  delete process.env.R2_ENDPOINT;
+  try {
+    // A ready thumbnail exists, but with nothing to sign against the answer
+    // is an empty tail rather than a count that leaks the unsigned key or a
+    // 500 — the same rule upload.test.ts pins for the write side.
+    const listed = await list(app, token);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([{ ...memory, recent_thumbnail_urls: [] }]);
+  } finally {
+    if (original === undefined) delete process.env.R2_ENDPOINT;
+    else process.env.R2_ENDPOINT = original;
   }
 
   await app.close();
