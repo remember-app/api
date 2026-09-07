@@ -598,15 +598,27 @@ test("with pushing switched off the intended notification is logged and nothing 
     // No device registered and nowhere to send it anyway — but a developer
     // still gets to read what would have gone out, deep-link payload included.
     const logged = lines
-      .map((l) => JSON.parse(l) as { msg?: string; message?: { body: string; data: unknown } })
+      .map(
+        (l) =>
+          JSON.parse(l) as {
+            msg?: string;
+            message?: { body: { ru: string; en: string }; data: unknown };
+          },
+      )
       .findLast((l) => l.msg === "invite push not sent");
-    expect(logged?.message?.body).toContain("приглашает вас в");
-    expect(logged?.message?.body).toContain(created.title);
+    expect(logged?.message?.body?.ru).toContain("приглашает вас в");
+    expect(logged?.message?.body?.ru).toContain(created.title);
     // Names who invited them and asks for the material — decision-06's whole
     // point — without ever agreeing with the inviter's gender.
-    expect(logged?.message?.body).toContain(organizer.username);
-    expect(logged?.message?.body).toContain("загрузите свои фото и видео");
-    expect(logged?.message?.body).not.toMatch(/добавил|добавила|пригласил|позвал/);
+    expect(logged?.message?.body?.ru).toContain(organizer.username);
+    expect(logged?.message?.body?.ru).toContain("загрузите свои фото и видео");
+    expect(logged?.message?.body?.ru).not.toMatch(/добавил|добавила|пригласил|позвал/);
+    // The English line says the same thing in its own words and carries the
+    // same two facts — who invites, and into what.
+    expect(logged?.message?.body?.en).toContain("invites you to");
+    expect(logged?.message?.body?.en).toContain(created.title);
+    expect(logged?.message?.body?.en).toContain(organizer.username);
+    expect(logged?.message?.body?.en).not.toMatch(/[а-яА-Я]/);
     expect(logged?.message?.data).toEqual({ memoryId: created.id });
   } finally {
     if (previous === undefined) delete process.env.EXPO_PUSH_URL;

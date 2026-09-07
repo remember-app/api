@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { Language } from "../auth/session.ts";
 import { sql } from "../db.ts";
 
 /**
@@ -34,8 +35,19 @@ const registerBody = {
   },
 } as const;
 
-/** What Expo is handed: the line on the lock screen and what the app opens on. */
-type Message = { body: string; data: Record<string, string> };
+/**
+ * What Expo is handed: the line on the lock screen and what the app opens on.
+ *
+ * The line is written out in both languages, not chosen before we get here: one
+ * send goes to a whole memory's members (doc-8, «тексты уведомлений уходят на
+ * языке получателя»), and a wedding's guests do not share a language just
+ * because they share a wedding. `data` is the same for everybody — it is ids,
+ * not words.
+ */
+type Message = { body: Record<Language, string>; data: Record<string, string> };
+
+/** A device to notify, with the language of whoever holds it. */
+type Recipient = { token: string; language: Language };
 
 /**
  * The one way a notification leaves this service. Never throws — every failure
@@ -49,7 +61,9 @@ type Message = { body: string; data: Record<string, string> };
  *
  * The tokens come as a thunk rather than as a list: reading them is part of
  * what must not throw, and the two callers read different rows — one person's
- * devices for an invite, a whole memory's for a finished video.
+ * devices for an invite, a whole memory's for a finished video. Each row brings
+ * the language its owner reads in, which is why the query is theirs to write
+ * and not this function's.
  *
  * ponytail: one shot, no retry. A notification lost to a network blip is lost
  * for good — the thing it announces is still there, so the cost is that the
@@ -62,7 +76,7 @@ async function send(
   kind: "invite" | "montage",
   memoryId: string,
   message: Message,
-  tokensOf: () => Promise<{ token: string }[]>,
+  tokensOf: () => Promise<Recipient[]>,
 ): Promise<void> {
   try {
     const url = endpoint();
@@ -80,12 +94,21 @@ async function send(
     // everybody rather than for the overflow. Cut here and not in the caller
     // that needs it: the invite path holds one person's devices and never sees
     // a second slice, and one rule beats two.
+    //
+    // A single request carries whatever languages its hundred devices happen to
+    // read: every element of Expo's array is a whole message of its own, so the
+    // Russian and the English line travel together and the ceiling stays where
+    // it is — one per device, not one per device per language.
     for (let from = 0; from < tokens.length; from += expoBatch) {
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
-          tokens.slice(from, from + expoBatch).map(({ token }) => ({ to: token, ...message })),
+          tokens.slice(from, from + expoBatch).map(({ token, language }) => ({
+            to: token,
+            body: message.body[language],
+            data: message.data,
+          })),
         ),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -122,12 +145,22 @@ export async function notifyInvited(
   // Present tense on purpose: «добавил» would misgender half the people who
   // ever send this (decision-06's own example reads «Аня добавила»), and
   // «добавил(а)» reads like a form. «приглашает» agrees with nobody, so the
-  // one string is right for every inviter. The call to upload is part of the
+  // one string is right for every inviter; English verbs carry no gender, so
+  // «invites» is right for free. The call to upload is part of the
   // notification, not decoration — it is what decision-06 asks it to do.
   // `data` is what the app reads to open straight at this memory's upload
   // screen — the whole point of the notification (doc-01).
+  //
+  // Both lines are written by hand, as the letter in `src/auth/mail.ts` is: the
+  // English one is not the Russian one rendered word for word but the way
+  // English asks for the same thing — «add your photos and videos», because
+  // that is what a person does on the screen this opens, not «upload» them.
+  // The title stays in whatever language its author wrote it (doc-8).
   const message = {
-    body: `${inviter} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
+    body: {
+      ru: `${inviter} приглашает вас в «${memory.title}» — загрузите свои фото и видео`,
+      en: `${inviter} invites you to “${memory.title}” — add your photos and videos`,
+    },
     data: { memoryId: memory.id },
   };
   await send(
@@ -135,7 +168,13 @@ export async function notifyInvited(
     "invite",
     memory.id,
     message,
-    () => sql<{ token: string }[]>`select token from push_tokens where user_id = ${invitee}`,
+    // One person's devices, so one language — read from the row all the same,
+    // because that is where a person's language lives (migration 030).
+    () => sql<Recipient[]>`
+      select pt.token, u.language from push_tokens pt
+      join users u on u.id = pt.user_id
+      where pt.user_id = ${invitee}
+    `,
   );
 }
 
@@ -153,8 +192,17 @@ export async function notifyMontageReady(
   // Genderless like the invite line, and for the same reason — one string has
   // to be right for whoever ordered it. `data` carries both ids: the app opens
   // the memory's list of videos and puts this one on top.
+  //
+  // English calls it a movie and not a «video»: the invite line in this same
+  // file asks people for their videos, and the one thing the product makes out
+  // of them has to be a different word — «ролик» is a different word in Russian
+  // too. This is the send whose recipients really do differ: a memory's members
+  // are one person's guests, not one country's.
   const message = {
-    body: `Ролик из «${memory.title}» готов — посмотрите и поделитесь`,
+    body: {
+      ru: `Ролик из «${memory.title}» готов — посмотрите и поделитесь`,
+      en: `The movie from “${memory.title}” is ready — take a look and share it`,
+    },
     data: { memoryId: memory.id, montageId },
   };
   await send(
@@ -163,10 +211,14 @@ export async function notifyMontageReady(
     memory.id,
     message,
     // Every device of every member, the organizer's included: a video is the
-    // reward for everyone who brought material, so nobody is left off.
-    () => sql<{ token: string }[]>`
-      select pt.token from push_tokens pt
+    // reward for everyone who brought material, so nobody is left off. Each
+    // device brings its owner's language along, and the join is on the token's
+    // owner — a person notified as a member reads in their own language, not
+    // in the memory's or the organizer's.
+    () => sql<Recipient[]>`
+      select pt.token, u.language from push_tokens pt
       join memory_members mm on mm.user_id = pt.user_id
+      join users u on u.id = pt.user_id
       where mm.memory_id = ${memory.id}
     `,
   );
