@@ -201,17 +201,21 @@ test("the listing carries the last frames of every memory in one answer", async 
 
   const key = (name: string) => `${titleTag}-${randomUUID()}-${name}.jpg`;
   const only = key("only");
+  const earliest = key("earliest");
   const oldest = key("oldest");
   const middle = key("middle");
   const newest = key("newest");
   const dateless = key("dateless");
 
   await ready(single.id, user.id, only, "2026-02-01T13:00:00Z");
+  // Five ready frames on the pile, one more than the card draws: this is the
+  // one the limit cuts, and it is the one shot first.
+  await ready(pile.id, user.id, earliest, "2026-01-01T08:00:00Z");
   await ready(pile.id, user.id, oldest, "2026-01-01T10:00:00Z");
   await ready(pile.id, user.id, middle, "2026-01-01T12:00:00Z");
   await ready(pile.id, user.id, newest, "2026-01-01T14:00:00Z");
   // No capture date: it falls back to when it arrived, which is now — so this
-  // is the freshest of the four, exactly as the gallery would read it.
+  // is the freshest of them all, exactly as the gallery would read it.
   await ready(pile.id, user.id, dateless, null);
   // Still being worked on: no thumbnail exists yet, so it takes no slot even
   // though it was shot after every one of them.
@@ -226,8 +230,9 @@ test("the listing carries the last frames of every memory in one answer", async 
   expect(seen.map((m) => keysOf(m.recent_thumbnail_urls))).toEqual([
     [],
     [only],
-    // Newest first, and no more than the two the card draws.
-    [dateless, newest],
+    // Newest first, and exactly the four the card draws: `earliest` is ready
+    // with a thumbnail like the rest and still does not fit.
+    [dateless, newest, middle, oldest],
   ]);
 
   // Signed links, not bare keys: the bucket is private, and these open without
