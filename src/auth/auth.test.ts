@@ -99,6 +99,58 @@ test("migration 002 applies to a clean schema and is idempotent", async () => {
   }
 });
 
+// The one migration in this milestone that runs against a table it did not
+// create: `DROP CONSTRAINT IF EXISTS` before the `ADD CONSTRAINT` exists
+// precisely so a process killed between the column and the version mark can
+// replay the whole file — proven here rather than trusted, because a plain
+// `ADD CONSTRAINT` would 500 on the replay with "constraint already exists".
+test("migration 030 applies to an existing users table and is idempotent", async () => {
+  const file = await readFile(
+    new URL("../../migrations/030.do.language.sql", import.meta.url),
+    "utf8",
+  );
+  const db = await sql.reserve();
+  try {
+    await db
+      .unsafe(`drop schema if exists mig_test_030 cascade;
+               create schema mig_test_030;
+               set search_path to mig_test_030, public`)
+      .simple();
+    // The table 030 alters, standing in for the one migration 002 already
+    // created by the time 030 runs for real.
+    await db.unsafe("create table users (id int primary key)").simple();
+    await db.unsafe(file).simple();
+    await db.unsafe(file).simple(); // the replay after a killed process
+
+    const [column] = await db<{ is_nullable: string; column_default: string | null }[]>`
+      select is_nullable, column_default from information_schema.columns
+      where table_schema = 'mig_test_030' and table_name = 'users' and column_name = 'language'
+    `;
+    expect(column?.is_nullable).toBe("NO");
+    expect(column?.column_default).toContain("ru");
+
+    const constraints = await db<{ constraint_name: string }[]>`
+      select constraint_name from information_schema.table_constraints
+      where table_schema = 'mig_test_030' and table_name = 'users'
+        and constraint_type = 'CHECK' and constraint_name = 'users_language_check'
+    `;
+    // Not just present by name: the replay must leave exactly one live CHECK,
+    // not zero (dropped and never re-added) and not a Postgres-numbered
+    // duplicate from a naive re-add.
+    expect(constraints).toHaveLength(1);
+
+    // And it still holds — proven by trying to break it, not by its name.
+    await db.unsafe("insert into users (id) values (1)").simple();
+    await expect(
+      db.unsafe("insert into users (id, language) values (2, 'fr')").simple(),
+    ).rejects.toThrow(/users_language_check/);
+    await db.unsafe("insert into users (id, language) values (3, 'en')").simple();
+  } finally {
+    await db.unsafe("drop schema if exists mig_test_030 cascade; reset search_path").simple();
+    db.release();
+  }
+});
+
 test("the whole magic link: start -> link in the letter -> verify -> session -> GET /me", async () => {
   const { app } = buildTestApp();
   const email = testEmail();
@@ -175,6 +227,36 @@ test("the letter goes out in the language the request asked for", async () => {
     // quietly served the default letter.
     expect((await start({ email: testEmail(), language: "de" })).statusCode).toBe(400);
   } finally {
+    await app.close();
+  }
+});
+
+test("switching the letter's language does not buy a second rate-limit budget", async () => {
+  const previous = process.env.EMAIL_LOGIN_RATE_MAX;
+  process.env.EMAIL_LOGIN_RATE_MAX = "2";
+  const { app } = buildTestApp();
+  try {
+    // The limiter's key is the mailbox alone (see auth/plugin.ts); language is
+    // not in it, so the same address must spend one shared budget whichever
+    // language each call asks for — not a bucket per language.
+    const address = testEmail();
+    const start = (language?: string) =>
+      app.inject({
+        method: "POST",
+        url: "/auth/email/start",
+        payload: { email: address, language },
+      });
+
+    expect((await start("ru")).statusCode).toBe(200);
+    expect((await start("en")).statusCode).toBe(200);
+    const limited = await start("ru");
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: "too many requests" });
+    // Absent counts too — it is the same request as `language: "ru"` in
+    // everything the limiter looks at.
+    expect((await start(undefined)).statusCode).toBe(429);
+  } finally {
+    setEnv("EMAIL_LOGIN_RATE_MAX", previous);
     await app.close();
   }
 });
