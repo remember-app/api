@@ -133,6 +133,19 @@ const counters = async (memoryId: string, userId: string) => {
 /** The worker's half of a finished video, written by hand — it is not running. */
 const assembled = (montageId: string) => sql`
   update montages
+  set status = 'ready', video_key = ${`montages/${montageId}.mp4`},
+      poster_key = ${`montages/${montageId}.jpg`}, duration_seconds = 58.5,
+      updated_at = now()
+  where id = ${montageId}
+`;
+
+/**
+ * A ready video with no poster beside it: everything assembled before the
+ * worker learned to cut a frame stays like this forever, and the app has to
+ * read it as «постера нет», not as «ещё не готово».
+ */
+const assembledWithoutPoster = (montageId: string) => sql`
+  update montages
   set status = 'ready', video_key = ${`montages/${montageId}.mp4`}, duration_seconds = 58.5,
       updated_at = now()
   where id = ${montageId}
@@ -191,9 +204,11 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     error_text: null,
     params: { target_seconds: 90, music_track_id: "calm" },
     video_url: null,
+    poster_url: null,
   });
-  // The key of the video is ours, not the client's: it gets links, never keys.
+  // The keys are ours, not the client's: it gets links, never keys.
   expect(montage.video_key).toBeUndefined();
+  expect(montage.poster_key).toBeUndefined();
 
   // The worker's side of the contract: one job, of type `montage`, pointing at
   // the row by id.
@@ -327,6 +342,7 @@ test("the list of montages is every member's, and only a ready one carries a lin
 
   await material(memory.id, organizer.user.id, 3);
   await material(elsewhere.id, organizer.user.id, 3);
+  const oldest = (await order(app, organizer.token, memory.id, {})).json();
   const first = (await order(app, organizer.token, memory.id, {})).json();
   const second = (await order(app, organizer.token, memory.id, {})).json();
   const third = (await order(app, organizer.token, memory.id, {})).json();
@@ -334,6 +350,7 @@ test("the list of montages is every member's, and only a ready one carries a lin
   const other = (await order(app, organizer.token, elsewhere.id, {})).json();
   await assembled(first.id);
   await fell(second.id);
+  await assembledWithoutPoster(oldest.id);
 
   // Every standing sees the same list, a viewer above all: the matrix gives
   // them «смотреть галерею и ролики».
@@ -343,24 +360,50 @@ test("the list of montages is every member's, and only a ready one carries a lin
     const items = seen.json();
     // Newest first — the opposite of the gallery, which reads in the order the
     // video plays; here the last one ordered is the one being waited for.
-    expect(items.map((item: { id: string }) => item.id)).toEqual([third.id, second.id, first.id]);
+    expect(items.map((item: { id: string }) => item.id)).toEqual([
+      third.id,
+      second.id,
+      first.id,
+      oldest.id,
+    ]);
     expect(items.some((item: { id: string }) => item.id === other.id)).toBe(false);
 
-    const [queued, failed, ready] = items;
-    expect(queued).toMatchObject({ status: "queued", video_url: null, error_text: null });
+    const [queued, failed, ready, posterless] = items;
+    expect(queued).toMatchObject({
+      status: "queued",
+      video_url: null,
+      poster_url: null,
+      error_text: null,
+    });
     // The reason it fell is what the organizer's «повторить» stands next to.
     expect(failed).toMatchObject({
       status: "failed",
       video_url: null,
+      poster_url: null,
       error_text: "ffmpeg said no",
     });
     expect(ready).toMatchObject({ status: "ready", duration_seconds: 58.5 });
+    // Neither key goes out, only the links signed from them.
+    expect(ready.video_key).toBeUndefined();
+    expect(ready.poster_key).toBeUndefined();
 
-    const url = new URL(ready.video_url);
-    expect(url.pathname).toContain(`montages/${first.id}.mp4`);
-    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
-    // The same TTL the gallery hands out: 15 minutes (R2_DOWNLOAD_TTL_SECONDS).
-    expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+    // The poster is signed exactly as the video is, and for the same 15
+    // minutes the gallery hands out (R2_DOWNLOAD_TTL_SECONDS).
+    for (const [link, key] of [
+      [ready.video_url, `montages/${first.id}.mp4`],
+      [ready.poster_url, `montages/${first.id}.jpg`],
+    ]) {
+      const url = new URL(link);
+      expect(url.pathname).toContain(key);
+      expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+      expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+    }
+
+    // Watchable, with nothing to show before it plays: the video assembled
+    // before the worker learned to cut a frame keeps its link and answers
+    // `null` for the poster alone.
+    expect(posterless).toMatchObject({ status: "ready", poster_url: null });
+    expect(posterless.video_url).toContain(`montages/${oldest.id}.mp4`);
   }
 
   for (const id of [memory.id, randomUUID(), "not-a-uuid"]) {
@@ -424,6 +467,7 @@ test("only the organizer repeats a montage, and only one that failed", async () 
     status: "queued",
     error_text: null,
     video_url: null,
+    poster_url: null,
   });
   // The same row queued again — not a second montage — with a second job on it.
   expect(await jobsFor(montage.id)).toEqual([
