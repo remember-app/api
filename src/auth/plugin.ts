@@ -1,5 +1,5 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
-import { env, rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
+import { devEmailBypass, env, rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
 import { mailConfigured, sendMagicLink } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, type Language, verify } from "./session.ts";
@@ -117,25 +117,39 @@ export function authPlugin(app: FastifyInstance) {
     "/auth/email/start",
     { schema: { body: emailBody } },
     async (request, reply) => {
-      // With no mail keys the letter cannot go at all. In production that ends
-      // the request here — before the limiter and before the user is made, so
-      // nothing is written down and nobody's budget is spent on being told so.
-      // Anywhere else the request runs its normal course and the link comes
-      // back in the answer instead (below): a build in somebody's hands has to
-      // have a way in that does not need a mail provider. The signal is the one
-      // the project already uses, `NODE_ENV` (see src/app.ts).
+      const email = normalizeEmail(request.body.email);
+      // The one way in that does not need a mail provider — a build in
+      // somebody's hands has to have one — and it is deliberately narrow: the
+      // switch explicitly on, the address on test.com, and not production.
+      // Any of the three missing and the request takes the ordinary path: a
+      // real letter, or 503 below when there is nothing to post it through.
       //
-      // Read through `env` and case-folded, unlike every other reader of this
-      // variable: this one is a lock, and every spelling it fails to recognise
-      // opens it rather than closing it. `--env-file` trims and unquotes what
-      // it parses, but a value handed in by a shell, a unit file or a hosting
-      // panel arrives raw, so `production ` and `Production` are both things a
-      // person can type once and never see again.
-      const noMail = !mailConfigured();
-      if (noMail && env("NODE_ENV")?.toLowerCase() === "production") {
+      // It used to be «NODE_ENV is not production», which is a door that opens
+      // itself: a variable nobody set on a machine nobody was thinking about
+      // handed a session for any address to whoever typed it. Absence now
+      // means closed on all three counts, which is what a lock has to mean.
+      //
+      // `NODE_ENV` is read through `env` and case-folded, unlike every other
+      // reader of it: `--env-file` trims and unquotes what it parses, but a
+      // value handed in by a shell, a unit file or a hosting panel arrives
+      // raw, so `production ` and `Production` are both things a person can
+      // type once and never see again — and each spelling missed here would
+      // be a production server with the bypass live.
+      //
+      // The domain is matched on the whole `@test.com` tail, after
+      // `normalizeEmail` has folded the case: `someone@evil.test.com` is a
+      // different domain and must not pass as this one.
+      const bypass =
+        devEmailBypass() &&
+        email.endsWith("@test.com") &&
+        env("NODE_ENV")?.toLowerCase() !== "production";
+      // With no mail keys the letter cannot go at all, and without the bypass
+      // there is nothing else to answer with — so the request ends here,
+      // before the limiter and before the user is made, so nothing is written
+      // down and nobody's budget is spent on being told so.
+      if (!mailConfigured() && !bypass) {
         return reply.code(503).send({ error: "mail not configured" });
       }
-      const email = normalizeEmail(request.body.email);
       const buckets: [string, number][] = [
         [`email:${mailbox(email)}`, rateMaxPerEmail()],
         [`ip:${request.ip}`, rateMaxPerIp()],
@@ -144,10 +158,11 @@ export function authPlugin(app: FastifyInstance) {
         return reply.code(429).send({ error: "too many requests" });
       }
       const token = await startEmailLogin(email);
-      // No provider to post to, so the same link the letter would have carried
-      // is handed straight back to whoever asked. Only ever outside production
-      // — there the request never got this far.
-      if (noMail) return { ok: true, link: deepLink(token) };
+      // The development door decided above: the same link the letter would
+      // have carried is handed straight back to whoever asked. Mail keys make
+      // no difference here — a letter to test.com goes nowhere anyway, and a
+      // dev machine that happens to hold real keys should not start bouncing.
+      if (bypass) return { ok: true, link: deepLink(token) };
       try {
         await sendMagicLink(email, deepLink(token), request.body.language);
       } catch (error) {
