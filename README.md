@@ -907,7 +907,7 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 1. `POST /memories/:memoryId/montages` — проверяются права и материал, в `montages` появляется
    строка в статусе `queued`, в `jobs` — задача `montage` со ссылкой на её `id`.
 2. Воркер берёт задачу, ведёт строку `queued` → `processing` → `ready` (или `failed`), сам пишет в
-   неё `video_key`, `duration_seconds`, `error_text`.
+   неё `video_key`, `poster_key`, `duration_seconds`, `error_text`.
 3. Готово — воркер стучится в `POST /internal/montages/:montageId/ready`, и API шлёт пуш «ролик
    готов» **всем** участникам воспоминания.
 4. Упало — у организатора кнопка «повторить»: та же строка возвращается в `queued`, и в очередь
@@ -926,7 +926,7 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 | таблица `montages` | заводит API (миграция) | воркер читает и пишет строку по `id`, как `media.py` уже делает с `media_items` |
 | задача в `jobs`    | таблица montage | тип — ровно `montage`, `ref` — `montages.id` строкой            |
 | `status`           | пишут оба      | API ставит только `queued`; всё дальше — воркера                 |
-| `video_key`, `duration_seconds`, `error_text` | воркер | API их только читает и подписывает ссылку     |
+| `video_key`, `poster_key`, `duration_seconds`, `error_text` | воркер | API их только читает и подписывает ссылки |
 | `params`           | пишет API      | `{"target_seconds": 60}` плюс `music_track_id`, если его назвали  |
 | `/internal/montages/:id/ready` | API | воркер дёргает его после того, как записал `ready`               |
 
@@ -962,7 +962,7 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 201 Created
 {"id":"…","memory_id":"…","ordered_by":"…","status":"queued","duration_seconds":null,
  "params":{"target_seconds":90,"music_track_id":"calm"},"error_text":null,
- "created_at":"…","updated_at":"…","video_url":null}
+ "created_at":"…","updated_at":"…","video_url":null,"poster_url":null}
 ```
 
 | Ответ | Тело                                                        | Когда                          |
@@ -989,12 +989,17 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 200 OK
 [{"id":"…","memory_id":"…","ordered_by":"…","status":"ready","duration_seconds":58.5,
   "params":{"target_seconds":60},"error_text":null,"created_at":"…","updated_at":"…",
-  "video_url":"http://…&X-Amz-Signature=…"}]
+  "video_url":"http://…&X-Amz-Signature=…","poster_url":"http://…&X-Amz-Signature=…"}]
 ```
 
 `video_url` — подписанная ссылка на готовый ролик, живёт `R2_DOWNLOAD_TTL_SECONDS` (15 минут, тот
 же срок, что у галереи). У всего, что не `ready`, она `null` — это «ещё не готово», а не ошибка;
 протухла — клиент запрашивает список заново. Ключ ролика наружу не отдаётся, только ссылка.
+
+`poster_url` — то же самое для кадра-постера, который клиент показывает до запуска ролика:
+подписывается из `poster_key` тем же способом и на тот же срок. `null` не только у неготового —
+у ролика, смонтированного до того, как воркер научился резать кадр, постера нет и не появится, и
+клиент рисует такой ролик без превью.
 
 У упавшего в `error_text` лежит то, что сказал воркер, — рядом с ним клиент рисует «повторить».
 
@@ -1040,7 +1045,8 @@ curl -X POST http://localhost:3000/internal/montages/<id>/ready \
 `processing` или `failed` ему нечего объявлять. Поэтому порядок обязателен — сперва записать
 `ready`, потом стучаться, — и повторный стук по той же строке безопасен.
 
-Тело у запроса не читается: `video_key`, `duration_seconds` и `status` воркер уже записал сам.
+Тело у запроса не читается: `video_key`, `poster_key`, `duration_seconds` и `status` воркер уже
+записал сам.
 
 ### `POST /me/push-tokens`
 

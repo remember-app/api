@@ -14,8 +14,9 @@ import { notifyMontageReady } from "../memories/push.ts";
  *
  * api owns the `montages` table and writes nothing else about a video: the
  * worker in `projects/montage` picks the job up, takes the row through
- * `processing` to `ready` or `failed`, fills `video_key` and `duration_seconds`
- * itself, and then knocks on the internal route at the bottom of this file so
+ * `processing` to `ready` or `failed`, fills `video_key`, `poster_key` and
+ * `duration_seconds` itself, and then knocks on the internal route at the
+ * bottom of this file so
  * everyone gets told. The two sides share exactly this: the table, the job type
  * `montage`, and that route.
  */
@@ -27,6 +28,8 @@ export type Montage = {
   ordered_by: string;
   status: "queued" | "processing" | "ready" | "failed";
   video_key: string | null;
+  /** The frame the app shows before the video plays; the worker cuts it. */
+  poster_key: string | null;
   duration_seconds: number | null;
   params: { target_seconds?: number; music_track_id?: string };
   error_text: string | null;
@@ -95,16 +98,25 @@ function knockedWithTheSecret(header: string | undefined): boolean {
 }
 
 /**
- * What a montage looks like from outside: the row without its R2 key, plus the
- * signed link — and only when there is something to link at. Everything before
+ * What a montage looks like from outside: the row without its R2 keys, plus the
+ * signed links — and only when there is something to link at. Everything before
  * `ready` answers `null`, which is «ещё не готово» and not an error, exactly as
  * the gallery's missing derivatives are.
+ *
+ * The poster follows the video through the same helper rather than a second
+ * ternary beside it: both keys are the worker's, both are signed for the same
+ * `ttl`, and one of them missing on a `ready` row — a video assembled before
+ * the worker learned to cut a frame — is the same `null` as one still being
+ * rendered.
  */
 async function view(montage: Montage, ttl: number) {
-  const { video_key, ...rest } = montage;
+  const { video_key, poster_key, ...rest } = montage;
+  const link = (key: string | null) =>
+    montage.status === "ready" && key ? downloadUrl(key, ttl) : null;
   return {
     ...rest,
-    video_url: montage.status === "ready" && video_key ? await downloadUrl(video_key, ttl) : null,
+    video_url: await link(video_key),
+    poster_url: await link(poster_key),
   };
 }
 
@@ -290,9 +302,9 @@ export function montageRoutes(app: FastifyInstance) {
   // `app.authenticate` — there is no person behind this call and no session to
   // check — and so behind a shared secret instead.
   //
-  // It carries no state: the worker has already written `ready`, `video_key`
-  // and `duration_seconds` into the row itself. All this does is the one thing
-  // the worker cannot, which is reach the phones.
+  // It carries no state: the worker has already written `ready`, `video_key`,
+  // `poster_key` and `duration_seconds` into the row itself. All this does is
+  // the one thing the worker cannot, which is reach the phones.
   app.post<{ Params: { montageId: string } }>(
     "/internal/montages/:montageId/ready",
     async (request, reply) => {
