@@ -231,6 +231,67 @@ test("the letter goes out in the language the request asked for", async () => {
   }
 });
 
+// The lock on the way in that development gets. Pinned by a test and not by a
+// promise: if this ever stops being 503, production hands the key to any
+// account to whoever types its address.
+test("the lock: in production an unconfigured mailbox is still 503, never a link", async () => {
+  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM, process.env.NODE_ENV];
+  setEnv("RESEND_API_KEY", undefined);
+  setEnv("MAIL_FROM", undefined);
+  setEnv("NODE_ENV", "production");
+  const { app } = buildTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/email/start",
+      payload: { email: testEmail() },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "mail not configured" });
+    expect(response.body).not.toContain("remember://");
+  } finally {
+    setEnv("RESEND_API_KEY", previous[0]);
+    setEnv("MAIL_FROM", previous[1]);
+    setEnv("NODE_ENV", previous[2]);
+    await app.close();
+  }
+});
+
+test("without mail keys and outside production the link comes back in the answer", async () => {
+  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM];
+  setEnv("RESEND_API_KEY", undefined);
+  setEnv("MAIL_FROM", undefined);
+  const { app } = buildTestApp();
+  const posted = letters.length;
+  try {
+    const start = await app.inject({
+      method: "POST",
+      url: "/auth/email/start",
+      payload: { email: testEmail() },
+    });
+    expect(start.statusCode).toBe(200);
+    const { ok, link } = start.json() as { ok: boolean; link: string };
+    expect(ok).toBe(true);
+    expect(link).toMatch(/^remember:\/\/auth\/email\?token=/);
+    // Nothing went anywhere: there is no provider to send through.
+    expect(letters).toHaveLength(posted);
+
+    // And the link is the real thing, not a decoration: the token out of it
+    // opens a session, which is the whole point of handing it over.
+    const verified = await app.inject({
+      method: "POST",
+      url: "/auth/email/verify",
+      payload: { token: new URL(link).searchParams.get("token") },
+    });
+    expect(verified.statusCode).toBe(200);
+    expect((verified.json() as { token: string }).token).toEqual(expect.any(String));
+  } finally {
+    setEnv("RESEND_API_KEY", previous[0]);
+    setEnv("MAIL_FROM", previous[1]);
+    await app.close();
+  }
+});
+
 test("switching the letter's language does not buy a second rate-limit budget", async () => {
   const previous = process.env.EMAIL_LOGIN_RATE_MAX;
   process.env.EMAIL_LOGIN_RATE_MAX = "2";
