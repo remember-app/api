@@ -117,10 +117,15 @@ export function authPlugin(app: FastifyInstance) {
     "/auth/email/start",
     { schema: { body: emailBody } },
     async (request, reply) => {
-      // Before the limiter and before the user is made: with no mail keys
-      // there is no way to finish this request at all, so nothing is written
-      // down and nobody's budget is spent on being told so.
-      if (!mailConfigured()) {
+      // With no mail keys the letter cannot go at all. In production that ends
+      // the request here — before the limiter and before the user is made, so
+      // nothing is written down and nobody's budget is spent on being told so.
+      // Anywhere else the request runs its normal course and the link comes
+      // back in the answer instead (below): a build in somebody's hands has to
+      // have a way in that does not need a mail provider. The signal is the one
+      // the project already uses, `NODE_ENV` (see src/app.ts).
+      const noMail = !mailConfigured();
+      if (noMail && process.env.NODE_ENV === "production") {
         return reply.code(503).send({ error: "mail not configured" });
       }
       const email = normalizeEmail(request.body.email);
@@ -132,6 +137,10 @@ export function authPlugin(app: FastifyInstance) {
         return reply.code(429).send({ error: "too many requests" });
       }
       const token = await startEmailLogin(email);
+      // No provider to post to, so the same link the letter would have carried
+      // is handed straight back to whoever asked. Only ever outside production
+      // — there the request never got this far.
+      if (noMail) return { ok: true, link: deepLink(token) };
       try {
         await sendMagicLink(email, deepLink(token), request.body.language);
       } catch (error) {
