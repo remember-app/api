@@ -134,7 +134,10 @@ export function authPlugin(app: FastifyInstance) {
       // value handed in by a shell, a unit file or a hosting panel arrives
       // raw, so `production ` and `Production` are both things a person can
       // type once and never see again — and each spelling missed here would
-      // be a production server with the bypass live.
+      // be a production server with the bypass live. Matched on the `prod`
+      // prefix for that same reason: `prod` is what a person writes when the
+      // box is one, and a backstop that only knows the long spelling is not
+      // standing where it was put.
       //
       // The domain is matched on the whole `@test.com` tail, after
       // `normalizeEmail` has folded the case: `someone@evil.test.com` is a
@@ -142,7 +145,7 @@ export function authPlugin(app: FastifyInstance) {
       const bypass =
         devEmailBypass() &&
         email.endsWith("@test.com") &&
-        env("NODE_ENV")?.toLowerCase() !== "production";
+        !env("NODE_ENV")?.toLowerCase().startsWith("prod");
       // With no mail keys the letter cannot go at all, and without the bypass
       // there is nothing else to answer with — so the request ends here,
       // before the limiter and before the user is made, so nothing is written

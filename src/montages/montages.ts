@@ -15,10 +15,9 @@ import { notifyMontageReady } from "../memories/push.ts";
  * api owns the `montages` table and writes nothing else about a video: the
  * worker in `projects/montage` picks the job up, takes the row through
  * `processing` to `ready` or `failed`, fills `video_key`, `poster_key` and
- * `duration_seconds` itself, and then knocks on the internal route at the
- * bottom of this file so
- * everyone gets told. The two sides share exactly this: the table, the job type
- * `montage`, and that route.
+ * `duration_seconds` itself, and then knocks on the internal route at the bottom
+ * of this file so everyone gets told. The two sides share exactly this: the
+ * table, the job type `montage`, and that route.
  */
 
 /** A `montages` row exactly as the database holds it. */

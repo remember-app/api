@@ -130,24 +130,18 @@ const counters = async (memoryId: string, userId: string) => {
   return { memory: memory?.montage_count, user: user?.montage_count ?? 0 };
 };
 
-/** The worker's half of a finished video, written by hand — it is not running. */
-const assembled = (montageId: string) => sql`
+/**
+ * The worker's half of a finished video, written by hand — it is not running.
+ *
+ * `poster` false is a ready video with no poster beside it: everything
+ * assembled before the worker learned to cut a frame stays like this forever,
+ * and the app has to read it as «постера нет», not as «ещё не готово».
+ */
+const assembled = (montageId: string, poster = true) => sql`
   update montages
   set status = 'ready', video_key = ${`montages/${montageId}.mp4`},
-      poster_key = ${`montages/${montageId}.jpg`}, duration_seconds = 58.5,
-      updated_at = now()
-  where id = ${montageId}
-`;
-
-/**
- * A ready video with no poster beside it: everything assembled before the
- * worker learned to cut a frame stays like this forever, and the app has to
- * read it as «постера нет», not as «ещё не готово».
- */
-const assembledWithoutPoster = (montageId: string) => sql`
-  update montages
-  set status = 'ready', video_key = ${`montages/${montageId}.mp4`}, duration_seconds = 58.5,
-      updated_at = now()
+      poster_key = ${poster ? `montages/${montageId}.jpg` : null},
+      duration_seconds = 58.5, updated_at = now()
   where id = ${montageId}
 `;
 
@@ -350,7 +344,7 @@ test("the list of montages is every member's, and only a ready one carries a lin
   const other = (await order(app, organizer.token, elsewhere.id, {})).json();
   await assembled(first.id);
   await fell(second.id);
-  await assembledWithoutPoster(oldest.id);
+  await assembled(oldest.id, false);
 
   // Every standing sees the same list, a viewer above all: the matrix gives
   // them «смотреть галерею и ролики».

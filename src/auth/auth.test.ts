@@ -257,7 +257,7 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
     // Spelled the way a person types it once into a hosting panel and never
     // looks at again. A lock that only recognises one of these is not a lock:
     // every spelling it misses hands the link out instead.
-    for (const spelling of ["production", "production ", "Production"]) {
+    for (const spelling of ["production", "production ", "Production", "prod"]) {
       setEnv("NODE_ENV", spelling);
       // The ordinary address and the one the switch would open outside
       // production: in production neither is let through.
