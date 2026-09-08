@@ -37,3 +37,19 @@ export const env = (name: string) => process.env[name]?.trim() || undefined;
 
 export const appleClientId = () => env("APPLE_CLIENT_ID");
 export const googleClientId = () => env("GOOGLE_CLIENT_ID");
+
+/**
+ * The one switch that lets a sign-in skip the letter, and the whole of that
+ * permission: unset, there is no way past the mail provider at all — whatever
+ * `NODE_ENV` says, and whether or not the mail keys are there. What it opens
+ * is deliberately narrow and is decided in `/auth/email/start` (see
+ * src/auth/plugin.ts): with it on, only addresses on test.com, and never in
+ * production.
+ *
+ * The only reader here for which presence is not enough. Every other setting
+ * fails shut when its value is unreadable; this one *opens*, so an
+ * unrecognised value has to leave it closed — `EMAIL_LOGIN_DEV_BYPASS=0` is a
+ * person saying no, and presence alone would hear it as yes.
+ */
+export const devEmailBypass = () =>
+  ["1", "true"].includes(env("EMAIL_LOGIN_DEV_BYPASS")?.toLowerCase() ?? "");

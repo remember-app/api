@@ -231,13 +231,27 @@ test("the letter goes out in the language the request asked for", async () => {
   }
 });
 
+/** The env the dev door is decided by, saved and put back around each test. */
+const doorEnv = ["RESEND_API_KEY", "MAIL_FROM", "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS"];
+const saveEnv = () => doorEnv.map((name) => process.env[name]);
+function restoreEnv(saved: (string | undefined)[]) {
+  for (const [i, name] of doorEnv.entries()) setEnv(name, saved[i]);
+}
+
+/** An address on the one domain the door looks at, tagged like all the others. */
+const doorEmail = () => testEmail().replace("@example.com", "@test.com");
+
 // The lock on the way in that development gets. Pinned by a test and not by a
 // promise: if this ever stops being 503, production hands the key to any
 // account to whoever types its address.
 test("the lock: in production an unconfigured mailbox is still 503, never a link", async () => {
-  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM, process.env.NODE_ENV];
+  const previous = saveEnv();
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
+  // On, deliberately: production is not a place where the switch gets a
+  // hearing. Somebody will one day set it on a staging box that is really the
+  // production one, and that must change nothing here.
+  setEnv("EMAIL_LOGIN_DEV_BYPASS", "1");
   const { app } = buildTestApp();
   try {
     // Spelled the way a person types it once into a hosting panel and never
@@ -245,51 +259,83 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
     // every spelling it misses hands the link out instead.
     for (const spelling of ["production", "production ", "Production"]) {
       setEnv("NODE_ENV", spelling);
-      const email = testEmail();
-      const response = await app.inject({
-        method: "POST",
-        url: "/auth/email/start",
-        payload: { email },
-      });
-      expect(response.statusCode).toBe(503);
-      expect(response.json()).toEqual({ error: "mail not configured" });
-      expect(response.body).not.toContain("remember://");
+      // The ordinary address and the one the switch would open outside
+      // production: in production neither is let through.
+      for (const email of [testEmail(), doorEmail()]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/auth/email/start",
+          payload: { email },
+        });
+        expect(response.statusCode).toBe(503);
+        expect(response.json()).toEqual({ error: "mail not configured" });
+        expect(response.body).not.toContain("remember://");
 
-      // The other half of the promise the handler makes, and the half a status
-      // code cannot show: the answer comes before the user is made and before
-      // a token is minted. Without this the check could drift below
-      // `startEmailLogin` and every request during a mail outage would quietly
-      // mint a live login token that simply never gets returned.
-      const users = await sql`select 1 from users where email = ${email}`;
-      expect(users).toHaveLength(0);
+        // The other half of the promise the handler makes, and the half a
+        // status code cannot show: the answer comes before the user is made
+        // and before a token is minted. Without this the check could drift
+        // below `startEmailLogin` and every request during a mail outage would
+        // quietly mint a live login token that simply never gets returned.
+        const users = await sql`select 1 from users where email = ${email}`;
+        expect(users).toHaveLength(0);
+      }
     }
   } finally {
-    setEnv("RESEND_API_KEY", previous[0]);
-    setEnv("MAIL_FROM", previous[1]);
-    setEnv("NODE_ENV", previous[2]);
+    restoreEnv(previous);
     await app.close();
   }
 });
 
-test("without mail keys and outside production the link comes back in the answer", async () => {
-  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM, process.env.NODE_ENV];
+// The door development keeps, and the whole of it. It used to be «not
+// production», which is a door that opens itself: an unset variable on a
+// machine nobody was thinking about handed a session for any address to
+// whoever typed it. Now it takes a switch somebody turned on by hand, and even
+// then only test.com goes through.
+test("the dev door: only test.com, only with the switch on, and never on absence", async () => {
+  const previous = saveEnv();
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
-  // Pinned rather than left to whatever the process happened to inherit: this
-  // is the documented default (.env.example ships with NODE_ENV commented
-  // out), and the whole point of the lock is that only "production" itself
-  // closes the bypass — everything else, including nothing at all, opens it.
+  // The documented local default: .env.example ships with NODE_ENV commented
+  // out, so this is the state a developer's machine is actually in.
   setEnv("NODE_ENV", undefined);
   const { app } = buildTestApp();
   const posted = letters.length;
+  const start = (email: string) =>
+    app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
+  const refused = async (email: string) => {
+    const response = await start(email);
+    expect(response.statusCode).toBe(503);
+    expect(response.body).not.toContain("remember://");
+    // Refused all the way: no user, so nothing was half-done on the way out.
+    expect(await sql`select 1 from users where email = ${email}`).toHaveLength(0);
+  };
   try {
-    const start = await app.inject({
-      method: "POST",
-      url: "/auth/email/start",
-      payload: { email: testEmail() },
-    });
-    expect(start.statusCode).toBe(200);
-    const { ok, link } = start.json() as { ok: boolean; link: string };
+    // Switch absent — no door at all, not for anybody. This is the case the
+    // old behaviour got wrong.
+    setEnv("EMAIL_LOGIN_DEV_BYPASS", undefined);
+    await refused(testEmail());
+    await refused(doorEmail());
+
+    // Present but not a yes. This one opens rather than locks, so anything it
+    // does not recognise has to leave it shut — `=0` is a person saying no.
+    for (const value of ["", "0", "no", "yes please"]) {
+      setEnv("EMAIL_LOGIN_DEV_BYPASS", value);
+      await refused(doorEmail());
+    }
+
+    setEnv("EMAIL_LOGIN_DEV_BYPASS", "1");
+    // On, and still no door for an ordinary address: the switch opens one
+    // domain, not the route.
+    await refused(testEmail());
+    // And the domain is the whole tail, not a suffix — otherwise anyone who
+    // can register a name could point `test.com` at the end of their own.
+    await refused(doorEmail().replace("@test.com", "@evil.test.com"));
+
+    // On, and a test.com address: in, with the link in the answer.
+    const email = doorEmail();
+    const opened = await start(email);
+    expect(opened.statusCode).toBe(200);
+    const { ok, link } = opened.json() as { ok: boolean; link: string };
     expect(ok).toBe(true);
     expect(link).toMatch(/^remember:\/\/auth\/email\?token=/);
     // Nothing went anywhere: there is no provider to send through.
@@ -305,20 +351,16 @@ test("without mail keys and outside production the link comes back in the answer
     expect(verified.statusCode).toBe(200);
     expect((verified.json() as { token: string }).token).toEqual(expect.any(String));
 
-    // An empty string is the same misconfiguration as unset (see `env` in
-    // config.ts) and must open the same door, not a third behaviour.
-    setEnv("NODE_ENV", "");
-    const blank = await app.inject({
-      method: "POST",
-      url: "/auth/email/start",
-      payload: { email: testEmail() },
-    });
-    expect(blank.statusCode).toBe(200);
-    expect((blank.json() as { link: string }).link).toMatch(/^remember:\/\/auth\/email\?token=/);
+    // The keys make no difference to the door — it is the switch and the
+    // domain that decide. A letter to test.com would only bounce.
+    setEnv("RESEND_API_KEY", "test-key");
+    setEnv("MAIL_FROM", "Remember <no-reply@example.com>");
+    const withKeys = await start(doorEmail());
+    expect(withKeys.statusCode).toBe(200);
+    expect((withKeys.json() as { link: string }).link).toMatch(/^remember:\/\/auth\/email\?token=/);
+    expect(letters).toHaveLength(posted);
   } finally {
-    setEnv("RESEND_API_KEY", previous[0]);
-    setEnv("MAIL_FROM", previous[1]);
-    setEnv("NODE_ENV", previous[2]);
+    restoreEnv(previous);
     await app.close();
   }
 });

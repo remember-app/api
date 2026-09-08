@@ -12,9 +12,14 @@ import type { AuthUser } from "./session.ts";
  */
 export const testEmail = (tag: string) => `${tag}-test-${randomUUID()}@example.com`;
 
-/** Undoes `testEmail(tag)`. Sessions, identities and link tokens cascade off. */
+/**
+ * Undoes `testEmail(tag)`. Sessions, identities and link tokens cascade off.
+ * Keyed on the tag alone and not on the domain: auth.test.ts also makes
+ * addresses on test.com — the one domain the dev bypass opens — and those are
+ * this tag's rows too.
+ */
 export const cleanupTestUsers = (tag: string) =>
-  sql`delete from users where email like ${`${tag}-test-%@example.com`}`;
+  sql`delete from users where email like ${`${tag}-test-%`}`;
 
 /** An app with its own log, for the tests that read what it wrote. */
 export function buildTestApp() {
