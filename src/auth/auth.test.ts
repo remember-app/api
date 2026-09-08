@@ -272,9 +272,14 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
 });
 
 test("without mail keys and outside production the link comes back in the answer", async () => {
-  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM];
+  const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM, process.env.NODE_ENV];
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
+  // Pinned rather than left to whatever the process happened to inherit: this
+  // is the documented default (.env.example ships with NODE_ENV commented
+  // out), and the whole point of the lock is that only "production" itself
+  // closes the bypass — everything else, including nothing at all, opens it.
+  setEnv("NODE_ENV", undefined);
   const { app } = buildTestApp();
   const posted = letters.length;
   try {
@@ -299,9 +304,21 @@ test("without mail keys and outside production the link comes back in the answer
     });
     expect(verified.statusCode).toBe(200);
     expect((verified.json() as { token: string }).token).toEqual(expect.any(String));
+
+    // An empty string is the same misconfiguration as unset (see `env` in
+    // config.ts) and must open the same door, not a third behaviour.
+    setEnv("NODE_ENV", "");
+    const blank = await app.inject({
+      method: "POST",
+      url: "/auth/email/start",
+      payload: { email: testEmail() },
+    });
+    expect(blank.statusCode).toBe(200);
+    expect((blank.json() as { link: string }).link).toMatch(/^remember:\/\/auth\/email\?token=/);
   } finally {
     setEnv("RESEND_API_KEY", previous[0]);
     setEnv("MAIL_FROM", previous[1]);
+    setEnv("NODE_ENV", previous[2]);
     await app.close();
   }
 });
