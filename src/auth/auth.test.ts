@@ -238,17 +238,31 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
   const previous = [process.env.RESEND_API_KEY, process.env.MAIL_FROM, process.env.NODE_ENV];
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
-  setEnv("NODE_ENV", "production");
   const { app } = buildTestApp();
   try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/email/start",
-      payload: { email: testEmail() },
-    });
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toEqual({ error: "mail not configured" });
-    expect(response.body).not.toContain("remember://");
+    // Spelled the way a person types it once into a hosting panel and never
+    // looks at again. A lock that only recognises one of these is not a lock:
+    // every spelling it misses hands the link out instead.
+    for (const spelling of ["production", "production ", "Production"]) {
+      setEnv("NODE_ENV", spelling);
+      const email = testEmail();
+      const response = await app.inject({
+        method: "POST",
+        url: "/auth/email/start",
+        payload: { email },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: "mail not configured" });
+      expect(response.body).not.toContain("remember://");
+
+      // The other half of the promise the handler makes, and the half a status
+      // code cannot show: the answer comes before the user is made and before
+      // a token is minted. Without this the check could drift below
+      // `startEmailLogin` and every request during a mail outage would quietly
+      // mint a live login token that simply never gets returned.
+      const users = await sql`select 1 from users where email = ${email}`;
+      expect(users).toHaveLength(0);
+    }
   } finally {
     setEnv("RESEND_API_KEY", previous[0]);
     setEnv("MAIL_FROM", previous[1]);
