@@ -1,5 +1,5 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
-import { rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
+import { env, rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
 import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
 import { mailConfigured, sendMagicLink } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, type Language, verify } from "./session.ts";
@@ -124,8 +124,15 @@ export function authPlugin(app: FastifyInstance) {
       // back in the answer instead (below): a build in somebody's hands has to
       // have a way in that does not need a mail provider. The signal is the one
       // the project already uses, `NODE_ENV` (see src/app.ts).
+      //
+      // Read through `env` and case-folded, unlike every other reader of this
+      // variable: this one is a lock, and every spelling it fails to recognise
+      // opens it rather than closing it. `--env-file` trims and unquotes what
+      // it parses, but a value handed in by a shell, a unit file or a hosting
+      // panel arrives raw, so `production ` and `Production` are both things a
+      // person can type once and never see again.
       const noMail = !mailConfigured();
-      if (noMail && process.env.NODE_ENV === "production") {
+      if (noMail && env("NODE_ENV")?.toLowerCase() === "production") {
         return reply.code(503).send({ error: "mail not configured" });
       }
       const email = normalizeEmail(request.body.email);
