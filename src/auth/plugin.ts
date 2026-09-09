@@ -120,7 +120,7 @@ export function authPlugin(app: FastifyInstance) {
       const email = normalizeEmail(request.body.email);
       // The one way in that does not need a mail provider — a build in
       // somebody's hands has to have one — and it is deliberately narrow: the
-      // switch explicitly on, the address on test.com, and not production.
+      // switch explicitly on, the address on test.test, and not production.
       // Any of the three missing and the request takes the ordinary path: a
       // real letter, or 503 below when there is nothing to post it through.
       //
@@ -139,12 +139,19 @@ export function authPlugin(app: FastifyInstance) {
       // box is one, and a backstop that only knows the long spelling is not
       // standing where it was put.
       //
-      // The domain is matched on the whole `@test.com` tail, after
-      // `normalizeEmail` has folded the case: `someone@evil.test.com` is a
+      // `.test` is one of the four names RFC 2606 reserves forever, so
+      // `test.test` is nobody's to register and will never be anybody's mail
+      // server — an address here cannot be a real person's, whoever types it.
+      // That is why the door is on this domain and not on a name somebody
+      // owns: a domain we merely believe is unused can grow a mailbox, and
+      // then a link meant for a developer is delivered to its owner.
+      //
+      // The domain is matched on the whole `@test.test` tail, after
+      // `normalizeEmail` has folded the case: `someone@evil.test.test` is a
       // different domain and must not pass as this one.
       const bypass =
         devEmailBypass() &&
-        email.endsWith("@test.com") &&
+        email.endsWith("@test.test") &&
         !env("NODE_ENV")?.toLowerCase().startsWith("prod");
       // With no mail keys the letter cannot go at all, and without the bypass
       // there is nothing else to answer with — so the request ends here,
@@ -163,7 +170,8 @@ export function authPlugin(app: FastifyInstance) {
       const token = await startEmailLogin(email);
       // The development door decided above: the same link the letter would
       // have carried is handed straight back to whoever asked. Mail keys make
-      // no difference here — a letter to test.com goes nowhere anyway, and a
+      // no difference here — a letter to test.test has nowhere to be
+      // delivered, the domain being reserved rather than merely idle, and a
       // dev machine that happens to hold real keys should not start bouncing.
       if (bypass) return { ok: true, link: deepLink(token) };
       try {

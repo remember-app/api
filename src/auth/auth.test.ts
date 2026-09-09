@@ -239,7 +239,7 @@ function restoreEnv(saved: (string | undefined)[]) {
 }
 
 /** An address on the one domain the door looks at, tagged like all the others. */
-const doorEmail = () => testEmail().replace("@example.com", "@test.com");
+const doorEmail = () => testEmail().replace("@example.com", "@test.test");
 
 // The lock on the way in that development gets. Pinned by a test and not by a
 // promise: if this ever stops being 503, production hands the key to any
@@ -326,8 +326,8 @@ test("the lock holds with mail configured too: production still sends the letter
 // production», which is a door that opens itself: an unset variable on a
 // machine nobody was thinking about handed a session for any address to
 // whoever typed it. Now it takes a switch somebody turned on by hand, and even
-// then only test.com goes through.
-test("the dev door: only test.com, only with the switch on, and never on absence", async () => {
+// then only test.test goes through.
+test("the dev door: only test.test, only with the switch on, and never on absence", async () => {
   const previous = saveEnv();
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
@@ -364,10 +364,10 @@ test("the dev door: only test.com, only with the switch on, and never on absence
     // domain, not the route.
     await refused(testEmail());
     // And the domain is the whole tail, not a suffix — otherwise anyone who
-    // can register a name could point `test.com` at the end of their own.
-    await refused(doorEmail().replace("@test.com", "@evil.test.com"));
+    // can register a name could point `test.test` at the end of their own.
+    await refused(doorEmail().replace("@test.test", "@evil.test.test"));
 
-    // On, and a test.com address: in, with the link in the answer.
+    // On, and a test.test address: in, with the link in the answer.
     const email = doorEmail();
     const opened = await start(email);
     expect(opened.statusCode).toBe(200);
@@ -388,7 +388,7 @@ test("the dev door: only test.com, only with the switch on, and never on absence
     expect((verified.json() as { token: string }).token).toEqual(expect.any(String));
 
     // The keys make no difference to the door — it is the switch and the
-    // domain that decide. A letter to test.com would only bounce.
+    // domain that decide. A letter to test.test has nowhere to arrive.
     setEnv("RESEND_API_KEY", "test-key");
     setEnv("MAIL_FROM", "Remember <no-reply@example.com>");
     const withKeys = await start(doorEmail());

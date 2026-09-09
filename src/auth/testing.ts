@@ -15,7 +15,7 @@ export const testEmail = (tag: string) => `${tag}-test-${randomUUID()}@example.c
 /**
  * Undoes `testEmail(tag)`. Sessions, identities and link tokens cascade off.
  * Keyed on the tag alone and not on the domain: auth.test.ts also makes
- * addresses on test.com — the one domain the dev bypass opens — and those are
+ * addresses on test.test — the one domain the dev bypass opens — and those are
  * this tag's rows too.
  */
 export const cleanupTestUsers = (tag: string) =>
