@@ -269,16 +269,24 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   // Вертикальный: the one preference that changes the shape of the video
   // (doc-03). It is written into `params` beside the length, comes back in the
   // answer to the order, and is still there when the app reads the list — the
-  // worker takes it from the same place. A landscape one says nothing: an order
-  // with no orientation is the row it was before this existed, above.
+  // worker takes it from the same place.
   const portrait = await order(app, organizer.token, memory.id, { orientation: "portrait" });
   expect(portrait.statusCode).toBe(201);
-  expect(portrait.json().params).toEqual({ target_seconds: 60, orientation: "portrait" });
+  const vertical = portrait.json();
+  expect(vertical.params).toEqual({ target_seconds: 60, orientation: "portrait" });
   const listed = (await list(app, organizer.token, memory.id)).json();
-  expect(listed.find((item: { id: string }) => item.id === portrait.json().id).params).toEqual({
+  expect(listed.find((item: { id: string }) => item.id === vertical.id)?.params).toEqual({
     target_seconds: 60,
     orientation: "portrait",
   });
+
+  // Asked for outright, the horizontal one is written down too — it is a choice
+  // somebody made, and a row says which. Saying nothing is the other thing, and
+  // writes no key at all (above): two shapes of row the worker has to read as
+  // the same video, which is what pins them both here.
+  const landscape = await order(app, organizer.token, memory.id, { orientation: "landscape" });
+  expect(landscape.statusCode).toBe(201);
+  expect(landscape.json().params).toEqual({ target_seconds: 60, orientation: "landscape" });
 
   // Somebody else's memory, one that never existed and an id that is not a
   // uuid: byte for byte the same answer (README, «404 один на всех»).
