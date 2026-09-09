@@ -153,3 +153,26 @@ test("список виден только хозяину: чужой не чи�
 
   await app.close();
 });
+
+test("удалённый аккаунт исчезает из списков — и как владелец, и как чужой контакт (AC #1)", async () => {
+  // Нет маршрута «удалить свой аккаунт» — это условие миграции (ON DELETE
+  // CASCADE), а не эндпоинта, поэтому проверяется тем же способом, каким его
+  // будет выполнять сама база: прямым delete from users.
+  const { app } = buildTestApp();
+  const owner = await person(app);
+  const doomed = await person(app);
+  const keeper = await person(app);
+
+  expect((await add(app, owner.token, doomed.username)).statusCode).toBe(200);
+  expect((await add(app, doomed.token, keeper.username)).statusCode).toBe(200);
+
+  await sql`delete from users where id = ${doomed.id}`;
+
+  // Как чужой контакт: строка (owner, doomed) исчезла вместе с ним.
+  expect(await ids(app, owner.token)).toEqual([]);
+  // Как владелец: его собственный список (doomed -> keeper) исчез тоже.
+  const [row] = await sql`select 1 from contacts where owner_id = ${doomed.id}`;
+  expect(row).toBeUndefined();
+
+  await app.close();
+});
