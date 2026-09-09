@@ -254,6 +254,8 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     { target_seconds: 10_000 },
     { target_seconds: 60.5 },
     { music_track_id: "epic" },
+    { orientation: "square" },
+    { orientation: "Portrait" },
   ]) {
     expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
   }
@@ -263,6 +265,20 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   });
   expect(stuffed.statusCode).toBe(201);
   expect(stuffed.json().params).toEqual({ target_seconds: 45 });
+
+  // Вертикальный: the one preference that changes the shape of the video
+  // (doc-03). It is written into `params` beside the length, comes back in the
+  // answer to the order, and is still there when the app reads the list — the
+  // worker takes it from the same place. A landscape one says nothing: an order
+  // with no orientation is the row it was before this existed, above.
+  const portrait = await order(app, organizer.token, memory.id, { orientation: "portrait" });
+  expect(portrait.statusCode).toBe(201);
+  expect(portrait.json().params).toEqual({ target_seconds: 60, orientation: "portrait" });
+  const listed = (await list(app, organizer.token, memory.id)).json();
+  expect(listed.find((item: { id: string }) => item.id === portrait.json().id).params).toEqual({
+    target_seconds: 60,
+    orientation: "portrait",
+  });
 
   // Somebody else's memory, one that never existed and an id that is not a
   // uuid: byte for byte the same answer (README, «404 один на всех»).

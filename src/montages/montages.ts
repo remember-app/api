@@ -30,7 +30,11 @@ export type Montage = {
   /** The frame the app shows before the video plays; the worker cuts it. */
   poster_key: string | null;
   duration_seconds: number | null;
-  params: { target_seconds?: number; music_track_id?: string };
+  params: {
+    target_seconds?: number;
+    music_track_id?: string;
+    orientation?: (typeof orientations)[number];
+  };
   error_text: string | null;
   created_at: Date;
   updated_at: Date;
@@ -43,6 +47,17 @@ export type Montage = {
  * strings.
  */
 const musicTracks = ["warm", "bright", "calm"] as const;
+
+/**
+ * Which way round the video is cut (doc-03: «горизонтальный ролик или
+ * вертикальный», уточнено 2026-09-09). Ordered without one means landscape,
+ * and that is left as the missing key rather than written down: every montage
+ * ordered before today has no `orientation` in its `params` either, so the
+ * worker reads «поля нет» as landscape whatever api does — and a default
+ * spelled out here would only be a key that says what its absence already
+ * says. The chosen one is written, because that is a choice somebody made.
+ */
+const orientations = ["landscape", "portrait"] as const;
 
 /**
  * Nothing to cut a video out of: below this a montage is refused at the order
@@ -150,6 +165,7 @@ export function montageRoutes(app: FastifyInstance) {
         maximum: maxTargetSeconds(),
       },
       music_track_id: { type: "string", enum: [...musicTracks] },
+      orientation: { type: "string", enum: [...orientations] },
     },
   } as const;
 
@@ -158,7 +174,11 @@ export function montageRoutes(app: FastifyInstance) {
   // does not order what is made of it.
   app.post<{
     Params: { memoryId: string };
-    Body: { target_seconds?: number; music_track_id?: (typeof musicTracks)[number] } | null;
+    Body: {
+      target_seconds?: number;
+      music_track_id?: (typeof musicTracks)[number];
+      orientation?: (typeof orientations)[number];
+    } | null;
   }>(
     "/memories/:memoryId/montages",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: orderBody } },
@@ -190,10 +210,12 @@ export function montageRoutes(app: FastifyInstance) {
       // What was ordered, resolved here rather than left for the worker to
       // guess: the row is then the whole answer to «какой ролик просили», and
       // there is one place the default length lives. A track nobody chose stays
-      // absent — picking one is the worker's, it holds the files.
+      // absent — picking one is the worker's, it holds the files — and so does
+      // an orientation nobody chose, which is landscape by being missing.
       const params = {
         target_seconds: request.body?.target_seconds ?? targetSeconds(),
         ...(request.body?.music_track_id ? { music_track_id: request.body.music_track_id } : {}),
+        ...(request.body?.orientation ? { orientation: request.body.orientation } : {}),
       };
 
       const montage = await sql.begin(async (tx) => {
