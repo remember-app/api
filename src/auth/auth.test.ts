@@ -286,6 +286,42 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
   }
 });
 
+// The realistic disaster, not the tidy one: every real deployment has mail
+// keys, so the 503 lock above never even engages there — `mailConfigured()`
+// is true and the request runs its ordinary course regardless of `bypass`.
+// The only thing standing between a switch flipped on by mistake and a leaked
+// session is the production check baked into `bypass` itself. This pins that,
+// with real keys in place, a production box still posts the real letter and
+// the answer never carries a link — prod prefix included.
+test("the lock holds with mail configured too: production still sends the letter, never the link", async () => {
+  const previous = saveEnv();
+  setEnv("EMAIL_LOGIN_DEV_BYPASS", "1");
+  const { app } = buildTestApp();
+  const posted = letters.length;
+  const sent: string[] = [];
+  try {
+    for (const spelling of ["production", "prod"]) {
+      setEnv("NODE_ENV", spelling);
+      const email = doorEmail();
+      sent.push(email);
+      const response = await app.inject({
+        method: "POST",
+        url: "/auth/email/start",
+        payload: { email },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ ok: true });
+      expect(response.body).not.toContain("remember://");
+    }
+    // A real letter per request, addressed to the real recipient — the
+    // ordinary path taken both times, not the bypass.
+    expect(letters.slice(posted).map((letter) => letter.to[0])).toEqual(sent);
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+  }
+});
+
 // The door development keeps, and the whole of it. It used to be «not
 // production», which is a door that opens itself: an unset variable on a
 // machine nobody was thinking about handed a session for any address to
