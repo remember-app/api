@@ -998,7 +998,7 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 | задача в `jobs`    | таблица montage | тип — ровно `montage`, `ref` — `montages.id` строкой            |
 | `status`           | пишут оба      | API ставит только `queued`; всё дальше — воркера                 |
 | `video_key`, `poster_key`, `duration_seconds`, `error_text` | воркер | API их только читает и подписывает ссылки |
-| `params`           | пишет API      | `{"target_seconds": 60}` плюс `music_track_id`, если его назвали  |
+| `params`           | пишет API      | `{"target_seconds": 60}` плюс `music_track_id` и `orientation`, если их назвали |
 | `/internal/montages/:id/ready` | API | воркер дёргает его после того, как записал `ready`               |
 
 Каталог треков (`warm`, `bright`, `calm`) общий на оба сервиса: здесь по нему только проверяется
@@ -1011,13 +1011,14 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 собрать — решает организатор (`architecture.md`, «Проверка прав»).
 
 ```
-{"target_seconds": 90, "music_track_id": "calm"}
+{"target_seconds": 90, "music_track_id": "calm", "orientation": "portrait"}
 ```
 
 | Поле              | Обязательно | Что это                                                        |
 |-------------------|-------------|-----------------------------------------------------------------|
 | `target_seconds`  | нет         | желаемая длина, целое; границы — `MONTAGE_TARGET_SECONDS_MIN`/`MAX` |
 | `music_track_id`  | нет         | `warm`, `bright` или `calm` — трек из набора воркера             |
+| `orientation`     | нет         | `landscape` или `portrait`; не задана — ролик горизонтальный     |
 
 Тело целиком необязательно: `{}`, `null` и запрос вовсе без тела — это один и тот же «без
 пожеланий». Одна оговорка про третий вариант: «без тела» значит и без заголовка
@@ -1026,13 +1027,15 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 заголовок всегда, надёжнее слать `{}`.
 
 Незаданная длина записывается в строку значением по умолчанию (`MONTAGE_TARGET_SECONDS`, 60 с),
-незаданный трек не записывается вовсе — его выберет воркер. Неизвестные поля отбрасываются, в
-`params` попадает только то, что здесь описано.
+незаданный трек не записывается вовсе — его выберет воркер. Невыбранная ориентация тоже не
+пишется: отсутствие поля воркер читает как `landscape`, ровно как у роликов, заказанных до того,
+как поле появилось. Записывается только выбранная. Неизвестные поля отбрасываются, в `params`
+попадает только то, что здесь описано.
 
 ```
 201 Created
 {"id":"…","memory_id":"…","ordered_by":"…","status":"queued","duration_seconds":null,
- "params":{"target_seconds":90,"music_track_id":"calm"},"error_text":null,
+ "params":{"target_seconds":90,"music_track_id":"calm","orientation":"portrait"},"error_text":null,
  "created_at":"…","updated_at":"…","video_url":null,"poster_url":null}
 ```
 
@@ -1040,7 +1043,7 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 |-------|-------------------------------------------------------------|--------------------------------|
 | `403` | `{"error":"forbidden"}`                                      | участник, но не организатор    |
 | `409` | `{"error":"not enough material for a montage","ready_items":2,"need":3}` | в воспоминании меньше трёх `ready`-медиа |
-| `400` | ошибка схемы                                                 | длина вне границ, трек не из набора |
+| `400` | ошибка схемы                                                 | длина вне границ, трек не из набора, ориентация не `landscape`/`portrait` |
 
 Меньше трёх готовых файлов — отказ **до** записи: ни строки, ни задачи не остаётся. Считаются
 только `media_items` в статусе `ready`: то, что ещё грузится или обрабатывается, воркеру нечем
@@ -1059,7 +1062,8 @@ uuid — `400`; форма `urn:uuid:…` тоже `400`, хотя ajv её за
 ```
 200 OK
 [{"id":"…","memory_id":"…","ordered_by":"…","status":"ready","duration_seconds":58.5,
-  "params":{"target_seconds":60},"error_text":null,"created_at":"…","updated_at":"…",
+  "params":{"target_seconds":60,"orientation":"portrait"},"error_text":null,
+  "created_at":"…","updated_at":"…",
   "video_url":"http://…&X-Amz-Signature=…","poster_url":"http://…&X-Amz-Signature=…"}]
 ```
 
