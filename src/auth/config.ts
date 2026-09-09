@@ -43,8 +43,9 @@ export const googleClientId = () => env("GOOGLE_CLIENT_ID");
  * permission: unset, there is no way past the mail provider at all — whatever
  * `NODE_ENV` says, and whether or not the mail keys are there. What it opens
  * is deliberately narrow and is decided in `/auth/email/start` (see
- * src/auth/plugin.ts): with it on, only addresses on test.com, and never in
- * production.
+ * src/auth/plugin.ts): with it on, only addresses on test.test — a domain RFC
+ * 2606 reserves forever, so it can never be anybody's mail server — and never
+ * in production.
  *
  * The only reader here for which presence is not enough. Every other setting
  * fails shut when its value is unreadable; this one *opens*, so an
