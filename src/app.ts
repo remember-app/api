@@ -2,6 +2,7 @@ import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
 import { socialRoutes } from "./auth/social.ts";
+import { contactRoutes } from "./contacts/contacts.ts";
 import { galleryRoutes } from "./media/gallery.ts";
 import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
@@ -40,6 +41,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   authPlugin(app);
   identityRoutes(app);
   socialRoutes(app);
+  // Only app.authenticate: a contact list is the caller's own and knows
+  // nothing about memories or membership.
+  contactRoutes(app);
   // After authPlugin for the same reason: it mounts app.authenticate, and
   // it also decorates app.requireMembership for every later feature.
   memoriesPlugin(app);
