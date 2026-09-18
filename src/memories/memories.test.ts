@@ -325,15 +325,21 @@ test("the listing says how many members have already brought frames, and how man
   const crowd = (
     await create(app, organizer.token, { title: title(), event_start: "2026-04-01T12:00:00Z" })
   ).json();
-  // One member in each status that is an answer: «ещё будет», «это всё» and
-  // «ждать нечего» all count as brought — `not_started` is the only one the
-  // organizer is still waiting on (doc-06).
-  const answered: ContributionStatus[] = ["more_coming", "done", "nothing"];
-  for (const status of answered) {
+  // «это всё» and «ждать нечего» are brought, «ещё будет» is not — material is
+  // still on the way (doc-06). The viewer is in `done` on purpose: under the
+  // old rule this roster read 4 of 5, under the rule doc-06 fixed it is 2 of 4
+  // — the viewer is out of both counts, and `more_coming` is out of the first.
+  const roster: [MemberRole, ContributionStatus][] = [
+    ["contributor", "more_coming"],
+    ["contributor", "done"],
+    ["contributor", "nothing"],
+    ["viewer", "done"],
+  ];
+  for (const [role, status] of roster) {
     const member = await signIn(app, email());
     await sql`
       insert into memory_members (memory_id, user_id, role, invited_by, status)
-      values (${crowd.id}, ${member.user.id}, 'contributor', ${organizer.user.id}, ${status})
+      values (${crowd.id}, ${member.user.id}, ${role}, ${organizer.user.id}, ${status})
     `;
   }
 
@@ -347,20 +353,21 @@ test("the listing says how many members have already brought frames, and how man
       ]);
 
   // Both memories in the one answer, and neither count leaks into the other:
-  // the organizer of the crowd is still in `not_started`, so it is 3 of 4.
+  // the organizer of the crowd is still in `not_started`, so it is 2 of 4.
   expect(await counts()).toEqual([
     [alone.id, 0, 1],
-    [crowd.id, 3, 4],
+    [crowd.id, 2, 4],
   ]);
 
-  // Everybody has answered now — the full end of the bar.
+  // The organizer has brought theirs too — and the one member still «ещё
+  // будет» keeps the bar off full, viewer or no viewer.
   await sql`
     update memory_members set status = 'done'
     where memory_id = ${crowd.id} and user_id = ${organizer.user.id}
   `;
   expect(await counts()).toEqual([
     [alone.id, 0, 1],
-    [crowd.id, 4, 4],
+    [crowd.id, 3, 4],
   ]);
 
   // Counted as whole numbers: count() is bigint, and unless it is cast the

@@ -195,17 +195,20 @@ export function memoriesPlugin(app: FastifyInstance) {
       -- of each memory, counted here rather than asked for per card — the
       -- screen holds every memory one is in, and the roster route
       -- (src/memories/members.ts) is one request per memory.
-      -- Anything but not_started counts as brought: it is the only status
-      -- nobody has answered for, so the other three — «ещё будет», «это всё»,
-      -- «ждать нечего» — are the members the organizer is no longer waiting on.
+      -- Brought is done or nothing — the two answers that mean nobody is
+      -- waiting on this member any more. more_coming is still material on the
+      -- way, and not_started is no answer at all. Viewers fall out of both
+      -- counts: they were never asked to bring anything, so counting them would
+      -- hold the bar below full forever.
       -- Cast to int because count() is bigint, which postgres.js hands over as
       -- a string — the card would then draw «7» beside «9» and be unable to
       -- compare them.
       join lateral (
         select count(*)::int as member_count,
-          count(*) filter (where roster.status <> 'not_started')::int
+          count(*) filter (where roster.status in ('done', 'nothing'))::int
             as contributed_member_count
-        from memory_members roster where roster.memory_id = m.id
+        from memory_members roster
+        where roster.memory_id = m.id and roster.role <> 'viewer'
       ) counts on true
       where mm.user_id = ${request.user.id}
       order by m.event_start desc, m.created_at desc
