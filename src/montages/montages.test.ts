@@ -389,10 +389,25 @@ test("the order carries the story, the frames picked by hand and the organizer's
   expect(single.json().params.exclude_media_ids).toEqual([fourth]);
 
   // A track off the worker's shelf still works, on its own: the key is the
-  // other way of saying the same thing, not a replacement for it.
-  const shelf = await order(app, organizer.token, memory.id, { music_track_id: "calm" });
-  expect(shelf.statusCode).toBe(201);
-  expect(shelf.json().params).toEqual({ target_seconds: 60, music_track_id: "calm" });
+  // other way of saying the same thing, not a replacement for it. Every one of
+  // the five, in the order of the screen — `night` and `road` came with the real
+  // library and were refused here alone while this service still knew three.
+  const shelved: [string, string][] = [];
+  for (const music_track_id of ["bright", "warm", "calm", "night", "road"]) {
+    const shelf = await order(app, organizer.token, memory.id, { music_track_id });
+    expect(shelf.statusCode).toBe(201);
+    expect(shelf.json().params).toEqual({ target_seconds: 60, music_track_id });
+    shelved.push([shelf.json().id, music_track_id]);
+  }
+  // And still there when the app reads the list — the worker takes the track
+  // from the same place.
+  const shelfListed = (await list(app, organizer.token, memory.id)).json();
+  for (const [id, music_track_id] of shelved) {
+    expect(shelfListed.find((item: { id: string }) => item.id === id)?.params).toEqual({
+      target_seconds: 60,
+      music_track_id,
+    });
+  }
 
   const before = (await montageRows(memory.id)).length;
 
