@@ -146,10 +146,18 @@ export function memoriesPlugin(app: FastifyInstance) {
         select created.*, 'organizer'::text as role from created
       `;
       if (!memory) throw new Error("insert into memories returned no row");
-      // Empty rather than absent: the listing answers with exactly this shape,
-      // and the client prepends what it just created to the list it holds.
-      // A memory a moment old has no material, so there is nothing to sign.
-      return reply.code(201).send({ ...memory, recent_thumbnail_urls: [] });
+      // Spelled out rather than absent: the listing answers with exactly this
+      // shape, and the client prepends what it just created to the list it
+      // holds. A memory a moment old has no material, so there is nothing to
+      // sign — and exactly one member, its organizer, who has brought nothing
+      // yet. Constants and not a second query: the statement above is what
+      // made both of those true.
+      return reply.code(201).send({
+        ...memory,
+        recent_thumbnail_urls: [],
+        member_count: 1,
+        contributed_member_count: 0,
+      });
     },
   );
 
@@ -161,8 +169,14 @@ export function memoriesPlugin(app: FastifyInstance) {
     // call per card to fetch them would be a round trip per card. Four is what
     // the card draws — enough of the material to speak for itself, so nothing
     // has to count the rest beside them.
-    const rows = await sql<(Memory & { role: MemberRole; thumbnail_keys: string[] })[]>`
-      select m.*, mm.role,
+    type Row = Memory & {
+      role: MemberRole;
+      thumbnail_keys: string[];
+      member_count: number;
+      contributed_member_count: number;
+    };
+    const rows = await sql<Row[]>`
+      select m.*, mm.role, counts.member_count, counts.contributed_member_count,
         array(
           select mi.thumbnail_key from media_items mi
           -- Ready and no earlier: the thumbnail key is the montage worker's to
@@ -177,6 +191,22 @@ export function memoriesPlugin(app: FastifyInstance) {
         ) as thumbnail_keys
       from memory_members mm
       join memories m on m.id = mm.memory_id
+      -- «7 из 9 уже скинули свои кадры» on the card (doc-06): the whole roster
+      -- of each memory, counted here rather than asked for per card — the
+      -- screen holds every memory one is in, and the roster route
+      -- (src/memories/members.ts) is one request per memory.
+      -- Anything but not_started counts as brought: it is the only status
+      -- nobody has answered for, so the other three — «ещё будет», «это всё»,
+      -- «ждать нечего» — are the members the organizer is no longer waiting on.
+      -- Cast to int because count() is bigint, which postgres.js hands over as
+      -- a string — the card would then draw «7» beside «9» and be unable to
+      -- compare them.
+      join lateral (
+        select count(*)::int as member_count,
+          count(*) filter (where roster.status <> 'not_started')::int
+            as contributed_member_count
+        from memory_members roster where roster.memory_id = m.id
+      ) counts on true
       where mm.user_id = ${request.user.id}
       order by m.event_start desc, m.created_at desc
     `;

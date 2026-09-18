@@ -3,7 +3,7 @@ import type { InjectOptions } from "fastify";
 import { afterAll, expect, test } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
 import { sql } from "../db.ts";
-import type { MemberRole } from "./plugin.ts";
+import type { ContributionStatus, MemberRole } from "./plugin.ts";
 
 const email = () => testEmail("task11");
 
@@ -307,6 +307,67 @@ test("an unconfigured bucket still answers, with empty tails and not a smaller c
     if (original === undefined) delete process.env.R2_ENDPOINT;
     else process.env.R2_ENDPOINT = original;
   }
+
+  await app.close();
+});
+
+test("the listing says how many members have already brought frames, and how many there are", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+
+  // Nobody in it but its organizer, who has brought nothing — the empty end of
+  // the card's «0 из 1». Created answers it as well as the listing does.
+  const alone = (
+    await create(app, organizer.token, { title: title(), event_start: "2026-05-01T12:00:00Z" })
+  ).json();
+  expect([alone.contributed_member_count, alone.member_count]).toEqual([0, 1]);
+
+  const crowd = (
+    await create(app, organizer.token, { title: title(), event_start: "2026-04-01T12:00:00Z" })
+  ).json();
+  // One member in each status that is an answer: «ещё будет», «это всё» and
+  // «ждать нечего» all count as brought — `not_started` is the only one the
+  // organizer is still waiting on (doc-06).
+  const answered: ContributionStatus[] = ["more_coming", "done", "nothing"];
+  for (const status of answered) {
+    const member = await signIn(app, email());
+    await sql`
+      insert into memory_members (memory_id, user_id, role, invited_by, status)
+      values (${crowd.id}, ${member.user.id}, 'contributor', ${organizer.user.id}, ${status})
+    `;
+  }
+
+  const counts = async () =>
+    (await list(app, organizer.token))
+      .json()
+      .map((m: { id: string; contributed_member_count: number; member_count: number }) => [
+        m.id,
+        m.contributed_member_count,
+        m.member_count,
+      ]);
+
+  // Both memories in the one answer, and neither count leaks into the other:
+  // the organizer of the crowd is still in `not_started`, so it is 3 of 4.
+  expect(await counts()).toEqual([
+    [alone.id, 0, 1],
+    [crowd.id, 3, 4],
+  ]);
+
+  // Everybody has answered now — the full end of the bar.
+  await sql`
+    update memory_members set status = 'done'
+    where memory_id = ${crowd.id} and user_id = ${organizer.user.id}
+  `;
+  expect(await counts()).toEqual([
+    [alone.id, 0, 1],
+    [crowd.id, 4, 4],
+  ]);
+
+  // Counted as whole numbers: count() is bigint, and unless it is cast the
+  // card gets "4" and "4" as strings and cannot compare them.
+  const [, seen] = (await list(app, organizer.token)).json();
+  expect(seen.contributed_member_count).toBeTypeOf("number");
+  expect(seen.member_count).toBeTypeOf("number");
 
   await app.close();
 });
