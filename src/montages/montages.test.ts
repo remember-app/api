@@ -455,6 +455,20 @@ test("the order carries the story, the frames picked by hand and the organizer's
     expect(answer.json()).toEqual({ error: "no such ready media in this memory", media_ids });
   }
 
+  // Enough in the memory, not enough in the order: four `ready` frames with two
+  // of them crossed out is a video assembled from two, and that is the same
+  // refusal as a memory holding two. The number in the answer is what the order
+  // has left, not what the memory holds — «2 из нужных 3», not «4».
+  const gutted = await order(app, organizer.token, memory.id, {
+    exclude_media_ids: [first, second],
+  });
+  expect(gutted.statusCode).toBe(409);
+  expect(gutted.json()).toEqual({
+    error: "not enough material for a montage",
+    ready_items: 2,
+    need: 3,
+  });
+
   // The same for a track: another memory's, and one whose bytes never landed.
   for (const key of [theirs, unfinished, `music/${randomUUID()}`]) {
     const answer = await order(app, organizer.token, memory.id, { music_track_key: key });
