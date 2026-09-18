@@ -1,19 +1,8 @@
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: remember
-      POSTGRES_USER: remember
-      POSTGRES_PASSWORD: remember
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U remember -d remember"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+  # Postgres is not managed here — it runs as a standing container on the
+  # host (localhost:5432, postgres/postgres), started once outside this
+  # stand and left running. `make db` connects to it and creates the
+  # `remember` database if missing; nothing here starts or stops it.
 
   # Local stand-in for Cloudflare R2 — the same S3 API, so the API talks to
   # both through one code path. The bucket is made by creating its directory
@@ -40,5 +29,4 @@ services:
       retries: 10
 
 volumes:
-  pgdata:
   miniodata:
