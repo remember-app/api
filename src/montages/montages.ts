@@ -309,7 +309,12 @@ export function montageRoutes(app: FastifyInstance) {
         select count(*)::int from media_items
         where memory_id = ${memory.id} and status = 'ready'
       `;
-      const ready = (material?.count ?? 0) - exclude.length;
+      // Floored at zero, because the two reads above are not one transaction: a
+      // frame deleted between them leaves a count that no longer holds every id
+      // `exclude` was just told is real, and a bare subtraction would put a
+      // negative number in the answer — «-2 из нужных 3» under the app's «нужно
+      // три». The refusal is right either way; only the number needs a floor.
+      const ready = Math.max(0, (material?.count ?? 0) - exclude.length);
       if (ready < minReadyItems) {
         // English like every other error body here, with the numbers beside it:
         // «недостаточно материала для ролика» is what the app says, and it says
