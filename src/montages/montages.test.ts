@@ -67,7 +67,8 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
 
 /**
  * Material in the memory, written where the upload would have left it. The
- * status is what the order counts on, so it is the argument.
+ * status is what the order counts on, so it is the argument. Answers with the
+ * ids, which is what «включить этот кадр» is said with.
  */
 async function material(
   memoryId: string,
@@ -75,12 +76,33 @@ async function material(
   count: number,
   status: "ready" | "processing" = "ready",
 ) {
+  const ids: string[] = [];
   for (let n = 0; n < count; n++) {
-    await sql`
+    const [row] = await sql<{ id: string }[]>`
       insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes)
       values (${memoryId}, ${uploadedBy}, 'photo', ${status}, ${`originals/${randomUUID()}`}, 4096)
+      returning id
     `;
+    if (row) ids.push(row.id);
   }
+  return ids;
+}
+
+/**
+ * A track of the organizer's own, written where its upload would have left it
+ * (`music.ts`); answers with the key the order names it by.
+ */
+async function track(
+  memoryId: string,
+  uploadedBy: string,
+  status: "ready" | "pending_upload" = "ready",
+) {
+  const key = `music/${randomUUID()}`;
+  await sql`
+    insert into music_uploads (memory_id, uploaded_by, status, object_key, size_bytes)
+    values (${memoryId}, ${uploadedBy}, ${status}, ${key}, 4096)
+  `;
+  return key;
 }
 
 const order = (app: App, token: string, memoryId: string, payload?: object) =>
@@ -301,6 +323,145 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     payload: {},
   });
   expect(anonymous.statusCode).toBe(401);
+
+  await app.close();
+});
+
+test("the order carries the story, the frames picked by hand and the organizer's own track", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const elsewhere = await createMemory(app, organizer.token);
+
+  // Defaulted so the ids read as strings: an empty one would fail the schema
+  // loudly on the first order, which is what «material wrote nothing» deserves.
+  const [first = "", second = "", third = "", fourth = ""] = await material(
+    memory.id,
+    organizer.user.id,
+    4,
+  );
+  const [unprobed] = await material(memory.id, organizer.user.id, 1, "processing");
+  const [stray] = await material(elsewhere.id, organizer.user.id, 3);
+  const ours = await track(memory.id, organizer.user.id);
+  const theirs = await track(elsewhere.id, organizer.user.id);
+  const unfinished = await track(memory.id, organizer.user.id, "pending_upload");
+
+  // Everything doc-03 lets an organizer say about a video, said at once. The
+  // story is trimmed — a text field comes off a phone with whatever whitespace
+  // the keyboard left — and every other value goes through untouched.
+  const asked = await order(app, organizer.token, memory.id, {
+    story_text: "  Как мы ехали на дачу  ",
+    include_media_ids: [first, second],
+    exclude_media_ids: [third],
+    music_track_key: ours,
+    orientation: "portrait",
+  });
+  expect(asked.statusCode).toBe(201);
+  const wanted = {
+    target_seconds: 60,
+    story_text: "Как мы ехали на дачу",
+    include_media_ids: [first, second],
+    exclude_media_ids: [third],
+    music_track_key: ours,
+    orientation: "portrait",
+  };
+  expect(asked.json().params).toEqual(wanted);
+  // And still there when the app reads the list — the worker takes it from the
+  // same place.
+  const listed = (await list(app, organizer.token, memory.id)).json();
+  expect(listed.find((item: { id: string }) => item.id === asked.json().id)?.params).toEqual(
+    wanted,
+  );
+
+  // The same id in capitals is the same frame: Postgres answers in lower case,
+  // so what is written down is lower case whatever the client typed.
+  const shouty = await order(app, organizer.token, memory.id, {
+    include_media_ids: [first.toUpperCase()],
+  });
+  expect(shouty.statusCode).toBe(201);
+  expect(shouty.json().params.include_media_ids).toEqual([first]);
+
+  // One id sent unwrapped is a list of one: Fastify's ajv coerces a scalar into
+  // the array the schema asks for, and the frame it names is honoured like any
+  // other. Pinned because it is surprising, not because it is asked for.
+  const single = await order(app, organizer.token, memory.id, { exclude_media_ids: fourth });
+  expect(single.statusCode).toBe(201);
+  expect(single.json().params.exclude_media_ids).toEqual([fourth]);
+
+  // A track off the worker's shelf still works, on its own: the key is the
+  // other way of saying the same thing, not a replacement for it.
+  const shelf = await order(app, organizer.token, memory.id, { music_track_id: "calm" });
+  expect(shelf.statusCode).toBe(201);
+  expect(shelf.json().params).toEqual({ target_seconds: 60, music_track_id: "calm" });
+
+  const before = (await montageRows(memory.id)).length;
+
+  // Both at once is two answers to one question, and nobody but the organizer
+  // could have meant it.
+  const twoTracks = await order(app, organizer.token, memory.id, {
+    music_track_id: "calm",
+    music_track_key: ours,
+  });
+  expect(twoTracks.statusCode).toBe(400);
+  expect(twoTracks.json()).toEqual({
+    error: "music_track_id and music_track_key are mutually exclusive",
+  });
+
+  // A frame in both lists is «обязательно и ни в коем случае».
+  const contradiction = await order(app, organizer.token, memory.id, {
+    include_media_ids: [first, second],
+    exclude_media_ids: [second],
+  });
+  expect(contradiction.statusCode).toBe(400);
+  expect(contradiction.json()).toEqual({
+    error: "a media item cannot be both included and excluded",
+    media_ids: [second],
+  });
+
+  // Named and not there: another memory's frame, one nobody has, and one still
+  // being probed — all three by name, not dropped quietly.
+  for (const [payload, media_ids] of [
+    [{ include_media_ids: [stray] }, [stray]],
+    [{ exclude_media_ids: [stray] }, [stray]],
+    [{ include_media_ids: [fourth], exclude_media_ids: [unprobed] }, [unprobed]],
+  ] as const) {
+    const answer = await order(app, organizer.token, memory.id, payload);
+    expect(answer.statusCode).toBe(400);
+    expect(answer.json()).toEqual({ error: "no such ready media in this memory", media_ids });
+  }
+
+  // The same for a track: another memory's, and one whose bytes never landed.
+  for (const key of [theirs, unfinished, `music/${randomUUID()}`]) {
+    const answer = await order(app, organizer.token, memory.id, { music_track_key: key });
+    expect(answer.statusCode).toBe(400);
+    expect(answer.json()).toEqual({
+      error: "no such uploaded music track",
+      music_track_key: key,
+    });
+  }
+
+  // Refused by the schema, before a row exists: a story longer than anyone
+  // writes, an id that is not one, and the same id twice.
+  for (const payload of [
+    { story_text: "я".repeat(2001) },
+    { include_media_ids: ["not-a-uuid"] },
+    { exclude_media_ids: [first, first] },
+  ]) {
+    expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
+  }
+
+  // Not one of those refusals wrote a montage.
+  expect((await montageRows(memory.id)).length).toBe(before);
+
+  // Said nothing, or said it empty — a client clearing a field sends it empty
+  // rather than dropping it, and neither writes a key into `params`.
+  const bare = await order(app, organizer.token, memory.id, {
+    story_text: "   ",
+    include_media_ids: [],
+    exclude_media_ids: [],
+  });
+  expect(bare.statusCode).toBe(201);
+  expect(bare.json().params).toEqual({ target_seconds: 60 });
 
   await app.close();
 });
