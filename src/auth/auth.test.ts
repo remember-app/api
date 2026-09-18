@@ -167,28 +167,28 @@ test("migration 030 applies to an existing users table and is idempotent", async
   }
 });
 
-// 060 runs against tables it did not create — it takes the link tokens out and
+// 070 runs against tables it did not create — it takes the link tokens out and
 // puts the codes in — so, like 030, it is proven against the schema it will
 // actually meet rather than against an empty one. The replay matters for the
 // same reason it does there: a process killed between the file and its version
 // mark runs the whole file again, and `DROP … IF EXISTS` before
 // `CREATE … IF NOT EXISTS` is what makes that harmless.
-test("migration 060 swaps link tokens for codes, replays, and undoes", async () => {
+test("migration 070 swaps link tokens for codes, replays, and undoes", async () => {
   const read = (name: string) =>
     readFile(new URL(`../../migrations/${name}`, import.meta.url), "utf8");
   const [auth, file, undo] = await Promise.all([
     read("002.do.auth.sql"),
-    read("060.do.login-code.sql"),
-    read("060.undo.login-code.sql"),
+    read("070.do.login-code.sql"),
+    read("070.undo.login-code.sql"),
   ]);
   const db = await sql.reserve();
   try {
     await db
-      .unsafe(`drop schema if exists mig_test_060 cascade;
-               create schema mig_test_060;
-               set search_path to mig_test_060, public`)
+      .unsafe(`drop schema if exists mig_test_070 cascade;
+               create schema mig_test_070;
+               set search_path to mig_test_070, public`)
       .simple();
-    // The state 060 finds when it runs for real: 002's tables, link tokens and
+    // The state 070 finds when it runs for real: 002's tables, link tokens and
     // all. Without them the DROP would be a no-op and prove nothing.
     await db.unsafe(auth).simple();
     await db.unsafe(file).simple();
@@ -197,7 +197,7 @@ test("migration 060 swaps link tokens for codes, replays, and undoes", async () 
     const tables = async () =>
       (
         await db<{ table_name: string }[]>`
-          select table_name from information_schema.tables where table_schema = 'mig_test_060'
+          select table_name from information_schema.tables where table_schema = 'mig_test_070'
         `
       )
         .map((t) => t.table_name)
@@ -209,7 +209,7 @@ test("migration 060 swaps link tokens for codes, replays, and undoes", async () 
     await db.unsafe(undo).simple();
     expect(await tables()).toEqual(["auth_identities", "email_login_tokens", "sessions", "users"]);
   } finally {
-    await db.unsafe("drop schema if exists mig_test_060 cascade; reset search_path").simple();
+    await db.unsafe("drop schema if exists mig_test_070 cascade; reset search_path").simple();
     db.release();
   }
 });

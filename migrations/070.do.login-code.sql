@@ -2,10 +2,11 @@
 -- Idempotent (see README «Миграции»): the version mark is written as a
 -- separate query, and a process killed between the two replays this file.
 --
--- The number leaves a gap on purpose, as 010, 020, 030, 040 and 050 did:
--- milestones are written in parallel against this same repository, and two
--- migrations sharing a version is a merge nobody can resolve after either has
--- been applied.
+-- The number leaves a gap on purpose, as 010 through 060 did: milestones are
+-- written in parallel against this same repository, and two migrations sharing
+-- a version is a merge nobody can resolve after either has been applied. This
+-- file was written as 060 and renumbered before it landed, for exactly that
+-- reason — media screening got to 060 first.
 
 -- The link tokens go out with the links they were. Nothing is carried over and
 -- nothing needs to be: a row here lived minutes and was one unspent sign-in, so
