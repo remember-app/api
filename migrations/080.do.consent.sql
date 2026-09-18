@@ -1,0 +1,24 @@
+-- m-22 Consent: когда человек принял пользовательское соглашение (doc-04,
+-- decision-9 — распознавание лиц и животных названо в нём отдельной строкой).
+-- Idempotent (see README «Миграции»): the version mark is written as a
+-- separate query, and a process killed between the two replays this file.
+--
+-- The number leaves a gap on purpose, as 010 through 070 did: milestones are
+-- written in parallel against this same repository, and two migrations sharing
+-- a version is a merge nobody can resolve after either has been applied.
+
+-- Nullable, and that null is the whole gate: registering — the first claim of
+-- a username — is refused while this is empty (src/auth/identity.ts). A
+-- `NOT NULL DEFAULT now()` would have marked every account, including the ones
+-- made before this file, as having accepted something nobody showed them.
+--
+-- A timestamp rather than a boolean because the question asked later is «when
+-- did this person accept», not «did they»: consent is what the product leans on
+-- to hand the material to a face-recognizing model, so the record has to say
+-- what it is worth. Only the first acceptance is kept — see the `coalesce` in
+-- POST /me/consent — since that is the moment the person agreed.
+--
+-- Which text they accepted is deliberately not here: the pilot ships one
+-- version, and a second one is a migration of its own, together with whatever
+-- re-acceptance is decided then.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_accepted_at timestamptz;

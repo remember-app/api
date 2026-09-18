@@ -38,6 +38,23 @@ export function buildTestApp() {
 }
 
 /**
+ * Accepting the user agreement, which every test that hands somebody a
+ * username needs first: the first claim is registering, and registering is
+ * refused until this is done (`POST /me/username`). Shared rather than copied
+ * into each file because it is one fact about the product, and the day
+ * acceptance takes a body the three callers should not each learn it.
+ *
+ * Hands the reply back instead of asserting on it — identity.test.ts is here
+ * to inspect it, everybody else just awaits it.
+ */
+export const acceptConsent = (app: ReturnType<typeof buildTestApp>["app"], token: string) =>
+  app.inject({
+    method: "POST",
+    url: "/me/consent",
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+/**
  * A whole sign-in, for tests that need a live session rather than the route
  * that mints one: code minted straight from `startEmailLogin` -> verify.
  *

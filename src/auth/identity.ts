@@ -105,10 +105,44 @@ export async function findByUsername(username: string): Promise<PublicUser | und
  * `app.authenticate` on the instance.
  */
 export function identityRoutes(app: FastifyInstance) {
+  // Accepting the user agreement — the one thing that has to happen before a
+  // person may register (doc-04, decision-9: the agreement names recognizing
+  // faces and animals in uploaded material as a line of its own). The text
+  // itself is not served from here: the app ships it, and a new version is a
+  // product decision rather than a request body.
+  //
+  // No body at all: what is being accepted is the one agreement the pilot has,
+  // and a version the client names is a version the client could get wrong.
+  app.post("/me/consent", { preHandler: app.authenticate }, async (request) => {
+    // `coalesce` is the idempotence: accepting twice is not an error and does
+    // not move the mark, because the moment worth keeping is the one the
+    // person actually agreed at. A repeat happens for real — the app resends
+    // on a lost answer, and somebody who signed in again before picking a
+    // username sees the screen a second time.
+    const [user] = await sql<{ consent_accepted_at: Date }[]>`
+      update users set consent_accepted_at = coalesce(consent_accepted_at, now())
+      where id = ${request.user.id}
+      returning consent_accepted_at
+    `;
+    if (!user) throw new Error("update users returned no row");
+    // Handed back rather than answered `{ok: true}`: the client showing «you
+    // accepted on …» needs no second request, and a repeat visibly returning
+    // the first moment is what idempotence looks like from outside.
+    return { accepted_at: user.consent_accepted_at };
+  });
+
   // Claims a username when there is none yet and changes it when there is —
   // one statement either way, because nothing distinguishes the two cases:
   // the old value is not kept anywhere (architecture.md: no history) and the
   // freed one is takeable by the next person the moment this commits.
+  //
+  // Except for the consent gate, which is the one place these two cases part:
+  // holding a username *is* being registered, so the first claim needs the
+  // agreement accepted and a later change does not ask again. Both conditions
+  // ride in the same WHERE instead of a read followed by a write — a check in
+  // its own statement can be true when it runs and false when the update
+  // lands, and the whole point of this gate is that no unregistered row ever
+  // gets a username.
   app.post<{ Body: { username: string } }>(
     "/me/username",
     { preHandler: app.authenticate, schema: { body: usernameProposal } },
@@ -117,9 +151,15 @@ export function identityRoutes(app: FastifyInstance) {
         const [user] = await sql<AuthUser[]>`
           update users set username = ${request.body.username}
           where id = ${request.user.id}
+            and (username is not null or consent_accepted_at is not null)
           returning id, username, name, email, language
         `;
-        if (!user) throw new Error("update users returned no row");
+        // No row means the gate held: the caller has no username yet and has
+        // not accepted. The other way to match nothing — the row gone between
+        // the session check and this statement — reads the same, and the same
+        // answer suits it: an account that no longer exists is not registering
+        // either, and its very next request is a 401.
+        if (!user) return reply.code(403).send({ error: "consent required" });
         return user;
       } catch (error) {
         // The citext unique index is the one constraint this statement can

@@ -3,7 +3,7 @@ import type { InjectOptions } from "fastify";
 import { afterAll, expect, test } from "vitest";
 import { sql } from "../db.ts";
 import { hashToken } from "./session.ts";
-import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "./testing.ts";
+import { acceptConsent, buildTestApp, cleanupTestUsers, signIn, testEmail } from "./testing.ts";
 
 const email = () => testEmail("task06");
 
@@ -29,6 +29,18 @@ const as = (token: string, options: InjectOptions) => ({
   headers: { authorization: `Bearer ${token}` },
 });
 
+/**
+ * Somebody signed in who has accepted the agreement — that is, somebody who
+ * may take a username at all. Every test below that claims one starts here,
+ * because the first claim *is* registering and registering is gated; the tests
+ * that only look things up stay on a bare `signIn`.
+ */
+async function registered(app: App, address = email()) {
+  const session = await signIn(app, address);
+  expect((await acceptConsent(app, session.token)).statusCode).toBe(200);
+  return session;
+}
+
 const setUsername = (app: App, token: string, name: string) =>
   app.inject(as(token, { method: "POST", url: "/me/username", payload: { username: name } }));
 
@@ -51,10 +63,82 @@ const sessions = (app: App, token: string) =>
 
 const me = (app: App, token: string) => app.inject(as(token, { method: "GET", url: "/me" }));
 
-test("a username is held case-insensitively: FOO blocks foo", async () => {
+test("no username until the agreement is accepted — that is what registering is", async () => {
   const { app } = buildTestApp();
   const a = await signIn(app, email());
   const b = await signIn(app, email());
+  const name = username();
+
+  // Signed in, and that is all: the account exists, the person is not
+  // registered, and the nick is what would make them so.
+  const refused = await setUsername(app, a.token, name);
+  expect(refused.statusCode).toBe(403);
+  expect(refused.json()).toEqual({ error: "consent required" });
+  // The refusal left nothing behind — not on the row, and not on the nick,
+  // which is still there for whoever accepts first.
+  expect((await me(app, a.token)).json()).toEqual(a.user);
+  expect((await isFree(app, b.token, name)).json()).toEqual({ available: true });
+
+  expect((await acceptConsent(app, a.token)).statusCode).toBe(200);
+  const claimed = await setUsername(app, a.token, name);
+  expect(claimed.statusCode).toBe(200);
+  expect(claimed.json()).toEqual({ ...a.user, username: name });
+
+  // And it is one person's own doing: A accepting says nothing about B, who
+  // is still held at the same door.
+  expect((await setUsername(app, b.token, username())).statusCode).toBe(403);
+
+  await app.close();
+});
+
+test("accepting is idempotent: twice is not an error, and the moment kept is the first", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const first = await acceptConsent(app, token);
+  expect(first.statusCode).toBe(200);
+  const { accepted_at } = first.json() as { accepted_at: string };
+  // A real timestamp, and a recent one — a mark nobody can read a date out of
+  // would not be worth the column.
+  expect(Date.now() - Date.parse(accepted_at)).toBeLessThan(60_000);
+
+  // The app resends on a lost answer, and somebody who signed in again before
+  // picking a nick sees the screen a second time. Neither is an error, and
+  // neither moves the mark: the moment worth keeping is when they agreed.
+  const again = await acceptConsent(app, token);
+  expect(again.statusCode).toBe(200);
+  expect(again.json()).toEqual(first.json());
+
+  // Straight off the row, because it is the row the product leans on later.
+  const [row] = await sql<{ consent_accepted_at: Date }[]>`
+    select consent_accepted_at from users where id = ${user.id}
+  `;
+  expect(row?.consent_accepted_at?.toISOString()).toBe(new Date(accepted_at).toISOString());
+
+  await app.close();
+});
+
+test("changing a nick one already holds never asks for the agreement again", async () => {
+  const { app } = buildTestApp();
+  const a = await registered(app);
+  expect((await setUsername(app, a.token, username())).statusCode).toBe(200);
+
+  // Wiping the mark is not something the API can do — there is no withdrawal —
+  // so the row is cut by hand. It is the only way to prove the claim below
+  // says something: the change goes through *without* an acceptance to lean
+  // on, which is exactly what «only registering is gated» means.
+  await sql`update users set consent_accepted_at = null where id = ${a.user.id}`;
+
+  const renamed = await setUsername(app, a.token, username());
+  expect(renamed.statusCode).toBe(200);
+
+  await app.close();
+});
+
+test("a username is held case-insensitively: FOO blocks foo", async () => {
+  const { app } = buildTestApp();
+  const a = await registered(app);
+  const b = await registered(app);
   const name = username();
 
   const claimed = await setUsername(app, a.token, name.toUpperCase());
@@ -78,8 +162,8 @@ test("a username is held case-insensitively: FOO blocks foo", async () => {
 
 test("a freed username is free at once, and the id behind it is stable", async () => {
   const { app } = buildTestApp();
-  const a = await signIn(app, email());
-  const b = await signIn(app, email());
+  const a = await registered(app);
+  const b = await registered(app);
   const [first, second] = [username(), username()];
 
   expect((await setUsername(app, a.token, first)).statusCode).toBe(200);
@@ -101,7 +185,7 @@ test("a freed username is free at once, and the id behind it is stable", async (
 
 test("the username format is enforced before the database sees it", async () => {
   const { app } = buildTestApp();
-  const { token } = await signIn(app, email());
+  const { token } = await registered(app);
   const name = username();
 
   const bad = [
@@ -144,7 +228,9 @@ test("the username format is enforced before the database sees it", async () => 
 
 test("a nick can be asked about before it is claimed, and one's own reads free", async () => {
   const { app } = buildTestApp();
-  const a = await signIn(app, email());
+  const a = await registered(app);
+  // B never claims anything here, so B has no reason to have accepted: asking
+  // whether a nick is free is not registering.
   const b = await signIn(app, email());
   const name = username();
 
@@ -254,7 +340,7 @@ test("there is no third language: anything else is refused before the database",
 
 test("GET /users finds a nick whatever its case, and 404s an unknown one", async () => {
   const { app } = buildTestApp();
-  const a = await signIn(app, email());
+  const a = await registered(app);
   const b = await signIn(app, email());
   const name = username();
   await setUsername(app, a.token, name.toUpperCase());
@@ -400,6 +486,7 @@ test("logout kills the token it was called with and leaves the others alone", as
 test("every route added here sits behind the session check", async () => {
   const { app } = buildTestApp();
   const calls: InjectOptions[] = [
+    { method: "POST", url: "/me/consent" },
     { method: "POST", url: "/me/username", payload: { username: username() } },
     { method: "GET", url: `/me/username/available?username=${username()}` },
     { method: "POST", url: "/me/language", payload: { language: "en" } },

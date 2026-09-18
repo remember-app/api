@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { InjectOptions } from "fastify";
 import { afterAll, expect, test } from "vitest";
-import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
+import {
+  acceptConsent,
+  buildTestApp,
+  cleanupTestUsers,
+  signIn,
+  testEmail,
+} from "../auth/testing.ts";
 import { sql } from "../db.ts";
 
 const email = () => testEmail("task12");
@@ -28,6 +34,9 @@ const start = "2026-09-02T18:00:00+03:00";
 /** A signed-in person who holds a username — invite-by-username needs one. */
 async function person(app: App) {
   const { token, user } = await signIn(app, email());
+  // Taking a nick for the first time is registering, and registering needs the
+  // agreement accepted (src/auth/identity.ts).
+  await acceptConsent(app, token);
   const username = `t12${randomUUID().replace(/-/g, "").slice(0, 20)}`;
   const named = await app.inject(
     as(token, { method: "POST", url: "/me/username", payload: { username } }),

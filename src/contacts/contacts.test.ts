@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { InjectOptions } from "fastify";
 import { afterAll, expect, test } from "vitest";
-import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
+import {
+  acceptConsent,
+  buildTestApp,
+  cleanupTestUsers,
+  signIn,
+  testEmail,
+} from "../auth/testing.ts";
 import { sql } from "../db.ts";
 
 const email = () => testEmail("task128");
@@ -26,6 +32,9 @@ const as = (token: string, options: InjectOptions) => ({
  */
 async function person(app: App, prefix = "t128") {
   const { token, user } = await signIn(app, email());
+  // Taking a nick for the first time is registering, and registering needs the
+  // agreement accepted (src/auth/identity.ts).
+  await acceptConsent(app, token);
   const username = `${prefix}${randomUUID().replace(/-/g, "").slice(0, 16)}`;
   const named = await app.inject(
     as(token, { method: "POST", url: "/me/username", payload: { username } }),
