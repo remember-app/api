@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { env, positive } from "../auth/config.ts";
 import { bearerToken, hashToken } from "../auth/session.ts";
 import { sql } from "../db.ts";
-import { downloadTtlSeconds } from "../media/config.ts";
+import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { notifyMontageReady } from "../memories/push.ts";
@@ -32,7 +32,14 @@ export type Montage = {
   duration_seconds: number | null;
   params: {
     target_seconds?: number;
+    /** What the organizer said the video is about, in their own words (doc-03). */
+    story_text?: string;
+    /** The frames picked out by hand: these go in, those stay out (doc-03). */
+    include_media_ids?: string[];
+    exclude_media_ids?: string[];
     music_track_id?: string;
+    /** Their own track in R2 instead of one of the worker's; see `music.ts`. */
+    music_track_key?: string;
     orientation?: (typeof orientations)[number];
   };
   error_text: string | null;
@@ -66,6 +73,15 @@ const orientations = ["landscape", "portrait"] as const;
  * limit, and the worker has the same number written down.
  */
 const minReadyItems = 3;
+
+/**
+ * How long a story may be. A guard and not a preference: the text goes to a
+ * neural network as part of the prompt (doc-03), and «опиши ролик» is a
+ * paragraph or two from a person, not a novel pasted in by a client with a bug.
+ * In the code rather than the environment for exactly that reason — nobody is
+ * expected to tune it.
+ */
+const maxStoryChars = 2000;
 
 /**
  * How long a montage is asked to be, and the band it may be asked for inside.
@@ -143,6 +159,19 @@ export function montageRoutes(app: FastifyInstance) {
   const notFound = { error: "not found" };
   const forbidden = { error: "forbidden" };
 
+  // One list of frames, used for both «включить» and «исключить». Held to
+  // uuids because the handler puts these straight into a `where id in (…)`
+  // against a uuid column, where «not-a-uuid» is a database error rather than a
+  // 400. The ceiling is the memory's own file limit: a list longer than the
+  // memory can hold files names something twice or is junk, and `uniqueItems`
+  // refuses the first of those outright.
+  const mediaIds = {
+    type: "array",
+    items: { type: "string", pattern: uuidPattern.source },
+    uniqueItems: true,
+    maxItems: memoryMaxFiles(),
+  } as const;
+
   // Built here, at registration, rather than read per request as the media
   // limits are: ajv compiles a schema once, so the numbers have to be in it by
   // then. `buildApp` runs per process (and per test), which is as often as an
@@ -164,7 +193,14 @@ export function montageRoutes(app: FastifyInstance) {
         minimum: minTargetSeconds(),
         maximum: maxTargetSeconds(),
       },
+      story_text: { type: "string", maxLength: maxStoryChars },
+      include_media_ids: mediaIds,
+      exclude_media_ids: mediaIds,
       music_track_id: { type: "string", enum: [...musicTracks] },
+      // The key of a track the organizer uploaded (`music.ts`), which is what
+      // that upload answered with. Only bounded here — whether it names a ready
+      // track of *this* memory is a question for the database, below.
+      music_track_key: { type: "string", maxLength: 200 },
       orientation: { type: "string", enum: [...orientations] },
     },
   } as const;
@@ -176,7 +212,11 @@ export function montageRoutes(app: FastifyInstance) {
     Params: { memoryId: string };
     Body: {
       target_seconds?: number;
+      story_text?: string;
+      include_media_ids?: string[];
+      exclude_media_ids?: string[];
       music_track_id?: (typeof musicTracks)[number];
+      music_track_key?: string;
       orientation?: (typeof orientations)[number];
     } | null;
   }>(
@@ -207,14 +247,86 @@ export function montageRoutes(app: FastifyInstance) {
         });
       }
 
+      // The frames the organizer picked out by hand (doc-03: «отмечает, какие
+      // кадры войти должны, а какие нет»). Lowercased on the way in and on the
+      // way out: Postgres hands uuids back in lower case, so a client echoing
+      // an id of ours in capitals must not be told its own frame is not there,
+      // and the worker must not have to compare two spellings of one id.
+      const lower = (ids: string[] = []) => ids.map((id) => id.toLowerCase());
+      const include = lower(request.body?.include_media_ids);
+      const exclude = lower(request.body?.exclude_media_ids);
+      const excluded = new Set(exclude);
+      const both = include.filter((id) => excluded.has(id));
+      if (both.length > 0) {
+        // Not a preference the worker could resolve: «этот кадр обязательно и
+        // ни в коем случае» is two orders, and picking either would be us
+        // deciding what the organizer meant.
+        return reply.code(400).send({
+          error: "a media item cannot be both included and excluded",
+          media_ids: both,
+        });
+      }
+
+      // Named but not there, or there but not ready: refused by name rather
+      // than dropped quietly, because a video assembled without the frame its
+      // organizer insisted on looks assembled, and nothing says otherwise.
+      // `ready` is the same bar the material count above holds: the worker can
+      // do nothing with a file still being probed.
+      const chosen = [...include, ...exclude];
+      if (chosen.length > 0) {
+        const found = await sql<{ id: string }[]>`
+          select id from media_items
+          where memory_id = ${memory.id} and status = 'ready' and id in ${sql(chosen)}
+        `;
+        const known = new Set(found.map((row) => row.id));
+        const missing = chosen.filter((id) => !known.has(id));
+        if (missing.length > 0) {
+          return reply
+            .code(400)
+            .send({ error: "no such ready media in this memory", media_ids: missing });
+        }
+      }
+
+      // One track or the other, never both: the shelf id and an uploaded key
+      // are two answers to «под что монтировать», and a row carrying both would
+      // leave the worker to choose.
+      const trackKey = request.body?.music_track_key;
+      if (request.body?.music_track_id && trackKey) {
+        return reply
+          .code(400)
+          .send({ error: "music_track_id and music_track_key are mutually exclusive" });
+      }
+      if (trackKey) {
+        // Their own track has to be their own memory's, and finished: a key
+        // from another memory, or one whose bytes never landed, is a montage
+        // that fails an hour later at the worker.
+        const [track] = await sql<{ id: string }[]>`
+          select id from music_uploads
+          where object_key = ${trackKey} and memory_id = ${memory.id} and status = 'ready'
+        `;
+        if (!track) {
+          return reply
+            .code(400)
+            .send({ error: "no such uploaded music track", music_track_key: trackKey });
+        }
+      }
+
       // What was ordered, resolved here rather than left for the worker to
       // guess: the row is then the whole answer to «какой ролик просили», and
       // there is one place the default length lives. A track nobody chose stays
       // absent — picking one is the worker's, it holds the files — and so does
-      // an orientation nobody chose, which is landscape by being missing.
+      // an orientation nobody chose, which is landscape by being missing. An
+      // empty story and an empty list are «ничего не сказали» for the same
+      // reason: a client clearing a field sends it empty rather than dropping
+      // it, and a key that says nothing is a key not worth writing.
+      const story = request.body?.story_text?.trim();
       const params = {
         target_seconds: request.body?.target_seconds ?? targetSeconds(),
+        ...(story ? { story_text: story } : {}),
+        ...(include.length > 0 ? { include_media_ids: include } : {}),
+        ...(exclude.length > 0 ? { exclude_media_ids: exclude } : {}),
         ...(request.body?.music_track_id ? { music_track_id: request.body.music_track_id } : {}),
+        ...(trackKey ? { music_track_key: trackKey } : {}),
         ...(request.body?.orientation ? { orientation: request.body.orientation } : {}),
       };
 

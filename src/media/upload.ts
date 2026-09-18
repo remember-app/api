@@ -64,7 +64,12 @@ const intentBody = {
   },
 } as const;
 
-const completeBody = {
+/**
+ * Shared with the music callback (`src/montages/music.ts`): a track is sent in
+ * parts exactly as a file is, so the two callbacks take the same body and there
+ * is one etag pattern to keep honest rather than two.
+ */
+export const completeBody = {
   type: "object",
   required: ["parts"],
   additionalProperties: false,

@@ -9,6 +9,7 @@ import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
 import { pushRoutes } from "./memories/push.ts";
 import { montageRoutes } from "./montages/montages.ts";
+import { musicRoutes } from "./montages/music.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -57,6 +58,10 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // internal one the montage worker knocks on mounts neither check and carries
   // its own shared secret instead.
   montageRoutes(app);
+  // The organizer's own track, which a montage order may name instead of one of
+  // the worker's: the same membership check, and the same upload dance the
+  // media routes do.
+  musicRoutes(app);
 
   return app;
 }
