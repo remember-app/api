@@ -313,7 +313,16 @@ export function montageRoutes(app: FastifyInstance) {
       // One track or the other, never both: the shelf id and an uploaded key
       // are two answers to «под что монтировать», and a row carrying both would
       // leave the worker to choose.
-      const trackKey = request.body?.music_track_key;
+      //
+      // Cleaned once, here, rather than only at the lookup below: an
+      // `object_key` is `music/<uuid>` and never carries a NUL or a lone
+      // surrogate, so a key that only *becomes* one of ours after that
+      // cleaning is not a key of ours at all — and writing the client's dirty
+      // original into `params` regardless would hand `jsonb` the exact byte
+      // `story_text` was cleaned of, on the one field this fix forgot to.
+      const trackKey = request.body?.music_track_key
+        ? storable(request.body.music_track_key)
+        : undefined;
       if (request.body?.music_track_id && trackKey) {
         return reply
           .code(400)
@@ -323,13 +332,9 @@ export function montageRoutes(app: FastifyInstance) {
         // Their own track has to be their own memory's, and finished: a key
         // from another memory, or one whose bytes never landed, is a montage
         // that fails an hour later at the worker.
-        //
-        // Looked up as Postgres could hold it: a key is `music/<uuid>`, so one
-        // carrying a NUL matches nothing either way — and the difference is
-        // `400 «нет такого трека»` instead of a `500` from the driver.
         const [track] = await sql<{ id: string }[]>`
           select id from music_uploads
-          where object_key = ${storable(trackKey)} and memory_id = ${memory.id}
+          where object_key = ${trackKey} and memory_id = ${memory.id}
             and status = 'ready'
         `;
         if (!track) {

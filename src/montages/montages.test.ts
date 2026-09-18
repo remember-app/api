@@ -516,6 +516,16 @@ test("the order carries the story, the frames picked by hand and the organizer's
   expect(nulKey.statusCode).toBe(400);
   expect(nulKey.json().error).toBe("no such uploaded music track");
 
+  // A real key with a lone surrogate stitched onto it *becomes* the real key
+  // once cleaned, and the lookup below is done on the cleaned string — so this
+  // must not write the dirty original into `params` and hand `jsonb` the exact
+  // byte it was just proven to refuse. It must resolve to the track it was
+  // cleaned into.
+  const dirtyKey = `${ours}\ud800`;
+  const dirty = await order(app, organizer.token, memory.id, { music_track_key: dirtyKey });
+  expect(dirty.statusCode).toBe(201);
+  expect(dirty.json().params.music_track_key).toBe(ours);
+
   await app.close();
 });
 
