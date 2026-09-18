@@ -118,6 +118,10 @@ async function sendParts(parts: { part_number: number; url: string }[], body: Bu
   );
 }
 
+/** Where «Послушать» knocks. The ids are written out, not read off the source. */
+const listen = (trackId: string) => `/music/tracks/${trackId}`;
+const shelf = ["bright", "warm", "calm", "night", "road"];
+
 const tracksIn = async (memoryId: string) =>
   sql<{ id: string; status: string }[]>`
     select id, status from music_uploads where memory_id = ${memoryId}
@@ -263,6 +267,38 @@ test("without a bucket the track routes say so, the way the media ones do", asyn
     { part_number: 1, etag: "abc" },
   ]);
   expect(sealed.statusCode).toBe(503);
+  const listened = await app.inject(as(organizer.token, { method: "GET", url: listen("bright") }));
+  expect(listened.statusCode).toBe(503);
+
+  await app.close();
+});
+
+test("every track on the shelf can be listened to, and nothing else can", async () => {
+  const { app } = buildTestApp();
+  // Signed in and nothing more: no memory of their own, no membership, no role
+  // — the library is one shelf for the whole product.
+  const listener = await signIn(app, email());
+
+  for (const id of shelf) {
+    const answer = await app.inject(as(listener.token, { method: "GET", url: listen(id) }));
+    expect(answer.statusCode).toBe(200);
+    // The worker's key, signed: `tracks/<id>.mp3` is where `python worker.py
+    // tracks` lays the five files out, and the signature is what makes the link
+    // openable by a phone that holds no credentials.
+    const url = new URL(answer.json().url);
+    expect(url.pathname.endsWith(`/tracks/${id}.mp3`)).toBe(true);
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+  }
+
+  // Not on the shelf — including the one that looks like the key itself. The
+  // same list refuses these at the order, so the two can never disagree.
+  for (const id of ["nope", "bright.mp3", "BRIGHT", randomUUID()]) {
+    const refused = await app.inject(as(listener.token, { method: "GET", url: listen(id) }));
+    expect(refused.statusCode).toBe(404);
+    expect(refused.body).toBe('{"error":"not found"}');
+  }
+
+  expect((await app.inject({ method: "GET", url: listen("bright") })).statusCode).toBe(401);
 
   await app.close();
 });

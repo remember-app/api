@@ -61,7 +61,8 @@ export function buildApp(options: FastifyServerOptions = {}) {
   montageRoutes(app);
   // The organizer's own track, which a montage order may name instead of one of
   // the worker's: the same membership check, and the same upload dance the
-  // media routes do.
+  // media routes do. Plus the shelf's own five to listen to, which hang off no
+  // memory at all and so stand behind app.authenticate alone.
   musicRoutes(app);
 
   return app;
