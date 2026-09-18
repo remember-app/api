@@ -319,6 +319,44 @@ test("the letter goes out in the language the request asked for", async () => {
   }
 });
 
+// The provider refusing the letter is not the caller's fault and not a code
+// problem either — `sendLoginCode` throws, and the route has to turn that into
+// an answer that says so without repeating the provider's own words, which
+// could carry our API key or another caller's address.
+test("the provider's refusal is 502, carries none of its own words, and the code is minted all the same", async () => {
+  const brokenServer = createServer((_request, response) => {
+    response
+      .writeHead(500, { "content-type": "text/plain" })
+      .end("resend-secret-detail-do-not-leak");
+  });
+  await new Promise<void>((resolve) => brokenServer.listen(0, "127.0.0.1", resolve));
+  const previousUrl = process.env.RESEND_API_URL;
+  process.env.RESEND_API_URL = `http://127.0.0.1:${(brokenServer.address() as AddressInfo).port}`;
+  const { app } = buildTestApp();
+  try {
+    const email = testEmail();
+    const response = await startLogin(app, { email });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({ error: "mail delivery failed" });
+    expect(response.body).not.toContain("resend-secret-detail-do-not-leak");
+
+    // Minted, not lost: the comment on the route promises a retry mints
+    // another rather than the first attempt's code going nowhere twice. What
+    // matters from outside is that the row exists to expire on its own — not
+    // its digits, which this test has no way to read.
+    const [row] = await sql<{ user_id: string }[]>`
+      select c.user_id from email_login_codes c
+      join auth_identities i on i.user_id = c.user_id
+      where i.provider = 'email' and i.provider_account_id = ${email}
+    `;
+    expect(row).toBeDefined();
+  } finally {
+    setEnv("RESEND_API_URL", previousUrl);
+    await app.close();
+    brokenServer.close();
+  }
+});
+
 /** The env the dev door is decided by, saved and put back around each test. */
 const doorEnv = ["RESEND_API_KEY", "MAIL_FROM", "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS"];
 const saveEnv = () => doorEnv.map((name) => process.env[name]);
@@ -628,6 +666,41 @@ test("an expired code is refused exactly as a wrong one is, and a stranger's cod
         (await app.inject({ method: "POST", url: "/auth/email/verify", payload: bad })).statusCode,
       ).toBe(400);
     }
+  } finally {
+    await app.close();
+  }
+});
+
+test("verifying an address that never asked for a code is refused exactly like a wrong one", async () => {
+  const { app } = buildTestApp();
+  try {
+    // No /auth/email/start ever ran for this address — there is no row in
+    // auth_identities and none in email_login_codes to find. The outside
+    // must not be able to tell that apart from a wrong guess against a real
+    // one: either way, nothing this address's owner did not ask for.
+    const never = await verifyCode(app, testEmail(), "123456");
+    expect(never.statusCode).toBe(401);
+    expect(never.json()).toEqual({ error: "invalid or expired code" });
+  } finally {
+    await app.close();
+  }
+});
+
+test("a code minted for one case of an address is spent by any other case of it", async () => {
+  const { app } = buildTestApp();
+  try {
+    // A phone's own autocapitalize, or somebody who just types it differently
+    // the second time: the address is one mailbox either way, so the code it
+    // was asked for must not become a stranger's because the case changed.
+    const email = testEmail();
+    const shouted = email.toUpperCase();
+
+    expect((await startLogin(app, { email: shouted })).statusCode).toBe(200);
+    const code = letterCode();
+
+    const verified = await verifyCode(app, email, code);
+    expect(verified.statusCode).toBe(200);
+    expect((verified.json() as { user: { email: string } }).user.email).toBe(email);
   } finally {
     await app.close();
   }
