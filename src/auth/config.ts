@@ -14,6 +14,21 @@ export const sessionTtlDays = () => positive("SESSION_TTL_DAYS", 30);
 export const emailLoginTtlMinutes = () => positive("EMAIL_LOGIN_TTL_MINUTES", 15);
 export const rateWindowMs = () => positive("EMAIL_LOGIN_RATE_WINDOW_MINUTES", 15) * 60_000;
 
+/**
+ * How many times a sign-in code may be got wrong before it is dead — to the
+ * right digits as much as to the wrong ones, so the only way on is to ask for
+ * a new one.
+ *
+ * The count is per code and not per address, and that is the pairing that makes
+ * a six-digit secret defensible at all: the code is one of a million, so what
+ * bounds a guesser is this ceiling multiplied by `rateMaxPerEmail` — five tries
+ * at each of five codes a window, twenty-five of a million, which is a
+ * one-in-forty-thousand window rather than a script left running overnight.
+ * Raising either knob raises that product, so they are read together or not at
+ * all.
+ */
+export const emailLoginMaxAttempts = () => positive("EMAIL_LOGIN_MAX_ATTEMPTS", 5);
+
 /** Per address: the anti-enumeration ceiling, tight because one person needs few. */
 export const rateMaxPerEmail = () => positive("EMAIL_LOGIN_RATE_MAX", 5);
 

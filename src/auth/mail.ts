@@ -2,7 +2,7 @@ import { emailLoginTtlMinutes, env } from "./config.ts";
 import type { Language } from "./session.ts";
 
 /**
- * The one letter this product sends: the sign-in link. Resend, over its plain
+ * The one letter this product sends: the sign-in code. Resend, over its plain
  * HTTP API — a POST with a Bearer token and a JSON body, which is the whole of
  * the protocol, so there is no SDK here for the same reason `src/media/r2.ts`
  * has no AWS one. (SES was the alternative and was turned down: it wants a
@@ -47,50 +47,51 @@ type Letter = { subject: string; text: string };
  * an attributive number stays singular whatever the TTL is set to, so no
  * plural rule has to exist here.
  */
-const letter: Record<Language, (link: string, minutes: number) => Letter> = {
-  ru: (link, minutes) => ({
+const letter: Record<Language, (code: string, minutes: number) => Letter> = {
+  ru: (code, minutes) => ({
     subject: "Вход в Remember",
     text:
-      `Откройте эту ссылку на телефоне, чтобы войти:\n\n${link}\n\n` +
-      `Ссылка одноразовая и живёт ${minutes} мин. ` +
+      `Введите этот код в приложении, чтобы войти:\n\n${code}\n\n` +
+      `Код одноразовый и живёт ${minutes} мин. ` +
       `Если вход запрашивали не вы — просто удалите это письмо.`,
   }),
-  en: (link, minutes) => ({
-    subject: "Your sign-in link for Remember",
+  en: (code, minutes) => ({
+    subject: "Your sign-in code for Remember",
     text:
-      `Here is the link that signs you in — open it on your phone:\n\n${link}\n\n` +
+      `Here is the code that signs you in — type it into the app:\n\n${code}\n\n` +
       `It works once, and only within a ${minutes}-minute window. ` +
-      `If you did not ask to sign in, ignore this email and the link expires on its own.`,
+      `If you did not ask to sign in, ignore this email and the code expires on its own.`,
   }),
 };
 
 /**
- * Sends the link, or throws. Throwing is the point: the caller must be able to
+ * Sends the code, or throws. Throwing is the point: the caller must be able to
  * tell «the letter did not go» from «it went», and neither the provider's
  * status nor its body may reach the person who asked — that text carries our
  * own address and API errors, and the answer must be the same for every
  * address anyway.
  *
- * The language comes from whoever asked for the link and nowhere else: this is
+ * The language comes from whoever asked for the code and nowhere else: this is
  * pre-authentication, so there is no session and, for an address seen for the
  * first time, no user row to hold a preference either. Russian by default —
  * that is what every caller got before the field existed.
  */
-export async function sendMagicLink(
+export async function sendLoginCode(
   email: string,
-  link: string,
+  code: string,
   language: Language = "ru",
 ): Promise<void> {
-  const { subject, text } = letter[language](link, emailLoginTtlMinutes());
+  const { subject, text } = letter[language](code, emailLoginTtlMinutes());
   const response = await fetch(endpoint(), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env("RESEND_API_KEY")}`,
       "content-type": "application/json",
     },
-    // Plain text, no HTML part: the link is a `remember://` deep link, and mail
-    // clients that strip unknown schemes out of an <a href> would leave a
-    // letter with nothing in it. As text it is at worst copied by hand.
+    // Plain text, no HTML part: the whole letter is six digits and a sentence
+    // around them, and an HTML twin would be a second copy of that text to keep
+    // in step for no gain. It also reads the same everywhere, which matters for
+    // the one line anybody actually copies out of it.
     body: JSON.stringify({ from: env("MAIL_FROM"), to: [email], subject, text }),
     signal: AbortSignal.timeout(timeoutMs),
   });

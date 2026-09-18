@@ -13,7 +13,7 @@ import type { AuthUser } from "./session.ts";
 export const testEmail = (tag: string) => `${tag}-test-${randomUUID()}@example.com`;
 
 /**
- * Undoes `testEmail(tag)`. Sessions, identities and link tokens cascade off.
+ * Undoes `testEmail(tag)`. Sessions, identities and login codes cascade off.
  * Keyed on the tag alone and not on the domain: auth.test.ts also makes
  * addresses on test.test — the one domain the dev bypass opens — and those are
  * this tag's rows too.
@@ -39,23 +39,26 @@ export function buildTestApp() {
 
 /**
  * A whole sign-in, for tests that need a live session rather than the route
- * that mints one: token minted straight from `startEmailLogin` -> verify.
+ * that mints one: code minted straight from `startEmailLogin` -> verify.
  *
  * It does **not** go through `/auth/email/start`, and that is the point: that
- * route now really posts the link to a mail provider, so every test file in
+ * route now really posts the code to a mail provider, so every test file in
  * the package that merely wants somebody signed in would otherwise need mail
  * keys and a way out to the network. That route is exercised in `auth.test.ts`,
  * which stands a host of its own in for the provider.
+ *
+ * The address goes to `startEmailLogin` as it goes to the route — the fixture
+ * only ever makes lowercase ones, and the route folds the case itself.
  */
 export async function signIn(
   app: ReturnType<typeof buildTestApp>["app"],
   email: string,
 ): Promise<{ token: string; user: AuthUser }> {
-  const token = await startEmailLogin(email);
+  const code = await startEmailLogin(email);
   const verified = await app.inject({
     method: "POST",
     url: "/auth/email/verify",
-    payload: { token },
+    payload: { email, code },
   });
   expect(verified.statusCode).toBe(200);
   return verified.json();

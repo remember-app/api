@@ -21,7 +21,7 @@ const testSub = () => `task07-${randomUUID()}`;
  * Resend, stood in for. `/auth/email/start` really posts the letter now, so
  * these tests give it somewhere to post to — a host of their own, aimed at
  * through `RESEND_API_URL`, so that nothing here needs mail keys or a way out
- * to the network. The link comes back out of what was posted, because that is
+ * to the network. The code comes back out of what was posted, because that is
  * the only place it exists: the log no longer carries it.
  */
 const letters: { to: string[]; subject: string; text: string }[] = [];
@@ -43,12 +43,28 @@ beforeAll(async () => {
   process.env.MAIL_FROM = "Remember <no-reply@example.com>";
 });
 
-/** The token out of the last letter — where a person takes it from as well. */
-function linkToken() {
-  const link = letters.at(-1)?.text.match(/remember:\/\/\S+/)?.[0];
-  expect(link).toMatch(/^remember:\/\/auth\/email\?token=/);
-  return new URL(link ?? "").searchParams.get("token") ?? "";
+type App = ReturnType<typeof buildTestApp>["app"];
+
+const startLogin = (app: App, payload: Record<string, unknown>) =>
+  app.inject({ method: "POST", url: "/auth/email/start", payload });
+
+const verifyCode = (app: App, email: string, code: string) =>
+  app.inject({ method: "POST", url: "/auth/email/verify", payload: { email, code } });
+
+/**
+ * The code out of the last letter — where a person takes it from as well.
+ * Six digits standing alone, so the minute count in the same sentence («живёт
+ * 15 мин») is not mistaken for it.
+ */
+function letterCode() {
+  const code = letters.at(-1)?.text.match(/\b\d{6}\b/)?.[0];
+  expect(code).toMatch(/^\d{6}$/);
+  return code ?? "";
 }
+
+/** Six digits that are not the given ones, for the guesses that must fail. */
+const wrongCode = (code: string, step: number) =>
+  String((Number(code) + step) % 1_000_000).padStart(6, "0");
 
 afterAll(async () => {
   mailServer.close();
@@ -151,19 +167,75 @@ test("migration 030 applies to an existing users table and is idempotent", async
   }
 });
 
-test("the whole magic link: start -> link in the letter -> verify -> session -> GET /me", async () => {
+// 060 runs against tables it did not create — it takes the link tokens out and
+// puts the codes in — so, like 030, it is proven against the schema it will
+// actually meet rather than against an empty one. The replay matters for the
+// same reason it does there: a process killed between the file and its version
+// mark runs the whole file again, and `DROP … IF EXISTS` before
+// `CREATE … IF NOT EXISTS` is what makes that harmless.
+test("migration 060 swaps link tokens for codes, replays, and undoes", async () => {
+  const read = (name: string) =>
+    readFile(new URL(`../../migrations/${name}`, import.meta.url), "utf8");
+  const [auth, file, undo] = await Promise.all([
+    read("002.do.auth.sql"),
+    read("060.do.login-code.sql"),
+    read("060.undo.login-code.sql"),
+  ]);
+  const db = await sql.reserve();
+  try {
+    await db
+      .unsafe(`drop schema if exists mig_test_060 cascade;
+               create schema mig_test_060;
+               set search_path to mig_test_060, public`)
+      .simple();
+    // The state 060 finds when it runs for real: 002's tables, link tokens and
+    // all. Without them the DROP would be a no-op and prove nothing.
+    await db.unsafe(auth).simple();
+    await db.unsafe(file).simple();
+    await db.unsafe(file).simple(); // the replay after a killed process
+
+    const tables = async () =>
+      (
+        await db<{ table_name: string }[]>`
+          select table_name from information_schema.tables where table_schema = 'mig_test_060'
+        `
+      )
+        .map((t) => t.table_name)
+        .sort();
+    expect(await tables()).toEqual(["auth_identities", "email_login_codes", "sessions", "users"]);
+
+    // And back: the undo leaves the schema the code of that time writes into,
+    // which is the only thing an undo is for.
+    await db.unsafe(undo).simple();
+    expect(await tables()).toEqual(["auth_identities", "email_login_tokens", "sessions", "users"]);
+  } finally {
+    await db.unsafe("drop schema if exists mig_test_060 cascade; reset search_path").simple();
+    db.release();
+  }
+});
+
+test("the whole sign-in: start -> code in the letter -> verify -> session -> GET /me", async () => {
   const { app } = buildTestApp();
   const email = testEmail();
 
-  const start = await app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
+  const start = await startLogin(app, { email });
   expect(start.statusCode).toBe(200);
   expect(start.json()).toEqual({ ok: true });
 
-  const verified = await app.inject({
-    method: "POST",
-    url: "/auth/email/verify",
-    payload: { token: linkToken() },
-  });
+  const code = letterCode();
+  // Only the salted scrypt hash is in the table — the digits themselves appear
+  // in no column of it, so a dump of this table is not a dump of live sign-ins.
+  const [stored] = await sql<{ row: Record<string, unknown> }[]>`
+    select to_jsonb(c) as row from email_login_codes c
+    where c.user_id = (
+      select user_id from auth_identities
+      where provider = 'email' and provider_account_id = ${email}
+    )
+  `;
+  expect(stored).toBeDefined();
+  expect(JSON.stringify(stored?.row)).not.toContain(code);
+
+  const verified = await verifyCode(app, email, code);
   expect(verified.statusCode).toBe(200);
   const { token, user } = verified.json() as { token: string; user: Record<string, unknown> };
   // A language comes with the account from the first moment: what the server
@@ -203,29 +275,27 @@ test("the whole magic link: start -> link in the letter -> verify -> session -> 
 
 test("the letter goes out in the language the request asked for", async () => {
   const { app } = buildTestApp();
-  const start = (payload: Record<string, unknown>) =>
-    app.inject({ method: "POST", url: "/auth/email/start", payload });
   try {
     // No language at all — what every client sent before the field existed, so
     // it must still be the Russian letter.
-    expect((await start({ email: testEmail() })).statusCode).toBe(200);
+    expect((await startLogin(app, { email: testEmail() })).statusCode).toBe(200);
     expect(letters.at(-1)?.subject).toBe("Вход в Remember");
-    expect(letters.at(-1)?.text).toContain("Ссылка одноразовая");
+    expect(letters.at(-1)?.text).toContain("Код одноразовый");
 
-    expect((await start({ email: testEmail(), language: "ru" })).statusCode).toBe(200);
+    expect((await startLogin(app, { email: testEmail(), language: "ru" })).statusCode).toBe(200);
     expect(letters.at(-1)?.subject).toBe("Вход в Remember");
 
-    expect((await start({ email: testEmail(), language: "en" })).statusCode).toBe(200);
-    expect(letters.at(-1)?.subject).toBe("Your sign-in link for Remember");
-    expect(letters.at(-1)?.text).toContain("open it on your phone");
+    expect((await startLogin(app, { email: testEmail(), language: "en" })).statusCode).toBe(200);
+    expect(letters.at(-1)?.subject).toBe("Your sign-in code for Remember");
+    expect(letters.at(-1)?.text).toContain("type it into the app");
     // One language per letter, not a mixture of both.
     expect(letters.at(-1)?.text).not.toMatch(/[А-Яа-я]/);
-    // And whichever language it is, the link it exists to carry is in it.
-    expect(letters.at(-1)?.text).toMatch(/remember:\/\/auth\/email\?token=/);
+    // And whichever language it is, the code it exists to carry is in it.
+    expect(letters.at(-1)?.text).toMatch(/\b\d{6}\b/);
 
     // A third language is a bug in the client, and it is told so rather than
     // quietly served the default letter.
-    expect((await start({ email: testEmail(), language: "de" })).statusCode).toBe(400);
+    expect((await startLogin(app, { email: testEmail(), language: "de" })).statusCode).toBe(400);
   } finally {
     await app.close();
   }
@@ -244,7 +314,10 @@ const doorEmail = () => testEmail().replace("@example.com", "@test.test");
 // The lock on the way in that development gets. Pinned by a test and not by a
 // promise: if this ever stops being 503, production hands the key to any
 // account to whoever types its address.
-test("the lock: in production an unconfigured mailbox is still 503, never a link", async () => {
+//
+// `not.toMatch(/\d{6}/)` is how «no code came back» is spelled throughout:
+// the body that would betray the lock is the one with six digits in it.
+test("the lock: in production an unconfigured mailbox is still 503, never a code", async () => {
   const previous = saveEnv();
   setEnv("RESEND_API_KEY", undefined);
   setEnv("MAIL_FROM", undefined);
@@ -262,18 +335,14 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
       // The ordinary address and the one the switch would open outside
       // production: in production neither is let through.
       for (const email of [testEmail(), doorEmail()]) {
-        const response = await app.inject({
-          method: "POST",
-          url: "/auth/email/start",
-          payload: { email },
-        });
+        const response = await startLogin(app, { email });
         expect(response.statusCode).toBe(503);
         expect(response.json()).toEqual({ error: "mail not configured" });
-        expect(response.body).not.toContain("remember://");
+        expect(response.body).not.toMatch(/\d{6}/);
 
         // The other half of the promise the handler makes, and the half a
         // status code cannot show: the answer comes before the user is made
-        // and before a token is minted. Without this the check could drift
+        // and before a code is minted. Without this the check could drift
         // below `startEmailLogin` and every request during a mail outage would
         // quietly mint a live login token that simply never gets returned.
         const users = await sql`select 1 from users where email = ${email}`;
@@ -292,8 +361,8 @@ test("the lock: in production an unconfigured mailbox is still 503, never a link
 // The only thing standing between a switch flipped on by mistake and a leaked
 // session is the production check baked into `bypass` itself. This pins that,
 // with real keys in place, a production box still posts the real letter and
-// the answer never carries a link — prod prefix included.
-test("the lock holds with mail configured too: production still sends the letter, never the link", async () => {
+// the answer never carries a code — prod prefix included.
+test("the lock holds with mail configured too: production still sends the letter, never the code", async () => {
   const previous = saveEnv();
   setEnv("EMAIL_LOGIN_DEV_BYPASS", "1");
   const { app } = buildTestApp();
@@ -304,14 +373,10 @@ test("the lock holds with mail configured too: production still sends the letter
       setEnv("NODE_ENV", spelling);
       const email = doorEmail();
       sent.push(email);
-      const response = await app.inject({
-        method: "POST",
-        url: "/auth/email/start",
-        payload: { email },
-      });
+      const response = await startLogin(app, { email });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ ok: true });
-      expect(response.body).not.toContain("remember://");
+      expect(response.body).not.toMatch(/\d{6}/);
     }
     // A real letter per request, addressed to the real recipient — the
     // ordinary path taken both times, not the bypass.
@@ -336,12 +401,10 @@ test("the dev door: only test.test, only with the switch on, and never on absenc
   setEnv("NODE_ENV", undefined);
   const { app } = buildTestApp();
   const posted = letters.length;
-  const start = (email: string) =>
-    app.inject({ method: "POST", url: "/auth/email/start", payload: { email } });
   const refused = async (email: string) => {
-    const response = await start(email);
+    const response = await startLogin(app, { email });
     expect(response.statusCode).toBe(503);
-    expect(response.body).not.toContain("remember://");
+    expect(response.body).not.toMatch(/\d{6}/);
     // Refused all the way: no user, so nothing was half-done on the way out.
     expect(await sql`select 1 from users where email = ${email}`).toHaveLength(0);
   };
@@ -367,23 +430,19 @@ test("the dev door: only test.test, only with the switch on, and never on absenc
     // can register a name could point `test.test` at the end of their own.
     await refused(doorEmail().replace("@test.test", "@evil.test.test"));
 
-    // On, and a test.test address: in, with the link in the answer.
+    // On, and a test.test address: in, with the code in the answer.
     const email = doorEmail();
-    const opened = await start(email);
+    const opened = await startLogin(app, { email });
     expect(opened.statusCode).toBe(200);
-    const { ok, link } = opened.json() as { ok: boolean; link: string };
+    const { ok, code } = opened.json() as { ok: boolean; code: string };
     expect(ok).toBe(true);
-    expect(link).toMatch(/^remember:\/\/auth\/email\?token=/);
+    expect(code).toMatch(/^\d{6}$/);
     // Nothing went anywhere: there is no provider to send through.
     expect(letters).toHaveLength(posted);
 
-    // And the link is the real thing, not a decoration: the token out of it
-    // opens a session, which is the whole point of handing it over.
-    const verified = await app.inject({
-      method: "POST",
-      url: "/auth/email/verify",
-      payload: { token: new URL(link).searchParams.get("token") },
-    });
+    // And the code is the real thing, not a decoration: it opens a session,
+    // which is the whole point of handing it over.
+    const verified = await verifyCode(app, email, code);
     expect(verified.statusCode).toBe(200);
     expect((verified.json() as { token: string }).token).toEqual(expect.any(String));
 
@@ -391,9 +450,9 @@ test("the dev door: only test.test, only with the switch on, and never on absenc
     // domain that decide. A letter to test.test has nowhere to arrive.
     setEnv("RESEND_API_KEY", "test-key");
     setEnv("MAIL_FROM", "Remember <no-reply@example.com>");
-    const withKeys = await start(doorEmail());
+    const withKeys = await startLogin(app, { email: doorEmail() });
     expect(withKeys.statusCode).toBe(200);
-    expect((withKeys.json() as { link: string }).link).toMatch(/^remember:\/\/auth\/email\?token=/);
+    expect((withKeys.json() as { code: string }).code).toMatch(/^\d{6}$/);
     expect(letters).toHaveLength(posted);
   } finally {
     restoreEnv(previous);
@@ -438,17 +497,9 @@ test("signing in again with the same address does not make a second user", async
   const ids: string[] = [];
   const starts: string[] = [];
   for (let i = 0; i < 2; i++) {
-    const start = await app.inject({
-      method: "POST",
-      url: "/auth/email/start",
-      payload: { email },
-    });
+    const start = await startLogin(app, { email });
     starts.push(`${start.statusCode} ${start.body}`);
-    const res = await app.inject({
-      method: "POST",
-      url: "/auth/email/verify",
-      payload: { token: linkToken() },
-    });
+    const res = await verifyCode(app, email, letterCode());
     ids.push((res.json() as { user: { id: string } }).user.id);
   }
   expect(ids[0]).toBe(ids[1]);
@@ -461,24 +512,107 @@ test("signing in again with the same address does not make a second user", async
   await app.close();
 });
 
-test("the link token is single-use: a second verify with it is 401", async () => {
+test("the code is single-use: a second verify with it is 401", async () => {
   const { app } = buildTestApp();
+  const email = testEmail();
 
-  await app.inject({ method: "POST", url: "/auth/email/start", payload: { email: testEmail() } });
-  const token = linkToken();
+  await startLogin(app, { email });
+  const code = letterCode();
 
-  const first = await app.inject({ method: "POST", url: "/auth/email/verify", payload: { token } });
+  const first = await verifyCode(app, email, code);
   expect(first.statusCode).toBe(200);
 
-  const second = await app.inject({
-    method: "POST",
-    url: "/auth/email/verify",
-    payload: { token },
-  });
+  // Spent in the moment it worked, not merely left to expire.
+  const second = await verifyCode(app, email, code);
   expect(second.statusCode).toBe(401);
-  expect(second.json()).toEqual({ error: "invalid or expired token" });
+  expect(second.json()).toEqual({ error: "invalid or expired code" });
 
   await app.close();
+});
+
+// Six digits is one of a million, and a million is a number a script gets
+// through in an afternoon. The ceiling on attempts is the whole of what stands
+// between that script and every account on the product, so it is pinned here
+// rather than trusted — and the half that is easy to get wrong is the last
+// line: a code whose attempts are gone has to be dead to the right digits too.
+// A ceiling that only refuses wrong guesses refuses nothing at all.
+test("the code cannot be guessed: once the attempts are spent, the right code is refused too", async () => {
+  const previous = process.env.EMAIL_LOGIN_MAX_ATTEMPTS;
+  process.env.EMAIL_LOGIN_MAX_ATTEMPTS = "3";
+  const { app } = buildTestApp();
+  try {
+    const email = testEmail();
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    const code = letterCode();
+
+    // Three guesses, none of them the code — which is how a script arrives.
+    for (const step of [1, 2, 3]) {
+      const guess = await verifyCode(app, email, wrongCode(code, step));
+      expect(guess.statusCode).toBe(401);
+      expect(guess.json()).toEqual({ error: "invalid or expired code" });
+    }
+
+    // The fourth call carries the real code, and is refused all the same — and
+    // refused in exactly the same words, so the guesser cannot even learn that
+    // this one was the one.
+    const spent = await verifyCode(app, email, code);
+    expect(spent.statusCode).toBe(401);
+    expect(spent.json()).toEqual({ error: "invalid or expired code" });
+
+    // The account is not locked, the code was: asking again gets a new one and
+    // it works. That is the only way past, and it costs a request that the rate
+    // limit on /auth/email/start counts.
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    const fresh = await verifyCode(app, email, letterCode());
+    expect(fresh.statusCode).toBe(200);
+    expect((fresh.json() as { token: string }).token).toEqual(expect.any(String));
+  } finally {
+    setEnv("EMAIL_LOGIN_MAX_ATTEMPTS", previous);
+    await app.close();
+  }
+});
+
+test("an expired code is refused exactly as a wrong one is, and a stranger's code is nobody's", async () => {
+  const { app } = buildTestApp();
+  try {
+    const email = testEmail();
+    await startLogin(app, { email });
+    const code = letterCode();
+
+    // Somebody else's live code, right digits and all: the code is the secret
+    // of one address, and a million of them in the air at once must not mean a
+    // guess that lands on the wrong person still lets the guesser in.
+    const stranger = testEmail();
+    await startLogin(app, { email: stranger });
+    const strangersCode = letterCode();
+    const crossed = await verifyCode(app, email, strangersCode);
+    expect(crossed.statusCode).toBe(401);
+    expect(crossed.json()).toEqual({ error: "invalid or expired code" });
+
+    // Aged out where a test cannot wait fifteen minutes. `expires_at` is the
+    // whole of the TTL, so moving it is the same thing as time passing.
+    await sql`
+      update email_login_codes set expires_at = now()
+      where user_id = (
+        select user_id from auth_identities
+        where provider = 'email' and provider_account_id = ${email}
+      )
+    `;
+    const expired = await verifyCode(app, email, code);
+    expect(expired.statusCode).toBe(401);
+    // The same answer as a wrong code, to the letter: a different one would
+    // say «those were the right digits, only late», which is worth knowing.
+    expect(expired.json()).toEqual({ error: "invalid or expired code" });
+
+    // And a body that is not six digits never reaches any of this.
+    for (const bad of [{}, { email }, { email, code: "12345" }, { email, code: "abcdef" }]) {
+      expect(
+        (await app.inject({ method: "POST", url: "/auth/email/verify", payload: bad })).statusCode,
+      ).toBe(400);
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 test("app.authenticate: 401 for missing, malformed, expired and revoked", async () => {
@@ -492,12 +626,9 @@ test("app.authenticate: 401 for missing, malformed, expired and revoked", async 
     return { seenUserId: request.user.id };
   });
 
-  await app.inject({ method: "POST", url: "/auth/email/start", payload: { email: testEmail() } });
-  const verified = await app.inject({
-    method: "POST",
-    url: "/auth/email/verify",
-    payload: { token: linkToken() },
-  });
+  const email = testEmail();
+  await startLogin(app, { email });
+  const verified = await verifyCode(app, email, letterCode());
   const { token } = verified.json() as { token: string };
 
   const me = (authorization?: string) =>

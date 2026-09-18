@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { devEmailBypass, env, rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
-import { consumeEmailLoginToken, deepLink, normalizeEmail, startEmailLogin } from "./email.ts";
-import { mailConfigured, sendMagicLink } from "./mail.ts";
+import { normalizeEmail, startEmailLogin, verifyEmailLoginCode } from "./email.ts";
+import { mailConfigured, sendLoginCode } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, type Language, verify } from "./session.ts";
 
 declare module "fastify" {
@@ -32,11 +32,23 @@ const emailBody = {
   },
 } as const;
 
-const tokenBody = {
+/**
+ * The address as well as the code: the code is the secret, but it is only the
+ * secret *of an address* — a million codes shared by everybody signing in at
+ * once would otherwise let a guess collide with whoever it happened to fit.
+ *
+ * `pattern` and not a loose string: six digits is the whole shape, and a body
+ * that is not that shape is turned away before it reaches a deliberately slow
+ * hash. Everything past that shape — wrong digits, expired, spent — is one 401.
+ */
+const codeBody = {
   type: "object",
-  required: ["token"],
+  required: ["email", "code"],
   additionalProperties: false,
-  properties: { token: { type: "string", minLength: 1, maxLength: 512 } },
+  properties: {
+    email: { type: "string", format: "email", maxLength: 254 },
+    code: { type: "string", pattern: "^[0-9]{6}$" },
+  },
 } as const;
 
 /**
@@ -144,7 +156,7 @@ export function authPlugin(app: FastifyInstance) {
       // server — an address here cannot be a real person's, whoever types it.
       // That is why the door is on this domain and not on a name somebody
       // owns: a domain we merely believe is unused can grow a mailbox, and
-      // then a link meant for a developer is delivered to its owner.
+      // then a code meant for a developer is delivered to its owner.
       //
       // The domain is matched on the whole `@test.test` tail, after
       // `normalizeEmail` has folded the case: `someone@evil.test.test` is a
@@ -167,39 +179,56 @@ export function authPlugin(app: FastifyInstance) {
       if (rateLimited(buckets)) {
         return reply.code(429).send({ error: "too many requests" });
       }
-      const token = await startEmailLogin(email);
-      // The development door decided above: the same link the letter would
+      const code = await startEmailLogin(email);
+      // The development door decided above: the same code the letter would
       // have carried is handed straight back to whoever asked. Mail keys make
       // no difference here — a letter to test.test has nowhere to be
       // delivered, the domain being reserved rather than merely idle, and a
       // dev machine that happens to hold real keys should not start bouncing.
-      if (bypass) return { ok: true, link: deepLink(token) };
+      if (bypass) return { ok: true, code };
       try {
-        await sendMagicLink(email, deepLink(token), request.body.language);
+        await sendLoginCode(email, code, request.body.language);
       } catch (error) {
         // The provider's own words go to the log and no further. 502 and not
         // 500: nothing here failed, the thing behind us did — and it is not
-        // 4xx either, because the address was never the problem. The token
+        // 4xx either, because the address was never the problem. The code
         // stays minted and simply expires; a retry mints another.
-        request.log.warn({ err: error, email }, "magic link not sent");
+        request.log.warn({ err: error, email }, "login code not sent");
         return reply.code(502).send({ error: "mail delivery failed" });
       }
-      // The link itself is never logged: it is a bearer credential for the
+      // The code itself is never logged: it is a bearer credential for the
       // account, and a log line holding it is one copy too many now that there
       // is a real way to deliver it.
-      request.log.info({ email }, "magic link sent");
+      request.log.info({ email }, "login code sent");
       // The answer is the same for a fresh address and a known one — otherwise
       // this route answers the question "is this person registered with you?".
       return { ok: true };
     },
   );
 
-  app.post<{ Body: { token: string } }>(
+  app.post<{ Body: { email: string; code: string } }>(
     "/auth/email/verify",
-    { schema: { body: tokenBody } },
+    { schema: { body: codeBody } },
     async (request, reply) => {
-      const user = await consumeEmailLoginToken(request.body.token);
-      if (!user) return reply.code(401).send({ error: "invalid or expired token" });
+      // Normalized the same way `/auth/email/start` normalizes it, and through
+      // the same function: the address is the key the code was filed under, so
+      // a capital letter in what the person typed here must not make their own
+      // code a stranger's.
+      //
+      // Not rate-limited of itself, and it does not need to be: a guess only
+      // reaches the hash while a live code exists, each one spends one of that
+      // code's few attempts, and minting codes is exactly what the limiter on
+      // /auth/email/start counts. The guesses an address is worth in a window
+      // are that limit times the attempt ceiling, and nothing here can widen
+      // it.
+      const user = await verifyEmailLoginCode(
+        normalizeEmail(request.body.email),
+        request.body.code,
+      );
+      // One answer for every way of failing — unknown address, wrong digits,
+      // expired, already spent, attempts exhausted. A difference between them
+      // is a hint about which half of the pair to keep working on.
+      if (!user) return reply.code(401).send({ error: "invalid or expired code" });
       return { token: await issue(user.id), user };
     },
   );
