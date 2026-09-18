@@ -196,6 +196,13 @@ export function galleryRoutes(app: FastifyInstance) {
           // until the worker has made them.
           thumbnail_url: item.thumbnail_key ? await downloadUrl(item.thumbnail_key, ttl) : null,
           preview_url: item.preview_key ? await downloadUrl(item.preview_key, ttl) : null,
+          // The automatic screening, handed over as the worker left it (doc-03):
+          // a proposal the organizer corrects before ordering a montage, not a
+          // decision. Null until the analysis has looked — the same «ещё не
+          // готово» as the two links above, and deliberately not `false`, which
+          // would read as «looked at and kept».
+          screening_rejected: item.screening_rejected,
+          screening_reason: item.screening_reason,
         })),
       );
     },

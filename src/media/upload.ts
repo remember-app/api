@@ -43,6 +43,12 @@ export type MediaItem = {
   duration_seconds: number | null;
   thumbnail_key: string | null;
   preview_key: string | null;
+  // The automatic screening's verdict, written by the same worker and read by
+  // nobody here but the gallery (doc-03): whether the analysis would throw this
+  // frame out and why. Null is «not looked at yet», not «kept» — the reason is
+  // null as well for a frame that was kept.
+  screening_rejected: boolean | null;
+  screening_reason: string | null;
   created_at: Date;
 };
 

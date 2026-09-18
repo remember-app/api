@@ -160,9 +160,12 @@ test("the gallery is open to every member and closed to everyone else", async ()
 
   // The worker is not running here, so its half is written by hand: a
   // derivative key pointing at bytes that really are in the bucket, which is
-  // what makes the signed link below answerable.
+  // what makes the signed link below answerable, and the screening's verdict,
+  // which comes from the same hand and the same moment.
   await sql`
-    update media_items set thumbnail_key = original_key where id = ${early.id}
+    update media_items
+    set thumbnail_key = original_key, screening_rejected = true, screening_reason = 'blurry'
+    where id = ${early.id}
   `;
 
   // Every standing sees the same gallery — a viewer above all, since «смотреть
@@ -179,10 +182,18 @@ test("the gallery is open to every member and closed to everyone else", async ()
       status: "processing",
       uploaded_by: contributor.user.id,
       size_bytes: "4096",
+      // What the screening made of it, handed over untouched.
+      screening_rejected: true,
+      screening_reason: "blurry",
     });
     // No derivative yet — the client draws a placeholder, not a broken link.
     expect(items[1].thumbnail_url).toBeNull();
     expect(items[1].preview_url).toBeNull();
+    // And no verdict yet either: «ещё не готово», not «looked at and kept» —
+    // `false` here would have the organizer told the analysis approved a frame
+    // it has never seen.
+    expect(items[1].screening_rejected).toBeNull();
+    expect(items[1].screening_reason).toBeNull();
 
     const url = new URL(items[0].thumbnail_url);
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
