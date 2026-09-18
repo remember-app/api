@@ -11,7 +11,7 @@ import {
   storageConfigured,
   type UploadedPart,
 } from "../media/r2.ts";
-import { completeBody } from "../media/upload.ts";
+import { completeBody, partCount } from "../media/upload.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 
 /**
@@ -103,7 +103,7 @@ export function musicRoutes(app: FastifyInstance) {
       if (!track) throw new Error("insert into music_uploads returned no row");
 
       const ttl = uploadTtlSeconds();
-      const parts = Math.max(1, Math.ceil(size_bytes / partBytes()));
+      const parts = partCount(size_bytes);
       return reply.code(201).send({
         id: track.id,
         status: track.status,

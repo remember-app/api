@@ -381,6 +381,16 @@ test("the order carries the story, the frames picked by hand and the organizer's
   expect(shouty.statusCode).toBe(201);
   expect(shouty.json().params.include_media_ids).toEqual([first]);
 
+  // And named twice in two spellings it is still one frame. The schema's
+  // `uniqueItems` compares the strings as they arrived, so this is the one way
+  // a duplicate gets past it — and the worker must not be handed the same id
+  // twice by a client that shouted half of it.
+  const twice = await order(app, organizer.token, memory.id, {
+    include_media_ids: [first, first.toUpperCase()],
+  });
+  expect(twice.statusCode).toBe(201);
+  expect(twice.json().params.include_media_ids).toEqual([first]);
+
   // One id sent unwrapped is a list of one: Fastify's ajv coerces a scalar into
   // the array the schema asks for, and the frame it names is honoured like any
   // other. Pinned because it is surprising, not because it is asked for.
@@ -477,6 +487,34 @@ test("the order carries the story, the frames picked by hand and the organizer's
   });
   expect(bare.statusCode).toBe(201);
   expect(bare.json().params).toEqual({ target_seconds: 60 });
+
+  // A NUL and a lone surrogate are legal in a JSON string and impossible in
+  // Postgres — the first in any text at all, the second in the `jsonb` this
+  // order writes. Both come out of a paste and neither is anything a person
+  // meant, so they are dropped and the story goes in: «internal» over a stray
+  // byte in «расскажите про ролик» is the answer this field must never give.
+  const nul = String.fromCharCode(0);
+  const pasted = await order(app, organizer.token, memory.id, {
+    story_text: `Как${nul} мы \ud800ехали`,
+  });
+  expect(pasted.statusCode).toBe(201);
+  expect(pasted.json().params.story_text).toBe("Как мы ехали");
+  // Nothing of the story but those two goes: emoji are whole code points and
+  // survive, which is what «drop the unstorable» must not quietly mean «drop
+  // what the keyboard makes».
+  const emoji = await order(app, organizer.token, memory.id, {
+    story_text: "Поехали \u{1F697} на дачу",
+  });
+  expect(emoji.statusCode).toBe(201);
+  expect(emoji.json().params.story_text).toBe("Поехали \u{1F697} на дачу");
+  // The same byte in a track key is «нет такого трека», not a `500`: a key is
+  // `music/<uuid>`, so one carrying a NUL names nothing whichever way it is
+  // read.
+  const nulKey = await order(app, organizer.token, memory.id, {
+    music_track_key: `music/${nul}`,
+  });
+  expect(nulKey.statusCode).toBe(400);
+  expect(nulKey.json().error).toBe("no such uploaded music track");
 
   await app.close();
 });

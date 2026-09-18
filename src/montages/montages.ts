@@ -89,6 +89,20 @@ const minReadyItems = 3;
 const maxStoryChars = 2000;
 
 /**
+ * The two things a client may legally put in a JSON string and Postgres cannot
+ * hold: a NUL, which no text column takes, and an unpaired surrogate, which
+ * `jsonb` refuses outright. `params` is `jsonb`, so `story_text` — the first
+ * free text this service ever wrote there — met both as a `500` on a field a
+ * person types into.
+ *
+ * Dropped rather than refused: neither is anything anybody meant, both arrive
+ * out of a paste, and «расскажите про ролик» answering «internal» over a stray
+ * byte is the one thing that field must not do. A well-formed pair is a single
+ * code point under `u` and is not `Cs`, so emoji come through untouched.
+ */
+const storable = (text: string) => text.replaceAll("\u0000", "").replace(/\p{Cs}/gu, "");
+
+/**
  * How long a montage is asked to be, and the band it may be asked for inside.
  * In the environment for the reason the media limits are (src/media/config.ts):
  * these move once real material lands, and there is no admin screen to move
@@ -257,7 +271,11 @@ export function montageRoutes(app: FastifyInstance) {
       // way out: Postgres hands uuids back in lower case, so a client echoing
       // an id of ours in capitals must not be told its own frame is not there,
       // and the worker must not have to compare two spellings of one id.
-      const lower = (ids: string[] = []) => ids.map((id) => id.toLowerCase());
+      //
+      // And deduplicated after that, not before: the schema's `uniqueItems`
+      // compares the strings as they arrived, so one frame named twice in two
+      // spellings passes it and would otherwise reach the worker twice.
+      const lower = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
       const include = lower(request.body?.include_media_ids);
       const exclude = lower(request.body?.exclude_media_ids);
       const excluded = new Set(exclude);
@@ -305,9 +323,14 @@ export function montageRoutes(app: FastifyInstance) {
         // Their own track has to be their own memory's, and finished: a key
         // from another memory, or one whose bytes never landed, is a montage
         // that fails an hour later at the worker.
+        //
+        // Looked up as Postgres could hold it: a key is `music/<uuid>`, so one
+        // carrying a NUL matches nothing either way — and the difference is
+        // `400 «нет такого трека»` instead of a `500` from the driver.
         const [track] = await sql<{ id: string }[]>`
           select id from music_uploads
-          where object_key = ${trackKey} and memory_id = ${memory.id} and status = 'ready'
+          where object_key = ${storable(trackKey)} and memory_id = ${memory.id}
+            and status = 'ready'
         `;
         if (!track) {
           return reply
@@ -324,7 +347,7 @@ export function montageRoutes(app: FastifyInstance) {
       // empty story and an empty list are «ничего не сказали» for the same
       // reason: a client clearing a field sends it empty rather than dropping
       // it, and a key that says nothing is a key not worth writing.
-      const story = request.body?.story_text?.trim();
+      const story = storable(request.body?.story_text ?? "").trim();
       const params = {
         target_seconds: request.body?.target_seconds ?? targetSeconds(),
         ...(story ? { story_text: story } : {}),

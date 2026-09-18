@@ -109,8 +109,13 @@ export const completeBody = {
   },
 } as const;
 
-/** How many slices the client will cut a file of this size into. */
-const partCount = (sizeBytes: number) => Math.max(1, Math.ceil(sizeBytes / partBytes()));
+/**
+ * How many slices the client will cut a file of this size into. Shared with the
+ * music intent (`src/montages/music.ts`) for the reason `completeBody` is: a
+ * track is sliced exactly as a file is, and one arithmetic to keep in step with
+ * `partBytes` is better than two.
+ */
+export const partCount = (sizeBytes: number) => Math.max(1, Math.ceil(sizeBytes / partBytes()));
 
 /**
  * The multipart upload this row is waiting on, started if it is not there yet.

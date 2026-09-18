@@ -161,10 +161,12 @@ test("the gallery is open to every member and closed to everyone else", async ()
   // The worker is not running here, so its half is written by hand: a
   // derivative key pointing at bytes that really are in the bucket, which is
   // what makes the signed link below answerable, and the screening's verdict,
-  // which comes from the same hand and the same moment.
+  // which comes from the same hand and the same moment. `blur` and not
+  // `blurry`: the word is the worker's, out of `projects/montage/selection.py`,
+  // and a fixture spelling it its own way pins a value nothing ever writes.
   await sql`
     update media_items
-    set thumbnail_key = original_key, screening_rejected = true, screening_reason = 'blurry'
+    set thumbnail_key = original_key, screening_rejected = true, screening_reason = 'blur'
     where id = ${early.id}
   `;
 
@@ -184,7 +186,7 @@ test("the gallery is open to every member and closed to everyone else", async ()
       size_bytes: "4096",
       // What the screening made of it, handed over untouched.
       screening_rejected: true,
-      screening_reason: "blurry",
+      screening_reason: "blur",
     });
     // No derivative yet — the client draws a placeholder, not a broken link.
     expect(items[1].thumbnail_url).toBeNull();
