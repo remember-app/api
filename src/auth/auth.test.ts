@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -215,7 +215,7 @@ test("migration 070 swaps link tokens for codes, replays, and undoes", async () 
 });
 
 test("the whole sign-in: start -> code in the letter -> verify -> session -> GET /me", async () => {
-  const { app } = buildTestApp();
+  const { app, lines } = buildTestApp();
   const email = testEmail();
 
   const start = await startLogin(app, { email });
@@ -233,7 +233,25 @@ test("the whole sign-in: start -> code in the letter -> verify -> session -> GET
     )
   `;
   expect(stored).toBeDefined();
-  expect(JSON.stringify(stored?.row)).not.toContain(code);
+  const row = JSON.stringify(stored?.row);
+  expect(row).not.toContain(code);
+  // Asked of the bytes as well as of the text, and this is the half that
+  // matters: `to_jsonb` renders a bytea column as `\x…` hex, so the six digits
+  // stored raw would hide from the line above as `343832…` and the assertion
+  // would pass on a table holding every live code in the clear.
+  expect(row).not.toContain(Buffer.from(code).toString("hex"));
+  // Nor a bare hash of them. What makes a stolen dump useless is that the
+  // stored value cannot be recomputed from a guess without that row's salt: a
+  // fast unsalted hash of a million candidates is computed once and reads the
+  // whole table, which is exactly why this column is scrypt and not `hashToken`.
+  for (const algorithm of ["md5", "sha1", "sha256", "sha512"]) {
+    expect(row, algorithm).not.toContain(createHash(algorithm).update(code).digest("hex"));
+  }
+  // And it is not in the log either — a log line lives longer and is read by
+  // more people than the letter. Pinned against the line that *is* written, so
+  // that a log which stopped being captured at all cannot pass this quietly.
+  expect(lines.some((l) => l.includes("login code sent"))).toBe(true);
+  expect(lines.join("\n")).not.toContain(code);
 
   const verified = await verifyCode(app, email, code);
   expect(verified.statusCode).toBe(200);
@@ -757,30 +775,34 @@ test("/auth/email/start is also rate-limited per IP, across distinct addresses",
   }
 });
 
+// A negative window used to clear the counters on every request, which left the
+// only unauthenticated write route with no limiter at all. `0.5` is the same
+// hole wearing a plausible face — half a minute is a thing somebody types, and
+// a value that floors to zero is a window of 0 ms, so it must fall back too.
 test("a broken rate-limit setting falls back to the default instead of switching it off", async () => {
   const previous = process.env.EMAIL_LOGIN_RATE_WINDOW_MINUTES;
   const previousMax = process.env.EMAIL_LOGIN_RATE_MAX;
-  // A negative window used to clear the counters on every request, which left
-  // the only unauthenticated write route with no limiter at all.
-  process.env.EMAIL_LOGIN_RATE_WINDOW_MINUTES = "-15";
   process.env.EMAIL_LOGIN_RATE_MAX = "2";
-  const { app } = buildTestApp();
   try {
-    const email = testEmail();
-    const codes: number[] = [];
-    for (let i = 0; i < 4; i++) {
-      const res = await app.inject({
-        method: "POST",
-        url: "/auth/email/start",
-        payload: { email },
-      });
-      codes.push(res.statusCode);
+    for (const window of ["-15", "0.5"]) {
+      process.env.EMAIL_LOGIN_RATE_WINDOW_MINUTES = window;
+      const { app } = buildTestApp();
+      const email = testEmail();
+      const codes: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/auth/email/start",
+          payload: { email },
+        });
+        codes.push(res.statusCode);
+      }
+      expect([window, codes]).toEqual([window, [200, 200, 429, 429]]);
+      await app.close();
     }
-    expect(codes).toEqual([200, 200, 429, 429]);
   } finally {
     setEnv("EMAIL_LOGIN_RATE_WINDOW_MINUTES", previous);
     setEnv("EMAIL_LOGIN_RATE_MAX", previousMax);
-    await app.close();
   }
 });
 

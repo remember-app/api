@@ -1,13 +1,20 @@
 /**
- * Every knob is optional, and a value that is not a positive number is a
- * misconfiguration rather than an intent — so it falls back instead of being
+ * Every knob is optional, and every one of them counts something whole — days,
+ * minutes, tries. A value that is not a positive whole number is a
+ * misconfiguration rather than an intent, so it falls back instead of being
  * obeyed. A negative window would otherwise clear the rate-limit counters on
  * every request and switch the limiter off without a word.
  */
 export const positive = (name: string, fallback: number) => {
-  const n = Number(process.env[name]);
-  // Floored: the TTLs end up as make_interval arguments, which take integers.
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  // Floored *before* the test and not after: the TTLs end up as make_interval
+  // arguments, which take integers, and a fraction is a positive number that
+  // floors to nothing. `EMAIL_LOGIN_RATE_WINDOW_MINUTES=0.5` used to mean a
+  // window of 0 ms — the counters cleared on every request and the limiter was
+  // off, exactly the hole the negative value above leaves — and
+  // `EMAIL_LOGIN_TTL_MINUTES=0.5` a code expired before the letter went out.
+  // Half a minute is a thing a person types, so it falls back like a negative.
+  const n = Math.floor(Number(process.env[name]));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
 export const sessionTtlDays = () => positive("SESSION_TTL_DAYS", 30);

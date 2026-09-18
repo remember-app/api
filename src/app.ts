@@ -13,8 +13,9 @@ import { musicRoutes } from "./montages/music.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
- * `app.inject()`. `options` exists for tests: the magic-link deep link is
- * delivered through the log, so a test needs to hand in its own log stream.
+ * `app.inject()`. `options` exists for tests: what the service only ever writes
+ * down — a push that would not send, a letter that would not go — is in the
+ * log, so a test that wants to read it hands in its own log stream.
  */
 export function buildApp(options: FastifyServerOptions = {}) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test", ...options });

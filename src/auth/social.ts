@@ -60,8 +60,8 @@ async function findOrCreateUser(provider: Provider, claims: ProviderClaims): Pro
 /**
  * Sign-in with an id token the app already obtained from Apple or Google. The
  * server does no dance with the provider — it verifies what it is handed and
- * turns it into one of our sessions. The answer is the magic link's answer to
- * the character, so the app reads one shape for all three providers.
+ * turns it into one of our sessions. The answer is `/auth/email/verify`'s
+ * answer to the character, so the app reads one shape for all three providers.
  *
  * Mounted from `buildApp` beside `identityRoutes`.
  */
