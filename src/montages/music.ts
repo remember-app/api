@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
-import { maxFileBytes, partBytes, uploadTtlSeconds } from "../media/config.ts";
+import { downloadTtlSeconds, maxFileBytes, partBytes, uploadTtlSeconds } from "../media/config.ts";
 import { dropKeys } from "../media/gallery.ts";
 import {
   completeUpload,
   createUpload,
+  downloadUrl,
   headSize,
   partUrls,
   storageConfigured,
@@ -13,6 +14,7 @@ import {
 } from "../media/r2.ts";
 import { completeBody, partCount } from "../media/upload.ts";
 import { uuidPattern } from "../memories/plugin.ts";
+import { musicTracks } from "./montages.ts";
 
 /**
  * «И возможность добавить свою» (doc-03): the organizer's own track, instead of
@@ -25,6 +27,10 @@ import { uuidPattern } from "../memories/plugin.ts";
  * A table of its own rather than a third `kind` in `media_items`, for the
  * reason the migration gives: a track is not the memory's material. The bytes
  * never touch the API here either — it only signs and records.
+ *
+ * The shelf's own five are here too, at the bottom: «Послушать» signs a link to
+ * one of them. Same music, same store, opposite direction — and no memory in
+ * the path, because that shelf belongs to nobody in particular.
  *
  * Mounted from `buildApp` after `memoriesPlugin`, which decorates the
  * membership check these routes hang on.
@@ -187,6 +193,27 @@ export function musicRoutes(app: FastifyInstance) {
         where id = ${track.id} and status = 'pending_upload'
       `;
       return { id: track.id, status: "ready", key: track.object_key };
+    },
+  );
+
+  // «Послушать» on «Под что монтировать» (`design/screens/MontageMusic.html`):
+  // the track before the video is ordered. Behind `app.authenticate` alone and
+  // outside `/memories/:memoryId` — the library is one shelf for the whole
+  // product, the same five for everyone, so there is no membership to check and
+  // no role to weigh. The worker lays the files out under `tracks/<id>.mp3`
+  // (`python worker.py tracks`); signing a link to one is all of this route.
+  app.get<{ Params: { trackId: string } }>(
+    "/music/tracks/:trackId",
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      if (!storageConfigured()) return reply.code(503).send(unconfigured);
+      const { trackId } = request.params;
+      // Checked against the very list an order is checked against, so «послушать»
+      // and «заказать» can never disagree about which tracks exist. A params
+      // schema with an `enum` would answer `400`, and a track that is not on the
+      // shelf is a thing that is not there — `404`, as everywhere else here.
+      if (!musicTracks.some((id) => id === trackId)) return reply.code(404).send(notFound);
+      return { url: await downloadUrl(`tracks/${trackId}.mp3`, downloadTtlSeconds()) };
     },
   );
 }

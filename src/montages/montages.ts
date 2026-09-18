@@ -50,15 +50,16 @@ export type Montage = {
 /**
  * The tracks the worker has, by id, in the order the app shows them
  * (`design/screens/MontageMusic.html`: Яркая, Тёплая, Спокойная, Ночь,
- * Дорога). Here only to refuse an id it does not hold — the files themselves
- * are the worker's, one per id, listed with their licences in
+ * Дорога). To refuse an id it does not hold, and — exported — to name the one
+ * file the preview route signs (`music.ts`). The files themselves are the
+ * worker's, one per id, listed with their licences in
  * `projects/montage/tracks/README.md` — and the list is short enough that a
  * table for it would be a table for five strings. It is the worker's shelf that
  * decides what belongs here: when that shelf grew from three synthesized tones
  * to five real tracks, an order for `night` or `road` was refused by this
  * service alone.
  */
-const musicTracks = ["bright", "warm", "calm", "night", "road"] as const;
+export const musicTracks = ["bright", "warm", "calm", "night", "road"] as const;
 
 /**
  * Which way round the video is cut (doc-03: «горизонтальный ролик или
