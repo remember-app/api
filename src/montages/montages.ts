@@ -245,27 +245,6 @@ export function montageRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       if (role !== "organizer") return reply.code(403).send(forbidden);
 
-      // Only `ready` counts: material still uploading or still being probed has
-      // no derivative the worker can measure, and a video assembled out of half
-      // an event is worse than one refused. Counted before anything is written,
-      // so a refusal leaves no row and no job — the same rule the upload intent
-      // follows with its limits.
-      const [material] = await sql<{ count: number }[]>`
-        select count(*)::int from media_items
-        where memory_id = ${memory.id} and status = 'ready'
-      `;
-      const ready = material?.count ?? 0;
-      if (ready < minReadyItems) {
-        // English like every other error body here, with the numbers beside it:
-        // «недостаточно материала для ролика» is what the app says, and it says
-        // it in its own words rather than showing ours.
-        return reply.code(409).send({
-          error: "not enough material for a montage",
-          ready_items: ready,
-          need: minReadyItems,
-        });
-      }
-
       // The frames the organizer picked out by hand (doc-03: «отмечает, какие
       // кадры войти должны, а какие нет»). Lowercased on the way in and on the
       // way out: Postgres hands uuids back in lower case, so a client echoing
@@ -308,6 +287,40 @@ export function montageRoutes(app: FastifyInstance) {
             .code(400)
             .send({ error: "no such ready media in this memory", media_ids: missing });
         }
+      }
+
+      // Only `ready` counts: material still uploading or still being probed has
+      // no derivative the worker can measure, and a video assembled out of half
+      // an event is worse than one refused. Counted before anything is written,
+      // so a refusal leaves no row and no job — the same rule the upload intent
+      // follows with its limits.
+      //
+      // And counted here, after the lists have been read and checked, rather
+      // than at the top of the handler: an organizer who crossed frames out is
+      // ordering a video out of what is left, so the floor has to be held
+      // against what is left. Counted first, a memory of five with three
+      // crossed out passed a bar of three and left the worker to assemble a
+      // minute from two. Every id in `exclude` is by now one distinct `ready`
+      // frame of this memory — the check above sent back anything else, and the
+      // set above made it distinct — so how many there are is how many frames
+      // this order really takes away.
+      const [material] = await sql<{ count: number }[]>`
+        select count(*)::int from media_items
+        where memory_id = ${memory.id} and status = 'ready'
+      `;
+      const ready = (material?.count ?? 0) - exclude.length;
+      if (ready < minReadyItems) {
+        // English like every other error body here, with the numbers beside it:
+        // «недостаточно материала для ролика» is what the app says, and it says
+        // it in its own words rather than showing ours. `ready_items` is what
+        // this order has left, not what the memory holds: the app puts that
+        // number against «нужно три», and the memory's own total would put five
+        // there under a refusal.
+        return reply.code(409).send({
+          error: "not enough material for a montage",
+          ready_items: ready,
+          need: minReadyItems,
+        });
       }
 
       // One track or the other, never both: the shelf id and an uploaded key
