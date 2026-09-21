@@ -123,8 +123,9 @@ export function journalRoutes(app: FastifyInstance) {
     properties: {
       // Курсор в обе стороны от того, что у клиента уже есть: `after` — что
       // легло с прошлого опроса, `before` — что было раньше показанного.
-      // Записи при этом всегда идут от свежих к старым, одним порядком на оба
-      // случая: именно так их рисует экран.
+      // Записи в ответе всегда идут от свежих к старым, одним порядком на оба
+      // случая: именно так их рисует экран. Выбираются они при этом по-разному
+      // — см. `forward` в обработчике.
       after: { type: "integer", minimum: 0 },
       before: { type: "integer", minimum: 0 },
       limit: { type: "integer", minimum: 1, maximum: maxLimit, default: defaultLimit },
@@ -175,6 +176,15 @@ export function journalRoutes(app: FastifyInstance) {
       }
 
       const { after, before, limit, stage, media_id } = request.query;
+      // Куда идёт курсор — и это единственное, чем два направления
+      // отличаются. Вперёд берётся порция, **ближайшая к курсору**, то есть
+      // самые старые из новых: между двумя опросами может лечь больше записей,
+      // чем лимит (этап «разбор кадров» пишет по записи на файл разом), и
+      // «самые новые 200» оставили бы посередине дыру, про которую клиенту
+      // нечем узнать — он двигает курсор на наибольший отданный id, и всё, что
+      // ниже, уже не запросит никогда. Назад и первая загрузка идут от свежих:
+      // там дыра невозможна, экран листает журнал от «сейчас».
+      const forward = after !== undefined;
       const [stages, rows, viewers] = await Promise.all([
         // Пять строк на ролик, когда воркер до них дошёл. Счётчики «взял /
         // мимо / мысли» api считает сам, по записям: воркер и так пишет каждую
@@ -197,9 +207,9 @@ export function journalRoutes(app: FastifyInstance) {
           ) c on c.stage = s.stage
           where s.montage_id = ${montage.id}
         `,
-        // Порция от курсора, свежие сверху. Лишняя запись сверх лимита — это и
-        // есть ответ на «есть ли ещё»; считать всё подходящее вторым запросом
-        // значило бы платить за полный скан на каждом опросе.
+        // Порция от курсора. Лишняя запись сверх лимита — это и есть ответ на
+        // «есть ли ещё»; считать всё подходящее вторым запросом значило бы
+        // платить за полный скан на каждом опросе.
         sql<EntryRow[]>`
           select * from montage_journal_entries
           where montage_id = ${montage.id}
@@ -207,7 +217,7 @@ export function journalRoutes(app: FastifyInstance) {
             and (${before ?? null}::bigint is null or id < ${before ?? null}::bigint)
             and (${stage ?? null}::text is null or stage = ${stage ?? null}::text)
             and (${media_id ?? null}::uuid is null or media_id = ${media_id ?? null}::uuid)
-          order by id desc
+          order by id ${forward ? sql`asc` : sql`desc`}
           limit ${limit + 1}
         `,
         // Свой запрос уже записан выше, так что спрашивающий видит и себя.
@@ -220,8 +230,12 @@ export function journalRoutes(app: FastifyInstance) {
         `,
       ]);
 
+      // Лишняя срезается с того конца, куда идёт курсор, — то есть просто с
+      // хвоста выборки в обе стороны. А наружу порция всегда уходит от свежих
+      // к старым: направление — дело курсора, форма ответа от него не зависит.
       const has_more = rows.length > limit;
-      const entries = has_more ? rows.slice(0, limit) : rows;
+      const page = has_more ? rows.slice(0, limit) : rows;
+      const entries = forward ? page.reverse() : page;
 
       // Сведения только о тех файлах, что встретились в этой порции: журнал
       // ролика — это сотни записей об одних и тех же кадрах, и подписывать

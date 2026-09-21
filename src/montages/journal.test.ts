@@ -299,6 +299,51 @@ test("записи идут порциями от курсора, свежие �
   const tail = await journal(app, organizer.token, memory.id, id, `?after=${ids[4]}`);
   expect(tail.entries.map((e) => e.id)).toEqual([ids[6], ids[5]]);
 
+  // И вперёд без дыр, когда легло больше лимита. Клиент двигает курсор на
+  // наибольший id порции, так что порция обязана быть ближайшей к курсору, а
+  // не самой свежей: иначе всё между курсором и самой старой показанной он не
+  // запросит уже никогда, и узнать об этом ему неоткуда.
+  const walked: number[] = [];
+  let cursor = ids[0];
+  for (const [expected, more] of [
+    [[ids[2], ids[1]], true],
+    [[ids[4], ids[3]], true],
+    // Последняя порция полна ровно до лимита, и «есть ещё» гаснет на ней же.
+    [[ids[6], ids[5]], false],
+  ] as const) {
+    const chunk = await journal(app, organizer.token, memory.id, id, `?after=${cursor}&limit=2`);
+    expect(chunk.entries.map((e) => e.id)).toEqual(expected);
+    // Есть ещё — приложению не ждать следующего опроса, а спросить сразу.
+    expect(chunk.has_more).toBe(more);
+    walked.push(...chunk.entries.map((e) => e.id));
+    cursor = Math.max(...chunk.entries.map((e) => e.id));
+  }
+  // Пройдено всё, что было новее исходного курсора, — ни одной потерянной.
+  expect([...walked].sort((a, b) => a - b)).toEqual(ids.slice(1));
+  expect(
+    (await journal(app, organizer.token, memory.id, id, `?after=${cursor}&limit=2`)).has_more,
+  ).toBe(false);
+
+  // Сужение едет вместе с курсором: тем же шагом, но по одному этапу.
+  const staged = await journal(
+    app,
+    organizer.token,
+    memory.id,
+    id,
+    `?after=${ids[0]}&stage=screening&limit=1`,
+  );
+  expect(staged.entries.map((e) => e.id)).toEqual([ids[1]]);
+  expect(staged.has_more).toBe(true);
+  const stagedNext = await journal(
+    app,
+    organizer.token,
+    memory.id,
+    id,
+    `?after=${ids[1]}&stage=screening&limit=1`,
+  );
+  expect(stagedNext.entries.map((e) => e.id)).toEqual([ids[2]]);
+  expect(stagedNext.has_more).toBe(false);
+
   // Сужения: один этап и один файл.
   const stageOnly = await journal(app, organizer.token, memory.id, id, "?stage=screening");
   expect(stageOnly.entries.map((e) => e.id)).toEqual([ids[2], ids[1], ids[0]]);
