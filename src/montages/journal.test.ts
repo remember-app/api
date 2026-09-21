@@ -102,6 +102,13 @@ const stage = (montageId: string, key: string, fields: Record<string, unknown> =
     on conflict (montage_id, stage) do update set ${sql(fields)}
   `;
 
+/** A row of the layout, as the worker writes it while it cuts the video. */
+const place = (montageId: string, mediaId: string, start: number, duration: number) =>
+  sql`
+    insert into montage_frames (montage_id, media_id, start_seconds, duration_seconds)
+    values (${montageId}, ${mediaId}, ${start}, ${duration})
+  `;
+
 /** One line of the journal, as the worker appends it. Answers with its id. */
 async function entry(montageId: string, fields: Record<string, unknown>) {
   const [row] = await sql<{ id: string }[]>`
@@ -148,6 +155,7 @@ type Journal = {
     captured_at: string | null;
     duration_seconds: number | null;
     thumbnail_url: string | null;
+    places: { start_seconds: number; duration_seconds: number }[];
   }[];
   viewers: { id: string; username: string | null }[];
 };
@@ -415,6 +423,53 @@ test("запись несёт всё, что режиссёр сказал, а �
   expect(url.pathname).toContain(key?.thumbnail_key);
   expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
   expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+
+  await app.close();
+});
+
+test("у файла видно, где он лёг в ролике; не вошёл или раскладки нет — пусто", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const twice = await material(memory.id, organizer.user.id);
+  const once = await material(memory.id, organizer.user.id);
+  const cut = await material(memory.id, organizer.user.id);
+  const id = await montage(memory.id, organizer.user.id);
+  const neighbour = await montage(memory.id, organizer.user.id);
+
+  for (const mediaId of [twice, once, cut]) {
+    await entry(id, {
+      stage: "rhythm",
+      media_id: mediaId,
+      decision: mediaId === cut ? "skip" : "take",
+    });
+  }
+  // Клип, разрезанный надвое, законно стоит в ролике дважды — оба места видны.
+  await place(id, twice, 12.5, 3);
+  await place(id, twice, 0, 2.25);
+  await place(id, once, 5.5, 1.5);
+  // Раскладка соседнего ролика сюда не течёт, даже про тот же кадр.
+  await place(neighbour, cut, 1, 1);
+
+  const answer = await journal(app, organizer.token, memory.id, id);
+  const places = (mediaId: string) => answer.files.find((f) => f.id === mediaId)?.places;
+  // По порядку в ролике, а не в том, в котором воркер их записал.
+  expect(places(twice)).toEqual([
+    { start_seconds: 0, duration_seconds: 2.25 },
+    { start_seconds: 12.5, duration_seconds: 3 },
+  ]);
+  expect(places(once)).toEqual([{ start_seconds: 5.5, duration_seconds: 1.5 }]);
+  // Кадр, в ролик не вошедший, места не имеет — и это не ошибка.
+  expect(places(cut)).toEqual([]);
+
+  // Раскладки ещё нет вовсе — то же пустое поле: отсев идёт раньше, чем ролик
+  // разложен, и сведения о файле читаются и без мест.
+  const fresh = await montage(memory.id, organizer.user.id);
+  await entry(fresh, { stage: "screening", media_id: twice, decision: "take" });
+  expect((await journal(app, organizer.token, memory.id, fresh)).files[0]).toMatchObject({
+    id: twice,
+    places: [],
+  });
 
   await app.close();
 });
