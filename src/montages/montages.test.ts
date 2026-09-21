@@ -194,6 +194,28 @@ const fell = (montageId: string) => sql`
   where id = ${montageId}
 `;
 
+/** The worker has picked the job up and is at it. */
+const running = (montageId: string) => sql`
+  update montages set status = 'processing', updated_at = now() where id = ${montageId}
+`;
+
+/**
+ * A stage row, as the worker lays it down when it reaches that stage — the
+ * only hand that ever writes one (`montage_stages`, миграция 130).
+ */
+const stage = (montageId: string, key: string, state: string) => sql`
+  insert into montage_stages (montage_id, stage, state) values (${montageId}, ${key}, ${state})
+  on conflict (montage_id, stage) do update set state = ${state}, updated_at = now()
+`;
+
+/** Who the journal counts as watching this montage right now. */
+const watching = async (montageId: string) => {
+  const [row] = await sql<{ n: number }[]>`
+    select count(*)::int as n from montage_viewers where montage_id = ${montageId}
+  `;
+  return row?.n ?? 0;
+};
+
 test("the montage is ordered by the organizer alone, and only out of real material", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
@@ -806,6 +828,105 @@ test("the list of montages is every member's, and only a ready one carries a lin
   expect(
     (await app.inject({ method: "GET", url: `/memories/${memory.id}/montages` })).statusCode,
   ).toBe(401);
+
+  await app.close();
+});
+
+test("a montage still being assembled carries its five stages in the list", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+
+  await material(memory.id, organizer.user.id, 3);
+  // Four videos in one memory and one list: the stages of all of them are read
+  // at once, and each card gets its own — not the first one's, and not a
+  // neighbour's.
+  const done = (await order(app, organizer.token, memory.id, {})).json();
+  const broken = (await order(app, organizer.token, memory.id, {})).json();
+  const live = (await order(app, organizer.token, memory.id, {})).json();
+  const fresh = (await order(app, organizer.token, memory.id, {})).json();
+
+  // Assembled, and its journal stays beside it — «как собирался» is opened from
+  // the journal route long after. The card on the feed still shows no scale.
+  await assembled(done.id);
+  for (const key of ["screening", "understanding", "directing", "rhythm", "assembly"]) {
+    await stage(done.id, key, "done");
+  }
+
+  // Fell over on the third stage, which is the one the card paints red.
+  await stage(broken.id, "screening", "done");
+  await stage(broken.id, "understanding", "done");
+  await stage(broken.id, "directing", "failed");
+  await fell(broken.id);
+
+  // At it right now: two behind, one running — «2 из 5» on the feed. The last
+  // two stages have no row yet; the worker writes each as it reaches it.
+  await running(live.id);
+  await stage(live.id, "screening", "done");
+  await stage(live.id, "understanding", "done");
+  await stage(live.id, "directing", "running");
+
+  // `fresh` is left as the order route left it: queued, and not picked up.
+
+  const seen = await list(app, viewer.token, memory.id);
+  expect(seen.statusCode).toBe(200);
+  const items = seen.json() as {
+    id: string;
+    status: string;
+    video_url: string | null;
+    stages: { stage: string; state: string }[] | null;
+  }[];
+  const byId = new Map(items.map((item) => [item.id, item]));
+
+  // Five, in the order of the pipeline and not in the order the worker wrote
+  // them; a stage with no row yet is `pending`, so the scale is five bars from
+  // the very first second the worker is at it.
+  expect(byId.get(live.id)?.stages).toEqual([
+    { stage: "screening", state: "done" },
+    { stage: "understanding", state: "done" },
+    { stage: "directing", state: "running" },
+    { stage: "rhythm", state: "pending" },
+    { stage: "assembly", state: "pending" },
+  ]);
+  expect(byId.get(broken.id)?.stages).toEqual([
+    { stage: "screening", state: "done" },
+    { stage: "understanding", state: "done" },
+    { stage: "directing", state: "failed" },
+    { stage: "rhythm", state: "pending" },
+    { stage: "assembly", state: "pending" },
+  ]);
+  // Ready — nothing to draw, even with all five rows standing behind it. Not
+  // started — nothing to draw either, and five empty bars would claim it is
+  // under way.
+  expect(byId.get(done.id)?.stages).toBeNull();
+  expect(byId.get(fresh.id)?.stages).toBeNull();
+
+  // Every other field, and their order, are exactly what they were: the stages
+  // arrive beside them, not instead of anything.
+  expect(Object.keys(byId.get(live.id) ?? {})).toEqual([
+    "id",
+    "memory_id",
+    "ordered_by",
+    "status",
+    "duration_seconds",
+    "params",
+    "error_text",
+    "created_at",
+    "updated_at",
+    "video_url",
+    "poster_url",
+    "stages",
+  ]);
+  expect(byId.get(done.id)).toMatchObject({ status: "ready", duration_seconds: 58.5 });
+  expect(byId.get(done.id)?.video_url).toContain(`montages/${done.id}.mp4`);
+  expect(byId.get(broken.id)).toMatchObject({ error_text: "ffmpeg said no" });
+
+  // The list is the shelf the videos stand on, not «я смотрю сборку»: reading
+  // it marks nobody as watching. That is the journal route's own doing.
+  for (const id of [live.id, broken.id, done.id, fresh.id]) {
+    expect(await watching(id)).toBe(0);
+  }
 
   await app.close();
 });
