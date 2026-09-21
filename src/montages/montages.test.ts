@@ -274,7 +274,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
 
   const asked = await order(app, organizer.token, memory.id, {
     target_seconds: 90,
-    music_track_id: "calm",
+    music_tracks: ["calm"],
   });
   expect(asked.statusCode).toBe(201);
   const montage = asked.json();
@@ -344,15 +344,20 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     { target_seconds: 5 },
     { target_seconds: 10_000 },
     { target_seconds: 60.5 },
-    { music_track_id: "epic" },
     { orientation: "square" },
     { orientation: "Portrait" },
   ]) {
     expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
   }
+  // The two fields the app used to name one track by are gone from the schema,
+  // so they are unknown fields like any other — dropped on the way in, naming
+  // no music at all. Pinned beside an invented field because that is exactly
+  // what they now are: the music is asked for in `music_tracks` or not at all.
   const stuffed = await order(app, organizer.token, memory.id, {
     target_seconds: 45,
     style: "cinematic",
+    music_track_id: "calm",
+    music_track_key: "music/whatever",
   });
   expect(stuffed.statusCode).toBe(201);
   expect(stuffed.json().params).toEqual({ target_seconds: 45, music_tracks: [] });
@@ -507,31 +512,7 @@ test("the order carries the story, the frames picked by hand and the music as a 
     expect(silent.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
   }
 
-  // The old app's two fields, still accepted and written as the list of one
-  // they always were. ponytail: goes when the app has moved over.
-  for (const [payload, music_tracks] of [
-    [{ music_track_id: "warm" }, ["warm"]],
-    [{ music_track_key: ours }, [ours]],
-  ] as const) {
-    const old = await order(app, organizer.token, memory.id, payload);
-    expect(old.statusCode).toBe(201);
-    expect(old.json().params).toEqual({ target_seconds: 60, music_tracks });
-  }
-
   const before = (await montageRows(memory.id)).length;
-
-  // Two ways of naming the music in one body is two answers to one question,
-  // and nobody but the organizer could have meant it — the old pair, and either
-  // of the old fields against the new list.
-  for (const [payload, fields] of [
-    [{ music_track_id: "calm", music_track_key: ours }, ["music_track_id", "music_track_key"]],
-    [{ music_tracks: ["calm"], music_track_id: "calm" }, ["music_tracks", "music_track_id"]],
-    [{ music_tracks: [], music_track_key: ours }, ["music_tracks", "music_track_key"]],
-  ] as const) {
-    const twoWays = await order(app, organizer.token, memory.id, payload);
-    expect(twoWays.statusCode).toBe(400);
-    expect(twoWays.json()).toEqual({ error: "the music is named more than one way", fields });
-  }
 
   // A wish about the music with no music to wish about: refused by name rather
   // than written into a row the worker cannot honour.
@@ -587,7 +568,6 @@ test("the order carries the story, the frames picked by hand and the music as a 
     [{ music_tracks: [unfinished] }, [unfinished]],
     [{ music_tracks: ["epic"] }, ["epic"]],
     [{ music_tracks: ["calm", theirs, "epic"] }, [theirs, "epic"]],
-    [{ music_track_key: theirs }, [theirs]],
   ] as const) {
     const answer = await order(app, organizer.token, memory.id, payload);
     expect(answer.statusCode).toBe(400);
