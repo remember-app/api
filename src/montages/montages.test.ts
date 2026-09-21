@@ -69,18 +69,30 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
  * Material in the memory, written where the upload would have left it. The
  * status is what the order counts on, so it is the argument. Answers with the
  * ids, which is what «включить этот кадр» is said with.
+ *
+ * Two-minute videos unless asked otherwise, because the length a montage may be
+ * ordered at is cut from the material itself: three photos are worth seven
+ * seconds and would refuse every order in this file that names a minute.
+ * Photos, and videos of a given length, are asked for where they are the point.
  */
 async function material(
   memoryId: string,
   uploadedBy: string,
   count: number,
   status: "ready" | "processing" = "ready",
+  kind: "photo" | "video" = "video",
+  seconds: number | null = 120,
 ) {
   const ids: string[] = [];
   for (let n = 0; n < count; n++) {
     const [row] = await sql<{ id: string }[]>`
-      insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes)
-      values (${memoryId}, ${uploadedBy}, 'photo', ${status}, ${`originals/${randomUUID()}`}, 4096)
+      insert into media_items (
+        memory_id, uploaded_by, kind, status, original_key, size_bytes, duration_seconds
+      )
+      values (
+        ${memoryId}, ${uploadedBy}, ${kind}, ${status}, ${`originals/${randomUUID()}`}, 4096,
+        ${kind === "video" ? seconds : null}
+      )
       returning id
     `;
     if (row) ids.push(row.id);
@@ -218,7 +230,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     status: "queued",
     duration_seconds: null,
     error_text: null,
-    params: { target_seconds: 90, music_track_id: "calm" },
+    params: { target_seconds: 90, music_tracks: ["calm"] },
     video_url: null,
     poster_url: null,
   });
@@ -231,18 +243,20 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   expect(await jobsFor(montage.id)).toEqual([{ type: "montage", status: "queued" }]);
   expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 1, user: 1 });
 
-  // Said nothing about length or track: the default length is written down all
-  // the same, so the row is the whole answer to «какой ролик просили».
+  // Said nothing about length or music: the default length is written down all
+  // the same, so the row is the whole answer to «какой ролик просили» — and so
+  // is the empty list of tracks, which is «без музыки» said out loud rather
+  // than left for the worker to read as «поля нет, играй warm».
   const plain = await order(app, organizer.token, memory.id, {});
   expect(plain.statusCode).toBe(201);
-  expect(plain.json().params).toEqual({ target_seconds: 60 });
+  expect(plain.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
   expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 2, user: 2 });
 
   // No body at all, and a literal `null`, are the same «no preferences»: three
   // shapes a client may send, one video ordered.
   const bodiless = await order(app, organizer.token, memory.id);
   expect(bodiless.statusCode).toBe(201);
-  expect(bodiless.json().params).toEqual({ target_seconds: 60 });
+  expect(bodiless.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
 
   // The fourth shape, and the one that is *not* the same: a zero-length body
   // under `content-type: application/json` is refused by Fastify's own JSON
@@ -266,11 +280,12 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     payload: "null",
   });
   expect(nulled.statusCode).toBe(201);
-  expect(nulled.json().params).toEqual({ target_seconds: 60 });
+  expect(nulled.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
 
-  // Out of the band, off the shelf of tracks — refused by the schema before a
-  // row exists. An unknown field is dropped rather than refused (the ajv of
-  // this repository strips them), which is what keeps `params` ours.
+  // Out of the band, half a second, off the shelf of tracks — refused before a
+  // row exists, the first two by this memory's own ceiling and the rest by the
+  // schema. An unknown field is dropped rather than refused (the ajv of this
+  // repository strips them), which is what keeps `params` ours.
   for (const payload of [
     { target_seconds: 5 },
     { target_seconds: 10_000 },
@@ -286,7 +301,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
     style: "cinematic",
   });
   expect(stuffed.statusCode).toBe(201);
-  expect(stuffed.json().params).toEqual({ target_seconds: 45 });
+  expect(stuffed.json().params).toEqual({ target_seconds: 45, music_tracks: [] });
 
   // Вертикальный: the one preference that changes the shape of the video
   // (doc-03). It is written into `params` beside the length, comes back in the
@@ -295,10 +310,15 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   const portrait = await order(app, organizer.token, memory.id, { orientation: "portrait" });
   expect(portrait.statusCode).toBe(201);
   const vertical = portrait.json();
-  expect(vertical.params).toEqual({ target_seconds: 60, orientation: "portrait" });
+  expect(vertical.params).toEqual({
+    target_seconds: 60,
+    music_tracks: [],
+    orientation: "portrait",
+  });
   const listed = (await list(app, organizer.token, memory.id)).json();
   expect(listed.find((item: { id: string }) => item.id === vertical.id)?.params).toEqual({
     target_seconds: 60,
+    music_tracks: [],
     orientation: "portrait",
   });
 
@@ -308,7 +328,11 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   // the same video, which is what pins them both here.
   const landscape = await order(app, organizer.token, memory.id, { orientation: "landscape" });
   expect(landscape.statusCode).toBe(201);
-  expect(landscape.json().params).toEqual({ target_seconds: 60, orientation: "landscape" });
+  expect(landscape.json().params).toEqual({
+    target_seconds: 60,
+    music_tracks: [],
+    orientation: "landscape",
+  });
 
   // Somebody else's memory, one that never existed and an id that is not a
   // uuid: byte for byte the same answer (README, «404 один на всех»).
@@ -327,7 +351,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   await app.close();
 });
 
-test("the order carries the story, the frames picked by hand and the organizer's own track", async () => {
+test("the order carries the story, the frames picked by hand and the music as a list", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
@@ -353,7 +377,8 @@ test("the order carries the story, the frames picked by hand and the organizer's
     story_text: "  Как мы ехали на дачу  ",
     include_media_ids: [first, second],
     exclude_media_ids: [third],
-    music_track_key: ours,
+    music_tracks: [ours, "calm"],
+    music_note: "  Свой трек первым, дальше спокойное  ",
     orientation: "portrait",
   });
   expect(asked.statusCode).toBe(201);
@@ -362,7 +387,8 @@ test("the order carries the story, the frames picked by hand and the organizer's
     story_text: "Как мы ехали на дачу",
     include_media_ids: [first, second],
     exclude_media_ids: [third],
-    music_track_key: ours,
+    music_tracks: [ours, "calm"],
+    music_note: "Свой трек первым, дальше спокойное",
     orientation: "portrait",
   };
   expect(asked.json().params).toEqual(wanted);
@@ -398,39 +424,68 @@ test("the order carries the story, the frames picked by hand and the organizer's
   expect(single.statusCode).toBe(201);
   expect(single.json().params.exclude_media_ids).toEqual([fourth]);
 
-  // A track off the worker's shelf still works, on its own: the key is the
-  // other way of saying the same thing, not a replacement for it. Every one of
-  // the five, in the order of the screen — `night` and `road` came with the real
-  // library and were refused here alone while this service still knew three.
-  const shelved: [string, string][] = [];
-  for (const music_track_id of ["bright", "warm", "calm", "night", "road"]) {
-    const shelf = await order(app, organizer.token, memory.id, { music_track_id });
-    expect(shelf.statusCode).toBe(201);
-    expect(shelf.json().params).toEqual({ target_seconds: 60, music_track_id });
-    shelved.push([shelf.json().id, music_track_id]);
-  }
-  // And still there when the app reads the list — the worker takes the track
+  // Every track of the shelf, in the order of the screen, all in one list: the
+  // order they are listed in is the order they play in, so it is written down
+  // exactly as it came — `night` and `road` came with the real library and were
+  // refused here alone while this service still knew three.
+  const shelf = ["bright", "warm", "calm", "night", "road"];
+  const wholeShelf = await order(app, organizer.token, memory.id, { music_tracks: shelf });
+  expect(wholeShelf.statusCode).toBe(201);
+  expect(wholeShelf.json().params).toEqual({ target_seconds: 60, music_tracks: shelf });
+  // Reversed it is a different order and not the same set: nothing here sorts.
+  const reversed = await order(app, organizer.token, memory.id, {
+    music_tracks: [...shelf].reverse(),
+  });
+  expect(reversed.json().params.music_tracks).toEqual([...shelf].reverse());
+  // And still there when the app reads the list — the worker takes the music
   // from the same place.
   const shelfListed = (await list(app, organizer.token, memory.id)).json();
-  for (const [id, music_track_id] of shelved) {
-    expect(shelfListed.find((item: { id: string }) => item.id === id)?.params).toEqual({
-      target_seconds: 60,
-      music_track_id,
-    });
+  expect(
+    shelfListed.find((item: { id: string }) => item.id === wholeShelf.json().id)?.params,
+  ).toEqual({ target_seconds: 60, music_tracks: shelf });
+
+  // Empty, the field left out, and a wish that is nothing but spaces: the same
+  // «без музыки», and the empty list is written down in all three (the worker
+  // tells it from an order made before the field existed by nothing else).
+  for (const payload of [{}, { music_tracks: [] }, { music_tracks: [], music_note: "   " }]) {
+    const silent = await order(app, organizer.token, memory.id, payload);
+    expect(silent.statusCode).toBe(201);
+    expect(silent.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
+  }
+
+  // The old app's two fields, still accepted and written as the list of one
+  // they always were. ponytail: goes when the app has moved over.
+  for (const [payload, music_tracks] of [
+    [{ music_track_id: "warm" }, ["warm"]],
+    [{ music_track_key: ours }, [ours]],
+  ] as const) {
+    const old = await order(app, organizer.token, memory.id, payload);
+    expect(old.statusCode).toBe(201);
+    expect(old.json().params).toEqual({ target_seconds: 60, music_tracks });
   }
 
   const before = (await montageRows(memory.id)).length;
 
-  // Both at once is two answers to one question, and nobody but the organizer
-  // could have meant it.
-  const twoTracks = await order(app, organizer.token, memory.id, {
-    music_track_id: "calm",
-    music_track_key: ours,
+  // Two ways of naming the music in one body is two answers to one question,
+  // and nobody but the organizer could have meant it — the old pair, and either
+  // of the old fields against the new list.
+  for (const [payload, fields] of [
+    [{ music_track_id: "calm", music_track_key: ours }, ["music_track_id", "music_track_key"]],
+    [{ music_tracks: ["calm"], music_track_id: "calm" }, ["music_tracks", "music_track_id"]],
+    [{ music_tracks: [], music_track_key: ours }, ["music_tracks", "music_track_key"]],
+  ] as const) {
+    const twoWays = await order(app, organizer.token, memory.id, payload);
+    expect(twoWays.statusCode).toBe(400);
+    expect(twoWays.json()).toEqual({ error: "the music is named more than one way", fields });
+  }
+
+  // A wish about the music with no music to wish about: refused by name rather
+  // than written into a row the worker cannot honour.
+  const orphanNote = await order(app, organizer.token, memory.id, {
+    music_note: "погромче к финалу",
   });
-  expect(twoTracks.statusCode).toBe(400);
-  expect(twoTracks.json()).toEqual({
-    error: "music_track_id and music_track_key are mutually exclusive",
-  });
+  expect(orphanNote.statusCode).toBe(400);
+  expect(orphanNote.json()).toEqual({ error: "music_note needs music_tracks" });
 
   // A frame in both lists is «обязательно и ни в коем случае».
   const contradiction = await order(app, organizer.token, memory.id, {
@@ -469,22 +524,32 @@ test("the order carries the story, the frames picked by hand and the organizer's
     need: 3,
   });
 
-  // The same for a track: another memory's, and one whose bytes never landed.
-  for (const key of [theirs, unfinished, `music/${randomUUID()}`]) {
-    const answer = await order(app, organizer.token, memory.id, { music_track_key: key });
+  // The same for a track: another memory's, one whose bytes never landed, one
+  // nobody uploaded and a shelf id that is not on the shelf — every one of them
+  // by name, in the list they were named in, and the good ones beside them do
+  // not make the order pass.
+  for (const [payload, music_tracks] of [
+    [{ music_tracks: [theirs] }, [theirs]],
+    [{ music_tracks: [unfinished] }, [unfinished]],
+    [{ music_tracks: ["epic"] }, ["epic"]],
+    [{ music_tracks: ["calm", theirs, "epic"] }, [theirs, "epic"]],
+    [{ music_track_key: theirs }, [theirs]],
+  ] as const) {
+    const answer = await order(app, organizer.token, memory.id, payload);
     expect(answer.statusCode).toBe(400);
-    expect(answer.json()).toEqual({
-      error: "no such uploaded music track",
-      music_track_key: key,
-    });
+    expect(answer.json()).toEqual({ error: "no such music track", music_tracks });
   }
 
   // Refused by the schema, before a row exists: a story longer than anyone
-  // writes, an id that is not one, and the same id twice.
+  // writes, an id that is not one, the same id twice, the same track twice, a
+  // wall of tracks and a note longer than a wish.
   for (const payload of [
     { story_text: "я".repeat(2001) },
     { include_media_ids: ["not-a-uuid"] },
     { exclude_media_ids: [first, first] },
+    { music_tracks: ["calm", "calm"] },
+    { music_tracks: Array.from({ length: 51 }, () => randomUUID()) },
+    { music_tracks: ["calm"], music_note: "я".repeat(501) },
   ]) {
     expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
   }
@@ -500,7 +565,7 @@ test("the order carries the story, the frames picked by hand and the organizer's
     exclude_media_ids: [],
   });
   expect(bare.statusCode).toBe(201);
-  expect(bare.json().params).toEqual({ target_seconds: 60 });
+  expect(bare.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
 
   // A NUL and a lone surrogate are legal in a JSON string and impossible in
   // Postgres — the first in any text at all, the second in the `jsonb` this
@@ -521,70 +586,131 @@ test("the order carries the story, the frames picked by hand and the organizer's
   });
   expect(emoji.statusCode).toBe(201);
   expect(emoji.json().params.story_text).toBe("Поехали \u{1F697} на дачу");
-  // The same byte in a track key is «нет такого трека», not a `500`: a key is
+  // The same byte in a track is «нет такого трека», not a `500`: a key is
   // `music/<uuid>`, so one carrying a NUL names nothing whichever way it is
   // read.
   const nulKey = await order(app, organizer.token, memory.id, {
-    music_track_key: `music/${nul}`,
+    music_tracks: [`music/${nul}`],
   });
   expect(nulKey.statusCode).toBe(400);
-  expect(nulKey.json().error).toBe("no such uploaded music track");
+  expect(nulKey.json().error).toBe("no such music track");
 
   // A real key with a lone surrogate stitched onto it *becomes* the real key
-  // once cleaned, and the lookup below is done on the cleaned string — so this
-  // must not write the dirty original into `params` and hand `jsonb` the exact
-  // byte it was just proven to refuse. It must resolve to the track it was
-  // cleaned into.
-  const dirtyKey = `${ours}\ud800`;
-  const dirty = await order(app, organizer.token, memory.id, { music_track_key: dirtyKey });
+  // once cleaned, and the lookup is done on the cleaned string — so this must
+  // not write the dirty original into `params` and hand `jsonb` the exact byte
+  // it was just proven to refuse. It must resolve to the track it was cleaned
+  // into, and the note beside it is cleaned like the story.
+  const dirty = await order(app, organizer.token, memory.id, {
+    music_tracks: [`${ours}\ud800`],
+    music_note: `гром${nul}че`,
+  });
   expect(dirty.statusCode).toBe(201);
-  expect(dirty.json().params.music_track_key).toBe(ours);
+  expect(dirty.json().params.music_tracks).toEqual([ours]);
+  expect(dirty.json().params.music_note).toBe("громче");
 
   await app.close();
 });
 
-test("the default length is held inside its own min and max, not merely inside the schema's", async () => {
-  // Env is read once, at `buildApp`, into the very schema that would refuse a
-  // client asking for the same number — so a default outside the band has to
-  // be exercised with its own app, one built after the variable is set.
-  const previous = {
-    default: process.env.MONTAGE_TARGET_SECONDS,
-    min: process.env.MONTAGE_TARGET_SECONDS_MIN,
-    max: process.env.MONTAGE_TARGET_SECONDS_MAX,
-  };
-  try {
-    process.env.MONTAGE_TARGET_SECONDS_MIN = "15";
-    process.env.MONTAGE_TARGET_SECONDS_MAX = "300";
+test("the length a montage may be ordered at is cut from the memory's own material", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
 
-    // Past the ceiling — a typo in the environment, not an intent for a
-    // ten-minute video nobody could have asked the schema for.
-    process.env.MONTAGE_TARGET_SECONDS = "600";
-    const over = buildTestApp().app;
-    const overOrganizer = await signIn(over, email());
-    const overMemory = await createMemory(over, overOrganizer.token);
-    await material(overMemory.id, overOrganizer.user.id, 3);
-    const overAnswer = await order(over, overOrganizer.token, overMemory.id, {});
-    expect(overAnswer.statusCode).toBe(201);
-    expect(overAnswer.json().params).toEqual({ target_seconds: 300 });
-    await over.close();
+  // Three photos: two and a half seconds each, and the ceiling floors to a
+  // whole second. The floor of ten gives way to it — a band with nothing in it
+  // would refuse every length there is — so the only length this memory can be
+  // asked for is seven, and «ничего не сказали» gets seven rather than a
+  // refusal nobody asked for.
+  const thin = await createMemory(app, organizer.token);
+  await material(thin.id, organizer.user.id, 3, "ready", "photo");
+  expect((await order(app, organizer.token, thin.id, {})).json().params.target_seconds).toBe(7);
+  const tooLong = await order(app, organizer.token, thin.id, { target_seconds: 10 });
+  expect(tooLong.statusCode).toBe(400);
+  expect(tooLong.json()).toEqual({
+    error: "target_seconds out of range",
+    min_seconds: 7,
+    max_seconds: 7,
+  });
+  expect((await order(app, organizer.token, thin.id, { target_seconds: 7 })).statusCode).toBe(201);
+
+  // Videos are worth their own length, photos two and a half seconds, and a
+  // video the worker never measured is worth nothing — an unmeasured file must
+  // not lengthen the ceiling. Two of thirty, one unmeasured and two photos:
+  // sixty-five seconds, and the default sixty fits inside it.
+  const mixed = await createMemory(app, organizer.token);
+  const [half = ""] = await material(mixed.id, organizer.user.id, 2, "ready", "video", 30);
+  await material(mixed.id, organizer.user.id, 1, "ready", "video", null);
+  await material(mixed.id, organizer.user.id, 2, "ready", "photo");
+  expect((await order(app, organizer.token, mixed.id, {})).json().params.target_seconds).toBe(60);
+  expect((await order(app, organizer.token, mixed.id, { target_seconds: 65 })).statusCode).toBe(
+    201,
+  );
+  for (const [target_seconds, bounds] of [
+    [66, { min_seconds: 10, max_seconds: 65 }],
+    [9, { min_seconds: 10, max_seconds: 65 }],
+  ] as const) {
+    const refused = await order(app, organizer.token, mixed.id, { target_seconds });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual({ error: "target_seconds out of range", ...bounds });
+  }
+
+  // A crossed-out frame takes its seconds with it: the video is assembled out
+  // of what is left, so the ceiling is what is left too.
+  const shortened = await order(app, organizer.token, mixed.id, {
+    target_seconds: 40,
+    exclude_media_ids: [half],
+  });
+  expect(shortened.statusCode).toBe(400);
+  expect(shortened.json()).toEqual({
+    error: "target_seconds out of range",
+    min_seconds: 10,
+    max_seconds: 35,
+  });
+
+  // And ten minutes however much material there is (doc-03): fifteen minutes of
+  // video still buys a ten-minute ceiling.
+  const long = await createMemory(app, organizer.token);
+  await material(long.id, organizer.user.id, 3, "ready", "video", 300);
+  expect((await order(app, organizer.token, long.id, { target_seconds: 600 })).statusCode).toBe(
+    201,
+  );
+  const past = await order(app, organizer.token, long.id, { target_seconds: 601 });
+  expect(past.statusCode).toBe(400);
+  expect(past.json()).toEqual({
+    error: "target_seconds out of range",
+    min_seconds: 10,
+    max_seconds: 600,
+  });
+
+  await app.close();
+});
+
+test("the default length is held inside the memory's band, not merely obeyed", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3, "ready", "video", 300);
+
+  const previous = process.env.MONTAGE_TARGET_SECONDS;
+  try {
+    // Past the ceiling — a typo in the environment, not an intent for a video
+    // no client could have asked for, since the same number would be refused
+    // to anyone who named it.
+    process.env.MONTAGE_TARGET_SECONDS = "900";
+    const over = await order(app, organizer.token, memory.id, {});
+    expect(over.statusCode).toBe(201);
+    expect(over.json().params.target_seconds).toBe(600);
 
     // Under the floor, the same way.
     process.env.MONTAGE_TARGET_SECONDS = "5";
-    const under = buildTestApp().app;
-    const underOrganizer = await signIn(under, email());
-    const underMemory = await createMemory(under, underOrganizer.token);
-    await material(underMemory.id, underOrganizer.user.id, 3);
-    const underAnswer = await order(under, underOrganizer.token, underMemory.id, {});
-    expect(underAnswer.statusCode).toBe(201);
-    expect(underAnswer.json().params).toEqual({ target_seconds: 15 });
-    await under.close();
+    const under = await order(app, organizer.token, memory.id, {});
+    expect(under.statusCode).toBe(201);
+    expect(under.json().params.target_seconds).toBe(10);
   } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      const name = `MONTAGE_TARGET_SECONDS${key === "default" ? "" : `_${key.toUpperCase()}`}`;
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
+    if (previous === undefined) delete process.env.MONTAGE_TARGET_SECONDS;
+    else process.env.MONTAGE_TARGET_SECONDS = previous;
   }
+
+  await app.close();
 });
 
 test("the list of montages is every member's, and only a ready one carries a link", async () => {
