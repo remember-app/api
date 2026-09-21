@@ -411,12 +411,21 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   }
 
   // `contribution_status` is on every row from m-6: nobody here has uploaded
-  // anything, so all three sit at the initial value an invite leaves behind.
-  const fresh = { name: null, contribution_status: "not_started" };
+  // anything, so all three sit at the initial value an invite leaves behind —
+  // all three but the viewer, who has no status at all (doc-06): they were not
+  // asked to bring anything. Nobody has brought a frame either, so the count
+  // beside the status is zero on every line, the viewer's included.
+  const fresh = { name: null, contribution_status: "not_started", media_count: 0 };
   const expected = [
     { ...fresh, id: organizer.id, username: organizer.username, role: "organizer" },
     { ...fresh, id: contributor.id, username: contributor.username, role: "contributor" },
-    { ...fresh, id: viewer.id, username: viewer.username, role: "viewer" },
+    {
+      ...fresh,
+      contribution_status: null,
+      id: viewer.id,
+      username: viewer.username,
+      role: "viewer",
+    },
   ].sort((a, b) => a.id.localeCompare(b.id));
 
   // Everyone in the memory, each with the level they actually hold — the
@@ -439,6 +448,7 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
     expect(Object.keys(member).sort()).toEqual([
       "contribution_status",
       "id",
+      "media_count",
       "name",
       "role",
       "username",
@@ -467,12 +477,68 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   await app.close();
 });
 
-// The route itself has no role gate — a status grants nothing, per members.ts — so what is worth
-// pinning is that every standing may use it, an unknown value is a 400 and not a CHECK violation,
-// and a non-member gets the house 404 rather than a straight write into a row that is not theirs.
+/**
+ * A frame of this memory, put straight into the table: what the roster counts is the row, and the
+ * upload path that writes one is exercised end to end in upload.test.ts. Goes out with the memory
+ * — `media_items.memory_id` cascades — so the file's own cleanup already covers it.
+ */
+const frame = (memoryId: string, userId: string, status: string) =>
+  sql`
+    insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes)
+    values (${memoryId}, ${userId}, 'photo', ${status}, ${`t12/${randomUUID()}`}, 1)
+  `;
+
+test("the roster says how many frames each person brought to this memory", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const viewer = await person(app);
+  const created = await createMemory(app, organizer.token);
+  const elsewhere = await createMemory(app, organizer.token);
+
+  for (const [who, role] of [
+    [contributor, "contributor"],
+    [viewer, "viewer"],
+  ] as const) {
+    expect(
+      (await invite(app, organizer.token, created.id, { username: who.username, role })).statusCode,
+    ).toBe(200);
+  }
+
+  // Everything the gallery lists, counted — `failed` included, since the person did bring it and
+  // the client draws it with a retry. `pending_upload` is the one that is not: nothing is in the
+  // store behind it yet, and it is the one status the gallery leaves out too.
+  for (const status of ["ready", "processing", "failed", "pending_upload"]) {
+    await frame(created.id, contributor.id, status);
+  }
+  await frame(created.id, organizer.id, "ready");
+  // The same person in another memory of theirs: the count is per membership, not per human.
+  for (const status of ["ready", "ready"]) await frame(elsewhere.id, organizer.id, status);
+
+  const counts = async (memoryId: string) =>
+    Object.fromEntries(
+      (await roster(app, organizer.token, memoryId))
+        .json()
+        .map((m: { id: string; media_count: number }) => [m.id, m.media_count]),
+    );
+  expect(await counts(created.id)).toEqual({
+    [organizer.id]: 1,
+    [contributor.id]: 3,
+    // Nothing brought and nothing to bring: a viewer cannot upload at all.
+    [viewer.id]: 0,
+  });
+  expect(await counts(elsewhere.id)).toEqual({ [organizer.id]: 2 });
+
+  await app.close();
+});
+
+// Three answers, none of them a door that closes: what is worth pinning is that whoever was asked
+// to bring material may say any of them at any moment — the way back out of «всё загрузил» above
+// all — that a viewer may say none, that an unknown value is a 400 and not a CHECK violation, and
+// that a non-member gets the house 404 rather than a straight write into a row that is not theirs.
 // `«nothing» is overridden by an upload landing` and `«done» survives more material` are covered
 // in upload.test.ts, against this same route.
-test("contribution status: every standing may set it, an unknown value is refused, a stranger gets the house 404", async () => {
+test("contribution status: the one who brings material sets any of the three at any time, a viewer none", async () => {
   const { app } = buildTestApp();
   const organizer = await person(app);
   const contributor = await person(app);
@@ -489,10 +555,21 @@ test("contribution status: every standing may set it, an unknown value is refuse
     ).toBe(200);
   }
 
-  // Both terminal answers, from all three standings — a viewer above all, since doc-01 gives them
-  // no power to upload and this is exactly the case review m-8 fixed the client's gating for.
-  for (const who of [organizer, contributor, viewer]) {
-    for (const status of ["nothing", "done"] as const) {
+  // Every order the three can be said in, from both standings that bring material. The order is
+  // the point and not the values: each step lands on a status the previous one has to be left for,
+  // so «done -> more_coming» and «nothing -> more_coming» — the two the old route made one-way —
+  // are both in here, and so is saying the same thing twice.
+  const walk = [
+    "done",
+    "more_coming",
+    "nothing",
+    "more_coming",
+    "done",
+    "nothing",
+    "done",
+  ] as const;
+  for (const who of [organizer, contributor]) {
+    for (const status of walk) {
       const said = await setStatus(app, who.token, created.id, status);
       expect(said.statusCode).toBe(200);
       expect(said.json()).toEqual({ status });
@@ -500,9 +577,18 @@ test("contribution status: every standing may set it, an unknown value is refuse
     }
   }
 
-  // Not one of the two terminal answers this route accepts: `not_started` and `more_coming` are
-  // the api's own writes, and anything outside the four is nonsense from the client.
-  for (const bogus of ["not_started", "more_coming", "maybe", ""]) {
+  // A viewer has no status to set: nobody is waiting on material from them, and a status on their
+  // line would put them in a tally they were never part of. The row is left exactly as it was.
+  for (const status of walk) {
+    const refused = await setStatus(app, viewer.token, created.id, status);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.body).toBe('{"error":"forbidden"}');
+  }
+  expect(await statusOf(created.id, viewer.id)).toBe("not_started");
+
+  // Not one of the three: `not_started` is what an invite leaves behind and is nobody's to ask for
+  // back, and anything outside the four is nonsense from the client.
+  for (const bogus of ["not_started", "maybe", ""]) {
     const refused = await setStatus(app, organizer.token, created.id, bogus);
     expect(refused.statusCode).toBe(400);
   }
