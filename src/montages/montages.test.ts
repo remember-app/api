@@ -126,6 +126,16 @@ const order = (app: App, token: string, memoryId: string, payload?: object) =>
     }),
   );
 
+/** The same order, asked about instead of placed — «итог перед монтажом». */
+const preview = (app: App, token: string, memoryId: string, payload?: object) =>
+  app.inject(
+    as(token, {
+      method: "POST",
+      url: `/memories/${memoryId}/montages/preview`,
+      ...(payload === undefined ? {} : { payload }),
+    }),
+  );
+
 const list = (app: App, token: string, memoryId: string) =>
   app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/montages` }));
 
@@ -1122,5 +1132,169 @@ test("members who read different languages are each told in their own", async ()
   );
 
   await sql`delete from push_tokens where token in ${sql([russian, english])}`;
+  await app.close();
+});
+
+test("the summary counts what would go in and refuses whatever the order refuses", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
+
+  // Three photos of the organizer's and two minute-long videos of the
+  // contributor's: five frames from two people, 7,5 + 120 seconds of material
+  // behind them. One more of the organizer's is still being probed — it is in
+  // no summary, exactly as it is in no montage.
+  const [photo = ""] = await material(memory.id, organizer.user.id, 3, "ready", "photo");
+  const [clip = "", clipToo = ""] = await material(
+    memory.id,
+    contributor.user.id,
+    2,
+    "ready",
+    "video",
+    60,
+  );
+  await material(memory.id, organizer.user.id, 1, "processing");
+
+  // What the screen is drawn from: how much goes in, from how many people, the
+  // band the length lives in, the length the order would write, the shape and
+  // the wait («168 фото · 46 видео, от 5 человек», «Соберём примерно за 15
+  // минут» — `design/screens/MontageSummary.html`).
+  const summary = await preview(app, organizer.token, memory.id, {});
+  expect(summary.statusCode).toBe(200);
+  expect(summary.json()).toEqual({
+    photos: 3,
+    videos: 2,
+    people: 2,
+    min_seconds: 10,
+    max_seconds: 127,
+    target_seconds: 60,
+    orientation: "landscape",
+    estimate_minutes: 2,
+  });
+
+  // The other two shapes of «без пожеланий» the order takes are the same
+  // summary: no body at all, and a literal `null`.
+  for (const shown of [
+    await preview(app, organizer.token, memory.id),
+    await app.inject({
+      method: "POST",
+      url: `/memories/${memory.id}/montages/preview`,
+      headers: { authorization: `Bearer ${organizer.token}`, "content-type": "application/json" },
+      payload: "null",
+    }),
+  ]) {
+    expect(shown.statusCode).toBe(200);
+    expect(shown.json()).toEqual(summary.json());
+  }
+
+  // Asked for outright, the length and the shape come back as asked — and the
+  // wait grows with the video, not with the pile of frames alone.
+  const asked = await preview(app, organizer.token, memory.id, {
+    target_seconds: 120,
+    orientation: "portrait",
+    story_text: "Как мы ехали на дачу",
+  });
+  expect(asked.json()).toMatchObject({
+    target_seconds: 120,
+    orientation: "portrait",
+    estimate_minutes: 4,
+  });
+
+  // A crossed-out frame leaves everything else standing: one of the
+  // contributor's videos gone is one video fewer and a lower ceiling, and the
+  // contributor is still among the people because their other frame stays.
+  const withoutOne = await preview(app, organizer.token, memory.id, { exclude_media_ids: [clip] });
+  expect(withoutOne.json()).toEqual({
+    photos: 3,
+    videos: 1,
+    people: 2,
+    min_seconds: 10,
+    max_seconds: 67,
+    target_seconds: 60,
+    orientation: "landscape",
+    estimate_minutes: 2,
+  });
+
+  // Both of them gone and it is three photos from one person: seven seconds of
+  // material, a band collapsed onto its ceiling, and a wait that never falls
+  // under a minute however little there is to do.
+  const photosOnly = await preview(app, organizer.token, memory.id, {
+    exclude_media_ids: [clip, clipToo],
+  });
+  expect(photosOnly.json()).toEqual({
+    photos: 3,
+    videos: 0,
+    people: 1,
+    min_seconds: 7,
+    max_seconds: 7,
+    target_seconds: 7,
+    orientation: "landscape",
+    estimate_minutes: 1,
+  });
+
+  // Every refusal the order gives, given here first and word for word — a
+  // summary that agrees to what «Начать монтаж» will turn down is worse than
+  // no summary. Both asked with the same body, and both answers compared, so
+  // the two cannot drift apart: a frame in both lists, a frame that is not
+  // here, one still being probed, a length outside the band, a track off no
+  // shelf, a wish about music with no music, a shape that is not a shape, and
+  // an order left with two frames out of five.
+  for (const payload of [
+    { include_media_ids: [photo], exclude_media_ids: [photo] },
+    { include_media_ids: [randomUUID()] },
+    { target_seconds: 9 },
+    { target_seconds: 128 },
+    { music_tracks: ["epic"] },
+    { music_note: "погромче к финалу" },
+    { orientation: "square" },
+    { exclude_media_ids: [clip, clipToo, photo] },
+  ]) {
+    const shown = await preview(app, organizer.token, memory.id, payload);
+    const placed = await order(app, organizer.token, memory.id, payload);
+    expect(shown.statusCode).not.toBe(200);
+    expect(shown.statusCode).toBe(placed.statusCode);
+    expect(shown.json()).toEqual(placed.json());
+  }
+
+  // Nobody but the organizer asks what would be assembled, and nobody outside
+  // the memory learns it exists — the same answers the order gives, including
+  // the one `404` for a stranger's memory, one nobody has and an id that is
+  // not one.
+  for (const token of [contributor.token, viewer.token]) {
+    const refused = await preview(app, token, memory.id, {});
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+  }
+  for (const id of [memory.id, randomUUID(), "not-a-uuid"]) {
+    const answer = await preview(app, stranger.token, id, {});
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+  const anonymous = await app.inject({
+    method: "POST",
+    url: `/memories/${memory.id}/montages/preview`,
+    payload: {},
+  });
+  expect(anonymous.statusCode).toBe(401);
+
+  // And after all of that — the summaries and every refusal both routes gave —
+  // nothing has been written: no montage, no job for one, and the counters
+  // that a price would one day be charged on still at nothing.
+  expect(await montageRows(memory.id)).toEqual([]);
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
+
+  // Посмотрели итог и нажали «Начать монтаж»: the video ordered on the body
+  // the summary was shown for is the video the summary described.
+  const placed = await order(app, organizer.token, memory.id, {
+    target_seconds: 120,
+    orientation: "portrait",
+  });
+  expect(placed.statusCode).toBe(201);
+  expect(placed.json().params).toMatchObject({ target_seconds: 120, orientation: "portrait" });
+  expect(await jobsFor(placed.json().id)).toEqual([{ type: "montage", status: "queued" }]);
+
   await app.close();
 });

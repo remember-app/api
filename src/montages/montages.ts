@@ -160,7 +160,8 @@ const maxTracks = 50;
 
 /**
  * What this order has to work with: how many finished frames are left once the
- * crossed-out ones are gone, and the longest video those frames could make.
+ * crossed-out ones are gone, what they are, whose they are, and the longest
+ * video they could make.
  *
  * One query for both because it is one question — «что останется в ролике» —
  * and both answers are read off the same rows. Only `ready` counts, as
@@ -177,9 +178,14 @@ const maxTracks = 50;
  * template has to be squeezed into it.
  */
 export async function materialLeft(memoryId: string, exclude: string[] = []) {
-  const [row] = await sql<{ ready: number; seconds: number }[]>`
+  const [row] = await sql<
+    { ready: number; photos: number; videos: number; people: number; seconds: number }[]
+  >`
     select
       count(*)::int as ready,
+      count(*) filter (where kind = 'photo')::int as photos,
+      count(*) filter (where kind = 'video')::int as videos,
+      count(distinct uploaded_by)::int as people,
       coalesce(sum(
         case when kind = 'video' then coalesce(duration_seconds, 0) else ${photoSeconds} end
       ), 0)::float8 as seconds
@@ -190,8 +196,40 @@ export async function materialLeft(memoryId: string, exclude: string[] = []) {
   // The floor gives way to the ceiling rather than crossing it: a memory of
   // three photos is worth seven seconds, and «не короче десяти» there would be
   // a band with nothing in it, which refuses every length there is.
-  return { ready: row?.ready ?? 0, min_seconds: Math.min(minSeconds, max), max_seconds: max };
+  return {
+    ready: row?.ready ?? 0,
+    // Split by kind and by whose they are for «итог перед монтажом» (doc-03):
+    // «168 фото · 46 видео, от 5 человек» is this same set of rows counted
+    // three more ways, so it is this same query — a second one asked a moment
+    // later could answer about different material.
+    photos: row?.photos ?? 0,
+    videos: row?.videos ?? 0,
+    people: row?.people ?? 0,
+    min_seconds: Math.min(minSeconds, max),
+    max_seconds: max,
+  };
 }
+
+/**
+ * How long the worker will be at it, guessed: each frame is probed, described
+ * and cut, and each second of the finished video is rendered on top of that.
+ * Anchored on the numbers the screen was drawn with
+ * (`design/screens/MontageSummary.html` — 214 кадров на 2:30 → «примерно за 15
+ * минут»), rounded up, never under a minute, because «сейчас» is not an answer
+ * to «сколько ждать».
+ *
+ * A guess and not a promise — the README says so in those words. Nothing holds
+ * the worker to it: the queue may be busy, a neural network may be slow, a
+ * montage may fall over outright. Веха M-27 counts the wait off the stages the
+ * journal records; that arithmetic is its own and shares nothing with this.
+ */
+const secondsPerFrame = 3;
+const secondsPerRenderedSecond = 1.5;
+const estimateMinutes = (frames: number, targetSeconds: number) =>
+  Math.max(
+    1,
+    Math.ceil((frames * secondsPerFrame + targetSeconds * secondsPerRenderedSecond) / 60),
+  );
 
 /** Everything a client may say when ordering a video; every word of it optional. */
 export type OrderBody = {
@@ -209,8 +247,22 @@ export type OrderBody = {
   orientation?: (typeof orientations)[number];
 } | null;
 
-/** Either the `params` to write, or the answer to send instead of writing. */
-export type Checked = { params: Montage["params"] } | { code: number; body: object };
+/**
+ * Either the `params` to write, or the answer to send instead of writing.
+ *
+ * The material comes back beside the `params` because it was counted to get
+ * them: «итог перед монтажом» shows exactly those numbers, and asking the
+ * database a second time for what this call already read would be one more
+ * query and one more chance for the two answers to disagree. The length is
+ * always among the params — the order writes a default when nobody named one —
+ * and is typed as such so the summary need not pretend it might be missing.
+ */
+export type Checked =
+  | {
+      params: Montage["params"] & { target_seconds: number };
+      left: Awaited<ReturnType<typeof materialLeft>>;
+    }
+  | { code: number; body: object };
 
 /**
  * An order weighed against the memory it is for — the frames it picks out, the
@@ -273,7 +325,8 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // is left, so the floor has to be held against what is left. Counted first, a
   // memory of five with three crossed out passed a bar of three and left the
   // worker to assemble a minute from two.
-  const { ready, min_seconds, max_seconds } = await materialLeft(memoryId, exclude);
+  const left = await materialLeft(memoryId, exclude);
+  const { ready, min_seconds, max_seconds } = left;
   if (ready < minReadyItems) {
     // English like every other error body here, with the numbers beside it:
     // «недостаточно материала для ролика» is what the app says, and it says it
@@ -363,6 +416,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
       ...(note ? { music_note: note } : {}),
       ...(body?.orientation ? { orientation: body.orientation } : {}),
     },
+    left,
   };
 }
 
@@ -523,6 +577,47 @@ export function montageRoutes(app: FastifyInstance) {
       // Freshly queued, so there is nothing signed in this answer and no reason
       // to ask for a bucket.
       return reply.code(201).send(await view(montage, downloadTtlSeconds()));
+    },
+  );
+
+  // «Итог перед монтажом» (doc-03): the same order, weighed and answered
+  // without being placed — how much goes in, from how many people, how long it
+  // may be and how long the wait is (`design/screens/MontageSummary.html`).
+  //
+  // The same body, the same rights and the same checks in the same order as
+  // the route above, through the one function that holds them: a summary that
+  // agrees to what «Начать монтаж» will then refuse is worse than no summary
+  // at all. And it writes nothing — no row, no job, no counter — so the screen
+  // may be reopened as often as the organizer likes.
+  app.post<{ Params: { memoryId: string }; Body: OrderBody }>(
+    "/memories/:memoryId/montages/preview",
+    { preHandler: [app.authenticate, app.requireMembership], schema: { body: orderBody } },
+    async (request, reply) => {
+      const { memory, role } = request.membership;
+      if (role !== "organizer") return reply.code(403).send(forbidden);
+
+      const checked = await checkOrder(memory.id, request.body);
+      if (!("params" in checked)) return reply.code(checked.code).send(checked.body);
+      const { params, left } = checked;
+
+      return {
+        // The frames that would go in — everything ready, less what this same
+        // body crossed out. The included ones are already among them: «войти
+        // должен» pins a frame in the video, it does not add one.
+        photos: left.photos,
+        videos: left.videos,
+        people: left.people,
+        min_seconds: left.min_seconds,
+        max_seconds: left.max_seconds,
+        // What the order would write down, default and all — the app shows the
+        // length it is about to ask for, not the one it did not name.
+        target_seconds: params.target_seconds,
+        // Missing in `params` is landscape (see `orientations`). The screen
+        // needs the word out loud, so it is said here rather than left for
+        // every client to know the convention.
+        orientation: params.orientation ?? "landscape",
+        estimate_minutes: estimateMinutes(left.ready, params.target_seconds),
+      };
     },
   );
 
