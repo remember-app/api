@@ -13,6 +13,7 @@ import { pushRoutes } from "./memories/push.ts";
 import { journalRoutes } from "./montages/journal.ts";
 import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
+import { montageTemplateRoutes } from "./montages/templates.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -68,6 +69,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // internal one the montage worker knocks on mounts neither check and carries
   // its own shared secret instead.
   montageRoutes(app);
+  // Шесть готовых роликов — тот же заказ, заполненный заранее, поэтому рядом с
+  // ним и за той же проверкой членства.
+  montageTemplateRoutes(app);
   // «Как собирался» — журнал сборки под тем же воспоминанием и той же
   // проверкой участия, отдельным файлом: тело заказа и рассказ о нём живут
   // порознь, и воркер пишет в них разное.
