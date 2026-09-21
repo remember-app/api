@@ -7,6 +7,7 @@ import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { notifyMontageReady } from "../memories/push.ts";
+import { montageStages } from "./journal.ts";
 
 /**
  * The videos assembled from a memory's material (doc-03): the organizer orders
@@ -465,6 +466,39 @@ async function view(montage: Montage, ttl: number) {
   };
 }
 
+/** A `montage_stages` row, cut down to what a card on the feed draws with. */
+type StageProgress = {
+  montage_id: string;
+  stage: (typeof montageStages)[number];
+  state: "pending" | "running" | "done" | "failed";
+};
+
+/**
+ * How far a video that is still being assembled has got: the five stages in
+ * pipeline order, each with its state. The card on the feed draws a bar apiece
+ * and counts «3 из 5» off them itself (`design/screens/MemoryFrames.html`,
+ * `design/spec.md` №38) — so the app need not open the journal of every card in
+ * the list to know that.
+ *
+ * States and not a bare «3 из 5»: the scale is five bars, and a failed one is
+ * its own colour — a count cannot say which stage fell. Named and not merely
+ * ordered, for the same reason the journal names them: a client reading a
+ * position rather than a name has a contract nobody wrote down.
+ *
+ * A stage the worker has laid no row for is `pending` rather than missing: it
+ * writes them one at a time, as it reaches them, and five bars have to be five
+ * whatever it has got round to. Nothing at all — not one row — is `null`: that
+ * is a video the worker has not picked up yet, and a scale of five empty bars
+ * would claim it is under way.
+ */
+const stagesOf = (montageId: string, rows: StageProgress[]) => {
+  const state = new Map(
+    rows.filter((row) => row.montage_id === montageId).map((row) => [row.stage, row.state]),
+  );
+  if (state.size === 0) return null;
+  return montageStages.map((stage) => ({ stage, state: state.get(stage) ?? "pending" }));
+};
+
 /**
  * Mounted from `buildApp` after `memoriesPlugin`, which decorates the
  * membership check the first three routes hang on. The fourth hangs on nothing
@@ -639,8 +673,33 @@ export function montageRoutes(app: FastifyInstance) {
         select * from montages where memory_id = ${request.membership.memory.id}
         order by created_at desc, id desc
       `;
+
+      // Where the unfinished ones have got to — one query for the whole list
+      // and not one per card: a memory may hold many videos and this list is
+      // read often, so a query apiece would grow with the feed. Nothing is
+      // written here, `montage_viewers` least of all: the list is not «я смотрю
+      // сборку», it is the shelf the videos stand on.
+      //
+      // Only the unfinished are asked about. A ready video has no scale to draw
+      // — «как собирался» is its own screen, opened from the journal route —
+      // and asking about it would read five rows per finished video on every
+      // list, forever.
+      const building = montages.filter((m) => m.status !== "ready").map((m) => m.id);
+      const stages =
+        building.length > 0
+          ? await sql<StageProgress[]>`
+              select montage_id, stage, state from montage_stages
+              where montage_id in ${sql(building)}
+            `
+          : [];
+
       const ttl = downloadTtlSeconds();
-      return Promise.all(montages.map((montage) => view(montage, ttl)));
+      return Promise.all(
+        montages.map(async (montage) => ({
+          ...(await view(montage, ttl)),
+          stages: stagesOf(montage.id, stages),
+        })),
+      );
     },
   );
 
