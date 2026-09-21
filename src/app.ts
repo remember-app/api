@@ -10,6 +10,7 @@ import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
 import { pushRoutes } from "./memories/push.ts";
+import { journalRoutes } from "./montages/journal.ts";
 import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
 
@@ -67,6 +68,10 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // internal one the montage worker knocks on mounts neither check and carries
   // its own shared secret instead.
   montageRoutes(app);
+  // «Как собирался» — журнал сборки под тем же воспоминанием и той же
+  // проверкой участия, отдельным файлом: тело заказа и рассказ о нём живут
+  // порознь, и воркер пишет в них разное.
+  journalRoutes(app);
   // The organizer's own track, which a montage order may name instead of one of
   // the worker's: the same membership check, and the same upload dance the
   // media routes do. Plus the shelf's own five to listen to, which hang off no
