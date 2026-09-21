@@ -20,9 +20,9 @@ import { musicTracks } from "./montages.ts";
  * «И возможность добавить свою» (doc-03): the organizer's own track, instead of
  * one off the worker's shelf. It goes into R2 exactly as material does — an
  * intent that hands out signed links, then «загружено» — and the montage order
- * names it afterwards by its key (`music_track_key`), not by an id: the key is
- * the only thing about the file the worker needs, since all it does with a
- * track is download it.
+ * names it afterwards by its key, in `music_tracks` beside the shelf ids: the
+ * key is the only thing about the file the worker needs, since all it does
+ * with a track is download it.
  *
  * A table of its own rather than a third `kind` in `media_items`, for the
  * reason the migration gives: a track is not the memory's material. The bytes

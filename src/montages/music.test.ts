@@ -185,7 +185,7 @@ test("the organizer brings their own track, and the montage order names it by ke
     as(organizer.token, {
       method: "POST",
       url: `/memories/${memory.id}/montages`,
-      payload: { music_track_key: plan.upload.key },
+      payload: { music_tracks: [plan.upload.key] },
     }),
   );
   expect(early.statusCode).toBe(400);

@@ -49,10 +49,10 @@ export type Montage = {
     /** «Как использовать треки», in the organizer's own words (doc-03). */
     music_note?: string;
     /**
-     * ponytail: old rows only — the one track an order used to name, before
-     * `music_tracks`. Nothing writes these any more; they are read because the
-     * videos ordered with them are still in the list. Remove with the two
-     * request fields below, when the app has moved over.
+     * Old rows only — the one track an order used to name, before
+     * `music_tracks`. Nothing writes these any more and no order may ask for
+     * them; they are read because the videos ordered with them are still in
+     * the list, and repeating a failed one replays its own `params`.
      */
     music_track_id?: string;
     music_track_key?: string;
@@ -240,11 +240,6 @@ export type OrderBody = {
   exclude_media_ids?: string[];
   music_tracks?: string[];
   music_note?: string;
-  // ponytail: убрать, когда приложение перейдёт на music_tracks — карточка на
-  // снятие будет отдельная. Until then the app still names one track this way,
-  // and an order that names one is an order for a list of one.
-  music_track_id?: (typeof musicTracks)[number];
-  music_track_key?: string;
   orientation?: (typeof orientations)[number];
 } | null;
 
@@ -339,23 +334,13 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
     };
   }
 
-  // One way of naming the music and no more. The list is the way; the two old
-  // fields are the app's way until it is rebuilt, and a body carrying two of
-  // the three is two answers to «под что монтировать» with the choice left to
-  // the worker.
-  const names = (["music_tracks", "music_track_id", "music_track_key"] as const).filter(
-    (field) => body?.[field] !== undefined,
-  );
-  if (names.length > 1) {
-    return { code: 400, body: { error: "the music is named more than one way", fields: names } };
-  }
-  // Cleaned the way the story is, and for the reason the old key was: a value
-  // that only *becomes* one of ours after cleaning is not one of ours at all,
-  // and writing the client's dirty original into `params` would hand `jsonb`
-  // the exact byte it refuses. Emptied by the cleaning, or empty as it came, it
-  // names nothing and is dropped — «очистил поле» is «не сказал».
-  const asked = body?.music_tracks ?? [body?.music_track_id, body?.music_track_key];
-  const tracks = [...new Set(asked.map((name) => storable(name ?? "")).filter((name) => name))];
+  // Cleaned the way the story is: a value that only *becomes* one of ours
+  // after cleaning is not one of ours at all, and writing the client's dirty
+  // original into `params` would hand `jsonb` the exact byte it refuses.
+  // Emptied by the cleaning, or empty as it came, it names nothing and is
+  // dropped — «очистил поле» is «не сказал».
+  const asked = body?.music_tracks ?? [];
+  const tracks = [...new Set(asked.map((name) => storable(name)).filter((name) => name))];
   // A shelf id or a key of this memory's own track, in one list on purpose: the
   // order is the order they play in, and the worker downloads both the same
   // way. The shelf is checked against the very list «Послушать» is checked
@@ -554,9 +539,6 @@ export function montageRoutes(app: FastifyInstance) {
         maxItems: maxTracks,
       },
       music_note: { type: "string", maxLength: maxNoteChars },
-      // ponytail: убрать, когда приложение перейдёт на music_tracks.
-      music_track_id: { type: "string", enum: [...musicTracks] },
-      music_track_key: { type: "string", maxLength: 200 },
       orientation: { type: "string", enum: [...orientations] },
     },
   } as const;
