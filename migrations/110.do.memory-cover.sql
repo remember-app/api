@@ -4,9 +4,11 @@
 -- «Миграции»): the version mark is written as a separate query, and a process
 -- killed between the two replays this file.
 --
--- The number continues the tens, as 010…090 did: milestones are written in
+-- The number continues the tens, as 010…100 did: milestones are written in
 -- parallel against this same repository, and two migrations sharing a version
--- is a merge nobody can resolve after either has been applied.
+-- is a merge nobody can resolve after either has been applied. This file was
+-- written as 100 and renumbered when 100 landed on main ahead of it — the
+-- number belongs to the moment of the merge, not to the moment of writing.
 
 -- Null until the organizer picks one, and null again the moment that frame is
 -- deleted: ON DELETE SET NULL is the whole of «удаление кадра снимает обложку».

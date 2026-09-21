@@ -34,7 +34,7 @@ export type Memory = {
   /**
    * The frame the organizer chose to stand for the memory, or null while they
    * have not — and null again the moment that frame is deleted, which the
-   * database does itself (migration 100).
+   * database does itself (migration 110).
    */
   cover_media_id: string | null;
 };
