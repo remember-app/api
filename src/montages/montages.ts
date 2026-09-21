@@ -37,8 +37,23 @@ export type Montage = {
     /** The frames picked out by hand: these go in, those stay out (doc-03). */
     include_media_ids?: string[];
     exclude_media_ids?: string[];
+    /**
+     * The music, in the order it plays: shelf ids (`musicTracks`) and keys of
+     * the organizer's own tracks, mixed as they like (doc-03). Written on every
+     * new order even when it is empty — empty *is* the answer «без музыки», and
+     * the worker can only tell it from an old order that never carried the field
+     * by the field being there.
+     */
+    music_tracks?: string[];
+    /** «Как использовать треки», in the organizer's own words (doc-03). */
+    music_note?: string;
+    /**
+     * ponytail: old rows only — the one track an order used to name, before
+     * `music_tracks`. Nothing writes these any more; they are read because the
+     * videos ordered with them are still in the list. Remove with the two
+     * request fields below, when the app has moved over.
+     */
     music_track_id?: string;
-    /** Their own track in R2 instead of one of the worker's; see `music.ts`. */
     music_track_key?: string;
     orientation?: (typeof orientations)[number];
   };
@@ -104,26 +119,252 @@ const maxStoryChars = 2000;
 const storable = (text: string) => text.replaceAll("\u0000", "").replace(/\p{Cs}/gu, "");
 
 /**
- * How long a montage is asked to be, and the band it may be asked for inside.
- * In the environment for the reason the media limits are (src/media/config.ts):
- * these move once real material lands, and there is no admin screen to move
- * them from. The default is the one architecture.md names, ~60 seconds.
+ * How long a montage is when nobody said — the ~60 seconds architecture.md
+ * names. In the environment for the reason the media limits are
+ * (src/media/config.ts): it moves once real material lands, and there is no
+ * admin screen to move it from. Held inside the memory's own band before it is
+ * written (`checkOrder`), because a default outside it would put into `params`
+ * — and so into the worker's job — a length no client could have asked for.
  */
-const minTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS_MIN", 15);
-const maxTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS_MAX", 300);
+const defaultTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS", 60);
 
 /**
- * Held inside that band rather than beside it: a default of 600 against a
- * maximum of 300 would write into `params` — and so into the worker's job — a
- * length no client could have asked for, because the schema refuses everyone
- * else outside it. Clamped rather than obeyed, which is the rule `positive`
- * itself follows about a value that is a typo instead of an intent.
+ * The band a length may be asked for inside, which is the product's rule and
+ * not a knob (doc-03, «Длина ролика — число секунд, предел: сумма всех видео
+ * плюс 2,5 секунды на фото, но не больше 10 минут»). It used to be two
+ * environment variables, and they are gone: the real ceiling is the memory's
+ * own material, which no setting can know — a memory of three photos cannot
+ * make five minutes of video however high a number is configured.
+ *
+ * A photo is worth the time it hangs on screen; a video is worth its own
+ * length, and one the worker has not measured is worth nothing, which is the
+ * safe way round — an unmeasured file cannot lengthen the ceiling.
  */
-const targetSeconds = () =>
-  Math.min(
-    Math.max(positive("MONTAGE_TARGET_SECONDS", 60), minTargetSeconds()),
-    maxTargetSeconds(),
+const minSeconds = 10;
+const maxSeconds = 600;
+const photoSeconds = 2.5;
+
+/**
+ * How long the note about the music may be. A guard of `story_text`'s kind and
+ * for its reason: «как использовать треки» goes to a neural network inside the
+ * prompt, and it is a sentence or two, not a pasted document.
+ */
+const maxNoteChars = 500;
+
+/**
+ * How many tracks one video may be cut to. No rule says a number, and a list
+ * this long is already a client bug rather than an order — a ceiling is here so
+ * that «любой длины» cannot mean a megabyte of `params`.
+ */
+const maxTracks = 50;
+
+/**
+ * What this order has to work with: how many finished frames are left once the
+ * crossed-out ones are gone, and the longest video those frames could make.
+ *
+ * One query for both because it is one question — «что останется в ролике» —
+ * and both answers are read off the same rows. Only `ready` counts, as
+ * everywhere here: material still uploading or still being probed has no
+ * derivative the worker can measure, and no length either.
+ *
+ * The exclusions go into the `where` rather than being subtracted afterwards:
+ * counted apart, a frame deleted between the two reads gives a count that no
+ * longer holds every id — and a bare subtraction then puts a negative number in
+ * the answer.
+ *
+ * Apart from the route because two screens after this one ask it without
+ * ordering anything (doc-03): «итог перед монтажом» shows the ceiling, and a
+ * template has to be squeezed into it.
+ */
+export async function materialLeft(memoryId: string, exclude: string[] = []) {
+  const [row] = await sql<{ ready: number; seconds: number }[]>`
+    select
+      count(*)::int as ready,
+      coalesce(sum(
+        case when kind = 'video' then coalesce(duration_seconds, 0) else ${photoSeconds} end
+      ), 0)::float8 as seconds
+    from media_items
+    where memory_id = ${memoryId} and status = 'ready' and id <> all(${exclude}::uuid[])
+  `;
+  const max = Math.floor(Math.min(maxSeconds, row?.seconds ?? 0));
+  // The floor gives way to the ceiling rather than crossing it: a memory of
+  // three photos is worth seven seconds, and «не короче десяти» there would be
+  // a band with nothing in it, which refuses every length there is.
+  return { ready: row?.ready ?? 0, min_seconds: Math.min(minSeconds, max), max_seconds: max };
+}
+
+/** Everything a client may say when ordering a video; every word of it optional. */
+export type OrderBody = {
+  target_seconds?: number;
+  story_text?: string;
+  include_media_ids?: string[];
+  exclude_media_ids?: string[];
+  music_tracks?: string[];
+  music_note?: string;
+  // ponytail: убрать, когда приложение перейдёт на music_tracks — карточка на
+  // снятие будет отдельная. Until then the app still names one track this way,
+  // and an order that names one is an order for a list of one.
+  music_track_id?: (typeof musicTracks)[number];
+  music_track_key?: string;
+  orientation?: (typeof orientations)[number];
+} | null;
+
+/** Either the `params` to write, or the answer to send instead of writing. */
+export type Checked = { params: Montage["params"] } | { code: number; body: object };
+
+/**
+ * An order weighed against the memory it is for — the frames it picks out, the
+ * tracks it asks for, the length it wants — answered with either the `params`
+ * to write or the refusal to send back. Everything the schema cannot check,
+ * because all of it is a question about this memory's own material.
+ *
+ * Apart from the write for `materialLeft`'s reason: «итог перед монтажом» and
+ * the six templates (doc-03) both have to know what a body would be answered
+ * before anybody presses «Начать монтаж».
+ */
+export async function checkOrder(memoryId: string, body: OrderBody): Promise<Checked> {
+  // The frames the organizer picked out by hand (doc-03: «отмечает, какие
+  // кадры войти должны, а какие нет»). Lowercased on the way in and on the way
+  // out: Postgres hands uuids back in lower case, so a client echoing an id of
+  // ours in capitals must not be told its own frame is not there, and the
+  // worker must not have to compare two spellings of one id.
+  //
+  // And deduplicated after that, not before: the schema's `uniqueItems`
+  // compares the strings as they arrived, so one frame named twice in two
+  // spellings passes it and would otherwise reach the worker twice.
+  const lower = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
+  const include = lower(body?.include_media_ids);
+  const exclude = lower(body?.exclude_media_ids);
+  const excluded = new Set(exclude);
+  const both = include.filter((id) => excluded.has(id));
+  if (both.length > 0) {
+    // Not a preference the worker could resolve: «этот кадр обязательно и ни в
+    // коем случае» is two orders, and picking either would be us deciding what
+    // the organizer meant.
+    return {
+      code: 400,
+      body: { error: "a media item cannot be both included and excluded", media_ids: both },
+    };
+  }
+
+  // Named but not there, or there but not ready: refused by name rather than
+  // dropped quietly, because a video assembled without the frame its organizer
+  // insisted on looks assembled, and nothing says otherwise. `ready` is the
+  // same bar the material count below holds: the worker can do nothing with a
+  // file still being probed.
+  const chosen = [...include, ...exclude];
+  if (chosen.length > 0) {
+    const found = await sql<{ id: string }[]>`
+      select id from media_items
+      where memory_id = ${memoryId} and status = 'ready' and id in ${sql(chosen)}
+    `;
+    const known = new Set(found.map((row) => row.id));
+    const missing = chosen.filter((id) => !known.has(id));
+    if (missing.length > 0) {
+      return {
+        code: 400,
+        body: { error: "no such ready media in this memory", media_ids: missing },
+      };
+    }
+  }
+
+  // Counted here, after the lists have been read and checked, rather than
+  // first: an organizer who crossed frames out is ordering a video out of what
+  // is left, so the floor has to be held against what is left. Counted first, a
+  // memory of five with three crossed out passed a bar of three and left the
+  // worker to assemble a minute from two.
+  const { ready, min_seconds, max_seconds } = await materialLeft(memoryId, exclude);
+  if (ready < minReadyItems) {
+    // English like every other error body here, with the numbers beside it:
+    // «недостаточно материала для ролика» is what the app says, and it says it
+    // in its own words rather than showing ours. `ready_items` is what this
+    // order has left, not what the memory holds.
+    return {
+      code: 409,
+      body: { error: "not enough material for a montage", ready_items: ready, need: minReadyItems },
+    };
+  }
+
+  // One way of naming the music and no more. The list is the way; the two old
+  // fields are the app's way until it is rebuilt, and a body carrying two of
+  // the three is two answers to «под что монтировать» with the choice left to
+  // the worker.
+  const names = (["music_tracks", "music_track_id", "music_track_key"] as const).filter(
+    (field) => body?.[field] !== undefined,
   );
+  if (names.length > 1) {
+    return { code: 400, body: { error: "the music is named more than one way", fields: names } };
+  }
+  // Cleaned the way the story is, and for the reason the old key was: a value
+  // that only *becomes* one of ours after cleaning is not one of ours at all,
+  // and writing the client's dirty original into `params` would hand `jsonb`
+  // the exact byte it refuses. Emptied by the cleaning, or empty as it came, it
+  // names nothing and is dropped — «очистил поле» is «не сказал».
+  const asked = body?.music_tracks ?? [body?.music_track_id, body?.music_track_key];
+  const tracks = [...new Set(asked.map((name) => storable(name ?? "")).filter((name) => name))];
+  // A shelf id or a key of this memory's own track, in one list on purpose: the
+  // order is the order they play in, and the worker downloads both the same
+  // way. The shelf is checked against the very list «Послушать» is checked
+  // against (`music.ts`), so the two can never disagree about which tracks
+  // exist.
+  const shelf = new Set<string>(musicTracks);
+  const keys = tracks.filter((name) => !shelf.has(name));
+  if (keys.length > 0) {
+    // Their own track has to be their own memory's, and finished: a key from
+    // another memory, or one whose bytes never landed, is a montage that fails
+    // an hour later at the worker.
+    const found = await sql<{ object_key: string }[]>`
+      select object_key from music_uploads
+      where memory_id = ${memoryId} and status = 'ready' and object_key in ${sql(keys)}
+    `;
+    const known = new Set(found.map((row) => row.object_key));
+    const missing = keys.filter((key) => !known.has(key));
+    if (missing.length > 0) {
+      return { code: 400, body: { error: "no such music track", music_tracks: missing } };
+    }
+  }
+
+  // «Как использовать треки» is about tracks: with none named there is nothing
+  // for it to be about, and the worker would have a wish it cannot honour.
+  // Refused by name rather than dropped, which is this service's rule about a
+  // field it will not act on.
+  const note = storable(body?.music_note ?? "").trim();
+  if (note && tracks.length === 0) {
+    return { code: 400, body: { error: "music_note needs music_tracks" } };
+  }
+
+  // Not said is the default, squeezed into this memory's band — which is where
+  // a memory of three photos gets a seven-second video instead of a refusal
+  // nobody asked for. Said is obeyed or refused with both numbers, so the app
+  // can move its slider to the edge rather than guess where the edge was.
+  const target =
+    body?.target_seconds ?? Math.min(Math.max(defaultTargetSeconds(), min_seconds), max_seconds);
+  if (target < min_seconds || target > max_seconds) {
+    return { code: 400, body: { error: "target_seconds out of range", min_seconds, max_seconds } };
+  }
+
+  // What was ordered, resolved here rather than left for the worker to guess:
+  // the row is then the whole answer to «какой ролик просили». An orientation
+  // nobody chose stays absent — that is landscape by being missing. An empty
+  // story and an empty list are «ничего не сказали» for the same reason: a
+  // client clearing a field sends it empty rather than dropping it, and a key
+  // that says nothing is a key not worth writing. The tracks are the one
+  // exception and are always written, empty list and all: the worker tells
+  // «без музыки» from an order made before this field existed — where it played
+  // `warm` by default — by nothing but the field being there.
+  const story = storable(body?.story_text ?? "").trim();
+  return {
+    params: {
+      target_seconds: target,
+      ...(story ? { story_text: story } : {}),
+      ...(include.length > 0 ? { include_media_ids: include } : {}),
+      ...(exclude.length > 0 ? { exclude_media_ids: exclude } : {}),
+      music_tracks: tracks,
+      ...(note ? { music_note: note } : {}),
+      ...(body?.orientation ? { orientation: body.orientation } : {}),
+    },
+  };
+}
 
 /** The shared secret the worker knocks with; unset means nobody may knock. */
 const workerToken = () => env("INTERNAL_WORKER_TOKEN");
@@ -208,18 +449,25 @@ export function montageRoutes(app: FastifyInstance) {
     type: ["object", "null"],
     additionalProperties: false,
     properties: {
-      target_seconds: {
-        type: "integer",
-        minimum: minTargetSeconds(),
-        maximum: maxTargetSeconds(),
-      },
+      // Whole seconds and nothing else here: the band it has to be inside is
+      // this memory's own material, which a schema compiled once cannot know
+      // (`checkOrder` holds it, and answers with both edges).
+      target_seconds: { type: "integer" },
       story_text: { type: "string", maxLength: maxStoryChars },
       include_media_ids: mediaIds,
       exclude_media_ids: mediaIds,
+      // The music, in playing order: shelf ids and keys of the organizer's own
+      // tracks in one list. Only bounded here — which of them exist, and whose
+      // memory a key belongs to, is a question for the database.
+      music_tracks: {
+        type: "array",
+        items: { type: "string", maxLength: 200 },
+        uniqueItems: true,
+        maxItems: maxTracks,
+      },
+      music_note: { type: "string", maxLength: maxNoteChars },
+      // ponytail: убрать, когда приложение перейдёт на music_tracks.
       music_track_id: { type: "string", enum: [...musicTracks] },
-      // The key of a track the organizer uploaded (`music.ts`), which is what
-      // that upload answered with. Only bounded here — whether it names a ready
-      // track of *this* memory is a question for the database, below.
       music_track_key: { type: "string", maxLength: 200 },
       orientation: { type: "string", enum: [...orientations] },
     },
@@ -228,159 +476,20 @@ export function montageRoutes(app: FastifyInstance) {
   // «Смонтируй ролик». The organizer's line of the matrix and nobody else's
   // (architecture.md, «Проверка прав»): a contributor brought the material but
   // does not order what is made of it.
-  app.post<{
-    Params: { memoryId: string };
-    Body: {
-      target_seconds?: number;
-      story_text?: string;
-      include_media_ids?: string[];
-      exclude_media_ids?: string[];
-      music_track_id?: (typeof musicTracks)[number];
-      music_track_key?: string;
-      orientation?: (typeof orientations)[number];
-    } | null;
-  }>(
+  app.post<{ Params: { memoryId: string }; Body: OrderBody }>(
     "/memories/:memoryId/montages",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: orderBody } },
     async (request, reply) => {
       const { memory, role } = request.membership;
       if (role !== "organizer") return reply.code(403).send(forbidden);
 
-      // The frames the organizer picked out by hand (doc-03: «отмечает, какие
-      // кадры войти должны, а какие нет»). Lowercased on the way in and on the
-      // way out: Postgres hands uuids back in lower case, so a client echoing
-      // an id of ours in capitals must not be told its own frame is not there,
-      // and the worker must not have to compare two spellings of one id.
-      //
-      // And deduplicated after that, not before: the schema's `uniqueItems`
-      // compares the strings as they arrived, so one frame named twice in two
-      // spellings passes it and would otherwise reach the worker twice.
-      const lower = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
-      const include = lower(request.body?.include_media_ids);
-      const exclude = lower(request.body?.exclude_media_ids);
-      const excluded = new Set(exclude);
-      const both = include.filter((id) => excluded.has(id));
-      if (both.length > 0) {
-        // Not a preference the worker could resolve: «этот кадр обязательно и
-        // ни в коем случае» is two orders, and picking either would be us
-        // deciding what the organizer meant.
-        return reply.code(400).send({
-          error: "a media item cannot be both included and excluded",
-          media_ids: both,
-        });
-      }
-
-      // Named but not there, or there but not ready: refused by name rather
-      // than dropped quietly, because a video assembled without the frame its
-      // organizer insisted on looks assembled, and nothing says otherwise.
-      // `ready` is the same bar the material count above holds: the worker can
-      // do nothing with a file still being probed.
-      const chosen = [...include, ...exclude];
-      if (chosen.length > 0) {
-        const found = await sql<{ id: string }[]>`
-          select id from media_items
-          where memory_id = ${memory.id} and status = 'ready' and id in ${sql(chosen)}
-        `;
-        const known = new Set(found.map((row) => row.id));
-        const missing = chosen.filter((id) => !known.has(id));
-        if (missing.length > 0) {
-          return reply
-            .code(400)
-            .send({ error: "no such ready media in this memory", media_ids: missing });
-        }
-      }
-
-      // Only `ready` counts: material still uploading or still being probed has
-      // no derivative the worker can measure, and a video assembled out of half
-      // an event is worse than one refused. Counted before anything is written,
-      // so a refusal leaves no row and no job — the same rule the upload intent
-      // follows with its limits.
-      //
-      // And counted here, after the lists have been read and checked, rather
-      // than at the top of the handler: an organizer who crossed frames out is
-      // ordering a video out of what is left, so the floor has to be held
-      // against what is left. Counted first, a memory of five with three
-      // crossed out passed a bar of three and left the worker to assemble a
-      // minute from two. Every id in `exclude` is by now one distinct `ready`
-      // frame of this memory — the check above sent back anything else, and the
-      // set above made it distinct — so how many there are is how many frames
-      // this order really takes away.
-      const [material] = await sql<{ count: number }[]>`
-        select count(*)::int from media_items
-        where memory_id = ${memory.id} and status = 'ready'
-      `;
-      // Floored at zero, because the two reads above are not one transaction: a
-      // frame deleted between them leaves a count that no longer holds every id
-      // `exclude` was just told is real, and a bare subtraction would put a
-      // negative number in the answer — «-2 из нужных 3» under the app's «нужно
-      // три». The refusal is right either way; only the number needs a floor.
-      const ready = Math.max(0, (material?.count ?? 0) - exclude.length);
-      if (ready < minReadyItems) {
-        // English like every other error body here, with the numbers beside it:
-        // «недостаточно материала для ролика» is what the app says, and it says
-        // it in its own words rather than showing ours. `ready_items` is what
-        // this order has left, not what the memory holds: the app puts that
-        // number against «нужно три», and the memory's own total would put five
-        // there under a refusal.
-        return reply.code(409).send({
-          error: "not enough material for a montage",
-          ready_items: ready,
-          need: minReadyItems,
-        });
-      }
-
-      // One track or the other, never both: the shelf id and an uploaded key
-      // are two answers to «под что монтировать», and a row carrying both would
-      // leave the worker to choose.
-      //
-      // Cleaned once, here, rather than only at the lookup below: an
-      // `object_key` is `music/<uuid>` and never carries a NUL or a lone
-      // surrogate, so a key that only *becomes* one of ours after that
-      // cleaning is not a key of ours at all — and writing the client's dirty
-      // original into `params` regardless would hand `jsonb` the exact byte
-      // `story_text` was cleaned of, on the one field this fix forgot to.
-      const trackKey = request.body?.music_track_key
-        ? storable(request.body.music_track_key)
-        : undefined;
-      if (request.body?.music_track_id && trackKey) {
-        return reply
-          .code(400)
-          .send({ error: "music_track_id and music_track_key are mutually exclusive" });
-      }
-      if (trackKey) {
-        // Their own track has to be their own memory's, and finished: a key
-        // from another memory, or one whose bytes never landed, is a montage
-        // that fails an hour later at the worker.
-        const [track] = await sql<{ id: string }[]>`
-          select id from music_uploads
-          where object_key = ${trackKey} and memory_id = ${memory.id}
-            and status = 'ready'
-        `;
-        if (!track) {
-          return reply
-            .code(400)
-            .send({ error: "no such uploaded music track", music_track_key: trackKey });
-        }
-      }
-
-      // What was ordered, resolved here rather than left for the worker to
-      // guess: the row is then the whole answer to «какой ролик просили», and
-      // there is one place the default length lives. A track nobody chose stays
-      // absent — picking one is the worker's, it holds the files — and so does
-      // an orientation nobody chose, which is landscape by being missing. An
-      // empty story and an empty list are «ничего не сказали» for the same
-      // reason: a client clearing a field sends it empty rather than dropping
-      // it, and a key that says nothing is a key not worth writing.
-      const story = storable(request.body?.story_text ?? "").trim();
-      const params = {
-        target_seconds: request.body?.target_seconds ?? targetSeconds(),
-        ...(story ? { story_text: story } : {}),
-        ...(include.length > 0 ? { include_media_ids: include } : {}),
-        ...(exclude.length > 0 ? { exclude_media_ids: exclude } : {}),
-        ...(request.body?.music_track_id ? { music_track_id: request.body.music_track_id } : {}),
-        ...(trackKey ? { music_track_key: trackKey } : {}),
-        ...(request.body?.orientation ? { orientation: request.body.orientation } : {}),
-      };
+      // Everything the schema could not check, because all of it is a question
+      // about this memory's own material — and checked before a word is
+      // written, so a refusal leaves no row and no job, the rule the upload
+      // intent follows with its own limits.
+      const checked = await checkOrder(memory.id, request.body);
+      if (!("params" in checked)) return reply.code(checked.code).send(checked.body);
+      const { params } = checked;
 
       const montage = await sql.begin(async (tx) => {
         const [row] = await tx<Montage[]>`

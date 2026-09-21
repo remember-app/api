@@ -73,12 +73,21 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
   return person;
 }
 
-/** Material in the memory, written where the upload would have left it. */
+/**
+ * Material in the memory, written where the upload would have left it. Videos
+ * of two minutes, because the length a montage may be ordered at is cut from
+ * the material (`montages.ts`): three photos are worth seven seconds, and the
+ * order below asks for the default minute.
+ */
 async function material(memoryId: string, uploadedBy: string, count: number) {
   for (let n = 0; n < count; n++) {
     await sql`
-      insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes)
-      values (${memoryId}, ${uploadedBy}, 'photo', 'ready', ${`originals/${randomUUID()}`}, 4096)
+      insert into media_items (
+        memory_id, uploaded_by, kind, status, original_key, size_bytes, duration_seconds
+      )
+      values (
+        ${memoryId}, ${uploadedBy}, 'video', 'ready', ${`originals/${randomUUID()}`}, 4096, 120
+      )
     `;
   }
 }
@@ -181,8 +190,8 @@ test("the organizer brings their own track, and the montage order names it by ke
   );
   expect(early.statusCode).toBe(400);
   expect(early.json()).toEqual({
-    error: "no such uploaded music track",
-    music_track_key: plan.upload.key,
+    error: "no such music track",
+    music_tracks: [plan.upload.key],
   });
 
   const parts = await sendParts(plan.upload.parts, bytes);
@@ -209,18 +218,19 @@ test("the organizer brings their own track, and the montage order names it by ke
   expect(await tracksIn(memory.id)).toEqual([{ id: plan.id, status: "ready" }]);
 
   // And the whole point of it: the order names the track by that key, and it
-  // lands in `params`, where the worker reads everything else it was told.
+  // lands in `params` — in `music_tracks`, beside the shelf ids, because that
+  // is the one list the worker reads the music out of.
   const ordered = await app.inject(
     as(organizer.token, {
       method: "POST",
       url: `/memories/${memory.id}/montages`,
-      payload: { music_track_key: plan.upload.key },
+      payload: { music_tracks: [plan.upload.key, "calm"] },
     }),
   );
   expect(ordered.statusCode).toBe(201);
   expect(ordered.json().params).toEqual({
     target_seconds: 60,
-    music_track_key: plan.upload.key,
+    music_tracks: [plan.upload.key, "calm"],
   });
 
   await app.close();
