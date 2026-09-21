@@ -242,10 +242,7 @@ export function journalRoutes(app: FastifyInstance) {
       // ссылки на весь материал воспоминания на каждом опросе не за чем.
       //
       // Кадра уже нет — запись остаётся без сведений, и это не ошибка: у неё
-      // нет внешнего ключа именно ради этого. Здесь же, в `files`, позже
-      // встанет место кадра в ролике (секунда начала и длительность) — журнал
-      // его не хранит, он лежит в общей таблице раскладки `montage_frames`, и
-      // присоединит его отдельная задача.
+      // нет внешнего ключа именно ради этого.
       const mediaIds = [...new Set(entries.map((e) => e.media_id).filter((id) => id !== null))];
       type File = {
         id: string;
@@ -255,14 +252,35 @@ export function journalRoutes(app: FastifyInstance) {
         duration_seconds: number | null;
         thumbnail_key: string | null;
       };
-      const media =
+      /**
+       * Место кадра в этом ролике — секунда начала и сколько он держится.
+       * Журнал его не хранит: раскладка лежит в общей `montage_frames`
+       * («Сведения о кадре»), и вторая её копия здесь была бы вторым ответом
+       * на «на какой секунде стоит кадр». Мест у файла может быть несколько —
+       * ключ той таблицы включает `start_seconds`, потому что клип, разрезанный
+       * надвое, и фотография, вернувшаяся в конце, стоят в ролике дважды.
+       */
+      type Place = { media_id: string; start_seconds: number; duration_seconds: number };
+      const [media, places]: [File[], Place[]] =
         mediaIds.length > 0
-          ? await sql<File[]>`
-              select id, kind, uploaded_by, captured_at, duration_seconds, thumbnail_key
-              from media_items
-              where memory_id = ${memory.id} and id in ${sql(mediaIds)}
-            `
-          : [];
+          ? await Promise.all([
+              sql<File[]>`
+                select id, kind, uploaded_by, captured_at, duration_seconds, thumbnail_key
+                from media_items
+                where memory_id = ${memory.id} and id in ${sql(mediaIds)}
+              `,
+              // Только по файлам отданной порции и только по этому ролику: опрос
+              // идёт раз в секунду-две, и тянуть раскладку всего ролика на
+              // каждом не за чем. Статус ролика не важен — раскладка появляется
+              // по ходу сборки, и рассказ о ней тем и живёт.
+              sql<Place[]>`
+                select media_id, start_seconds, duration_seconds
+                from montage_frames
+                where montage_id = ${montage.id} and media_id in ${sql(mediaIds)}
+                order by start_seconds
+              `,
+            ])
+          : [[], []];
 
       // Бакета нет — пустая ссылка, а не 503 галереи: там ссылки и есть весь
       // ответ, здесь — одно поле рассказа, который должен читаться и без них.
@@ -272,6 +290,11 @@ export function journalRoutes(app: FastifyInstance) {
         media.map(async ({ thumbnail_key, ...file }) => ({
           ...file,
           thumbnail_url: configured && thumbnail_key ? await downloadUrl(thumbnail_key, ttl) : null,
+          // Раскладки ещё нет или кадр в ролик не вошёл — пустой список, а не
+          // ошибка: пока идёт отсев, места нет ни у одного файла.
+          places: places
+            .filter((place) => place.media_id === file.id)
+            .map(({ start_seconds, duration_seconds }) => ({ start_seconds, duration_seconds })),
         })),
       );
 
