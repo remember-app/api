@@ -144,6 +144,12 @@ const retry = (app: App, token: string, memoryId: string, montageId: string) =>
     as(token, { method: "POST", url: `/memories/${memoryId}/montages/${montageId}/retry` }),
   );
 
+/** «Как собирался» — the journal route, asked here about what retry left it. */
+const journal = (app: App, token: string, memoryId: string, montageId: string) =>
+  app.inject(
+    as(token, { method: "GET", url: `/memories/${memoryId}/montages/${montageId}/journal` }),
+  );
+
 /** The worker's knock. `secret` absent means it knocks with no header at all. */
 const knock = (app: App, montageId: string, secret?: string) =>
   app.inject({
@@ -207,6 +213,22 @@ const stage = (montageId: string, key: string, state: string) => sql`
   insert into montage_stages (montage_id, stage, state) values (${montageId}, ${key}, ${state})
   on conflict (montage_id, stage) do update set state = ${state}, updated_at = now()
 `;
+
+/** A line the worker said while it was at this montage, written by its hand. */
+const said = (montageId: string, key: string, thought: string) => sql`
+  insert into montage_journal_entries (montage_id, stage, thought)
+  values (${montageId}, ${key}, ${thought})
+`;
+
+/** How much of the journal stands behind this montage — lines and stages. */
+const journalOf = async (montageId: string) => {
+  const [row] = await sql<{ lines: number; stages: number }[]>`
+    select
+      (select count(*)::int from montage_journal_entries where montage_id = ${montageId}) as lines,
+      (select count(*)::int from montage_stages where montage_id = ${montageId}) as stages
+  `;
+  return row;
+};
 
 /** Who the journal counts as watching this montage right now. */
 const watching = async (montageId: string) => {
@@ -1016,6 +1038,83 @@ test("only the organizer repeats a montage, and only one that failed", async () 
   });
   expect(anonymous.statusCode).toBe(401);
   expect(await jobsFor(montage.id)).toHaveLength(2);
+
+  await app.close();
+});
+
+test("repeating a montage that fell starts its journal from a clean sheet", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3);
+
+  const montage = (await order(app, organizer.token, memory.id, {})).json();
+  // A neighbour that also fell and also has a journal: only the montage being
+  // repeated is wiped, and this is what says so.
+  const neighbour = (await order(app, organizer.token, memory.id, {})).json();
+
+  // Marked as watching the way the app marks anyone — by reading the journal of
+  // a montage that is still queued. Nobody sends «я смотрю».
+  expect((await journal(app, organizer.token, memory.id, montage.id)).statusCode).toBe(200);
+  expect(await watching(montage.id)).toBe(1);
+
+  // The worker's half of the failed attempt, on both.
+  for (const id of [montage.id, neighbour.id]) {
+    await stage(id, "screening", "done");
+    await stage(id, "understanding", "failed");
+    await said(id, "screening", "212 из 214 годятся");
+    await said(id, "understanding", "не разобрал, кто в кадре");
+    await fell(id);
+  }
+
+  const again = await retry(app, organizer.token, memory.id, montage.id);
+  expect(again.statusCode).toBe(200);
+  expect(again.json()).toMatchObject({ id: montage.id, status: "queued", error_text: null });
+
+  // Gone with the status, in the same transaction — and the watchers are not:
+  // read before the journal route, which would mark the organizer again itself.
+  expect(await journalOf(montage.id)).toEqual({ lines: 0, stages: 0 });
+  expect(await watching(montage.id)).toBe(1);
+  // The neighbour's failed attempt is untouched by the button on this one.
+  expect(await journalOf(neighbour.id)).toEqual({ lines: 2, stages: 2 });
+
+  // The two screens that told the old story tell none: the journal of a queued
+  // montage is empty, and its card on the feed draws no scale at all — «не
+  // взяли ещё», which is what it is.
+  const told = await journal(app, organizer.token, memory.id, montage.id);
+  expect(told.statusCode).toBe(200);
+  expect(told.json()).toMatchObject({
+    montage: { id: montage.id, status: "queued" },
+    stages: [],
+    entries: [],
+    has_more: false,
+  });
+  expect((told.json().viewers as { id: string }[]).map((v) => v.id)).toEqual([organizer.user.id]);
+
+  const items = (await list(app, organizer.token, memory.id)).json() as {
+    id: string;
+    stages: { stage: string; state: string }[] | null;
+  }[];
+  const byId = new Map(items.map((item) => [item.id, item]));
+  expect(byId.get(montage.id)?.stages).toBeNull();
+  expect(byId.get(neighbour.id)?.stages).toEqual([
+    { stage: "screening", state: "done" },
+    { stage: "understanding", state: "failed" },
+    { stage: "directing", state: "pending" },
+    { stage: "rhythm", state: "pending" },
+    { stage: "assembly", state: "pending" },
+  ]);
+
+  // The worker takes it up and starts writing the second attempt. «Повторить»
+  // over that is the old `409`, and it wipes nothing — a stray tap on the
+  // button must not erase a montage that is being assembled right now.
+  await running(montage.id);
+  await stage(montage.id, "screening", "running");
+  await said(montage.id, "screening", "беру всё заново");
+  const refused = await retry(app, organizer.token, memory.id, montage.id);
+  expect(refused.statusCode).toBe(409);
+  expect(refused.json()).toEqual({ error: "montage has not failed", status: "processing" });
+  expect(await journalOf(montage.id)).toEqual({ lines: 1, stages: 1 });
 
   await app.close();
 });

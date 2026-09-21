@@ -729,6 +729,21 @@ export function montageRoutes(app: FastifyInstance) {
           returning *
         `;
         if (!row) return undefined;
+        // A clean sheet in the same breath as the status: what the attempt that
+        // fell said, and how far it got, go with it. The worker wipes the
+        // journal itself when it picks the job up (`journal.py`, `begin`), but
+        // that is a whole queue away — and until then the card on the feed
+        // would paint the old red stage under a video that is merely waiting,
+        // and the journal of a `queued` montage is empty by contract (README,
+        // «Журнал монтажа»). Deleted rather than reset to `pending`, which is
+        // what the worker does on its own arrival: no rows at all is «не взяли
+        // ещё» (`stagesOf`), and that is exactly what this row now is.
+        //
+        // `montage_viewers` is left alone: it says who is looking right now,
+        // which the retry does not change — and everyone on that screen is
+        // about to watch this very montage go round again.
+        await tx`delete from montage_journal_entries where montage_id = ${row.id}`;
+        await tx`delete from montage_stages where montage_id = ${row.id}`;
         await tx`insert into jobs (type, ref) values ('montage', ${row.id})`;
         return row;
       });
