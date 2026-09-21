@@ -34,6 +34,9 @@ const create = (app: App, token: string, payload: Record<string, unknown>) =>
 const list = (app: App, token: string) =>
   app.inject(as(token, { method: "GET", url: "/memories" }));
 
+const patch = (app: App, token: string, memoryId: string, payload: Record<string, unknown>) =>
+  app.inject(as(token, { method: "PATCH", url: `/memories/${memoryId}`, payload }));
+
 /**
  * A throwaway route behind the real check, which is how every later feature
  * will mount it. Added before the first inject, so it is in place by ready().
@@ -183,6 +186,7 @@ const ready = (
 
 /** What each signed link points at: the last segment of its path. */
 const keysOf = (urls: string[]) => urls.map((url) => new URL(url).pathname.split("/").pop());
+const keyOf = (url: string) => keysOf([url])[0];
 
 test("the listing carries the last frames of every memory in one answer", async () => {
   const { app } = buildTestApp();
@@ -289,9 +293,7 @@ test("an unconfigured bucket still answers, with empty tails and not a smaller c
   const { app } = buildTestApp();
   const { token, user } = await signIn(app, email());
 
-  const memory = (
-    await create(app, token, { title: title(), event_start: start })
-  ).json();
+  const memory = (await create(app, token, { title: title(), event_start: start })).json();
   await ready(memory.id, user.id, `${titleTag}-${randomUUID()}-solo.jpg`, null);
 
   const original = process.env.R2_ENDPOINT;
@@ -472,7 +474,7 @@ test("mounting the check without the session check ahead of it is a loud failure
   await app.close();
 });
 
-test("both routes are behind the session check", async () => {
+test("every route here is behind the session check", async () => {
   const { app } = buildTestApp();
 
   expect((await app.inject({ method: "GET", url: "/memories" })).statusCode).toBe(401);
@@ -482,6 +484,233 @@ test("both routes are behind the session check", async () => {
     payload: { title: title(), event_start: start },
   });
   expect(created.statusCode).toBe(401);
+  // The session check runs ahead of the membership check, so this is a 401 and
+  // not the 404 a stranger with a session gets.
+  const edited = await app.inject({
+    method: "PATCH",
+    url: `/memories/${randomUUID()}`,
+    payload: { title: title() },
+  });
+  expect(edited.statusCode).toBe(401);
+
+  await app.close();
+});
+
+test("the organizer edits the title and the window, under the rules creating holds", async () => {
+  const { app } = buildTestApp();
+  const { token } = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: start, event_end: null })
+  ).json();
+
+  const name = title();
+  const edited = await patch(app, token, memory.id, {
+    title: `  ${name}  `,
+    event_start: "2026-09-04T09:00:00+03:00",
+    event_end: "2026-09-05T09:00:00+03:00",
+  });
+  expect(edited.statusCode).toBe(200);
+  // Trimmed and normalized to UTC exactly as creating does it — the same
+  // schema and the same trim, not a second copy of either.
+  expect(edited.json()).toMatchObject({
+    id: memory.id,
+    title: name,
+    event_start: "2026-09-04T06:00:00.000Z",
+    event_end: "2026-09-05T06:00:00.000Z",
+    role: "organizer",
+    cover_media_id: null,
+    cover_thumbnail_url: null,
+  });
+  // The answer is the card of the listing, field for field: the settings screen
+  // replaces what it holds with this and asks for nothing more.
+  expect((await list(app, token)).json()).toEqual([edited.json()]);
+
+  // Only what is sent moves: the end stays where it was.
+  const renamed = await patch(app, token, memory.id, { title: name });
+  expect(renamed.json().event_end).toBe("2026-09-05T06:00:00.000Z");
+  // And null is a value here, not an absence — it takes the end off.
+  const opened = await patch(app, token, memory.id, { event_end: null });
+  expect(opened.json().event_end).toBeNull();
+
+  // The refusals creating gives, given again: blank title and a bare date —
+  // and an empty body, which is not an edit at all.
+  const refusals = await Promise.all([
+    patch(app, token, memory.id, { title: "   " }),
+    patch(app, token, memory.id, { event_start: "2026-09-04" }),
+    patch(app, token, memory.id, {}),
+  ]);
+  expect(refusals.map((r) => r.statusCode)).toEqual([400, 400, 400]);
+
+  // A backwards window is refused against the row as it will be, not against
+  // what arrived: this end is before the start already stored.
+  const backwards = await patch(app, token, memory.id, { event_end: "2026-09-01T00:00:00Z" });
+  expect(backwards.statusCode).toBe(400);
+  expect(backwards.json()).toEqual({ error: "event_end is before event_start" });
+
+  // The other half of the same rule: moving only the start, past the end that
+  // is already there.
+  expect(
+    (await patch(app, token, memory.id, { event_end: "2026-09-05T09:00:00+03:00" })).statusCode,
+  ).toBe(200);
+  const past = await patch(app, token, memory.id, { event_start: "2026-09-06T00:00:00Z" });
+  expect(past.statusCode).toBe(400);
+  expect(past.json()).toEqual({ error: "event_end is before event_start" });
+
+  // None of the refusals wrote anything.
+  expect((await list(app, token)).json()).toMatchObject([
+    { title: name, event_start: "2026-09-04T06:00:00.000Z", event_end: "2026-09-05T06:00:00.000Z" },
+  ]);
+
+  await app.close();
+});
+
+test("editing a memory is the organizer's alone, and a stranger cannot tell it is there", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const stranger = await signIn(app, email());
+
+  const memory = (
+    await create(app, organizer.token, { title: title(), event_start: start })
+  ).json();
+
+  // A member of any other standing is refused by role — 403, and only behind a
+  // passed membership check.
+  for (const role of ["contributor", "viewer"] as const) {
+    const member = await signIn(app, email());
+    await sql`
+      insert into memory_members (memory_id, user_id, role, invited_by)
+      values (${memory.id}, ${member.user.id}, ${role}, ${organizer.user.id})
+    `;
+    const refused = await patch(app, member.token, memory.id, { title: title() });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+  }
+
+  // Somebody else's memory, a memory that never was, and an id that is not a
+  // uuid: one and the same 404, as everywhere in this family.
+  const unseen = await Promise.all([
+    patch(app, stranger.token, memory.id, { title: title() }),
+    patch(app, stranger.token, randomUUID(), { title: title() }),
+    patch(app, stranger.token, "not-a-uuid", { title: title() }),
+  ]);
+  for (const answer of unseen) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  // Nothing of it moved — the roster grew, and that is all.
+  expect((await list(app, organizer.token)).json()).toEqual([{ ...memory, member_count: 2 }]);
+
+  await app.close();
+});
+
+test("the cover is a ready frame of this memory, and it comes off the same way", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const mine = (
+    await create(app, token, { title: title(), event_start: "2026-07-01T12:00:00Z" })
+  ).json();
+  const other = (
+    await create(app, token, { title: title(), event_start: "2026-06-01T12:00:00Z" })
+  ).json();
+
+  const coverKey = `${titleTag}-${randomUUID()}-cover.jpg`;
+  const [frame] = await ready(mine.id, user.id, coverKey, "2026-07-01T13:00:00Z");
+  // Still being processed: no derivative behind it, so there is nothing to draw
+  // a card with.
+  const [unfinished] = await ready(mine.id, user.id, null, "2026-07-01T14:00:00Z");
+  const [neighbour] = await ready(
+    other.id,
+    user.id,
+    `${titleTag}-${randomUUID()}-neighbour.jpg`,
+    null,
+  );
+  if (!frame || !unfinished || !neighbour) throw new Error("no media row");
+
+  // A frame of another memory, one that is not ready, and one that never
+  // existed — «no such frame», all three.
+  const refused = await Promise.all([
+    patch(app, token, mine.id, { cover_media_id: neighbour.id }),
+    patch(app, token, mine.id, { cover_media_id: unfinished.id }),
+    patch(app, token, mine.id, { cover_media_id: randomUUID() }),
+  ]);
+  for (const answer of refused) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+  // Not a uuid at all is the client's own bug in the body, and it never reaches
+  // Postgres as a failed cast.
+  expect((await patch(app, token, mine.id, { cover_media_id: "нет" })).statusCode).toBe(400);
+
+  const chosen = await patch(app, token, mine.id, { cover_media_id: frame.id });
+  expect(chosen.statusCode).toBe(200);
+  expect(chosen.json().cover_media_id).toBe(frame.id);
+  // A link to the derivative, signed as every other picture on the card is.
+  expect(keyOf(chosen.json().cover_thumbnail_url)).toBe(coverKey);
+  expect(chosen.json().cover_thumbnail_url).toContain("X-Amz-Signature=");
+
+  // The listing carries it too, and the memory without a cover answers exactly
+  // as it did before there was such a thing as a cover.
+  const listed = await list(app, token);
+  expect(listed.json().map((m: { id: string }) => m.id)).toEqual([mine.id, other.id]);
+  const [withCover, without] = listed.json();
+  expect(keyOf(withCover.cover_thumbnail_url)).toBe(coverKey);
+  expect(without.cover_media_id).toBeNull();
+  expect(without.cover_thumbnail_url).toBeNull();
+
+  // Taken off by sending null, which is the same button on the same form.
+  const bare = await patch(app, token, mine.id, { cover_media_id: null });
+  expect(bare.statusCode).toBe(200);
+  expect(bare.json().cover_media_id).toBeNull();
+  expect(bare.json().cover_thumbnail_url).toBeNull();
+
+  await app.close();
+});
+
+test("deleting the frame that is the cover takes the cover off and leaves the memory whole", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-08-01T12:00:00Z" })
+  ).json();
+  const [frame] = await ready(
+    memory.id,
+    user.id,
+    `${titleTag}-${randomUUID()}-doomed.jpg`,
+    "2026-08-01T13:00:00Z",
+  );
+  if (!frame) throw new Error("no media row");
+  expect(
+    (await patch(app, token, memory.id, { cover_media_id: frame.id })).json().cover_media_id,
+  ).toBe(frame.id);
+
+  const deleted = await app.inject(
+    as(token, { method: "DELETE", url: `/memories/${memory.id}/media/${frame.id}` }),
+  );
+  expect(deleted.statusCode).toBe(200);
+
+  // The memory is still there and still itself; only the cover is gone.
+  const [seen] = (await list(app, token)).json();
+  expect(seen).toMatchObject({
+    id: memory.id,
+    title: memory.title,
+    cover_media_id: null,
+    cover_thumbnail_url: null,
+    recent_thumbnail_urls: [],
+  });
+
+  // And the two things doc-01 keeps out of the MVP are still out of it: the
+  // organizer cannot walk out of their own memory, and no route deletes one.
+  const abdicate = await app.inject(
+    as(token, { method: "DELETE", url: `/memories/${memory.id}/members/${user.id}` }),
+  );
+  expect(abdicate.statusCode).toBe(409);
+  const wiped = await app.inject(as(token, { method: "DELETE", url: `/memories/${memory.id}` }));
+  expect(wiped.statusCode).toBe(404);
+  expect((await list(app, token)).json()).toHaveLength(1);
 
   await app.close();
 });
