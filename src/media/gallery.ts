@@ -3,6 +3,7 @@ import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { downloadTtlSeconds } from "./config.ts";
+import { visibleLabelIds } from "./labels.ts";
 import { abortUploads, deleteObjects, downloadUrl, storageConfigured } from "./r2.ts";
 import type { MediaItem } from "./upload.ts";
 
@@ -170,10 +171,16 @@ export function galleryRoutes(app: FastifyInstance) {
       // falling back to when it arrived for a file that carries no date
       // (architecture.md, «Montage-пайплайн»). One rule for both, so the
       // gallery reads in the order the ролик plays.
-      const items = await sql<MediaItem[]>`
-        select * from media_items
-        where memory_id = ${request.membership.memory.id} and status <> 'pending_upload'
-        order by coalesce(captured_at, created_at), id
+      //
+      // `label_ids` едет тем же запросом: лейблы — свойство кадра, и отдельный
+      // маршрут за ними был бы вторым обходом той же галереи. Подзапросом, а не
+      // join'ом — кадр, лежащий в трёх лейблах, приходит один раз, и состав с
+      // порядком списка от лейблов не зависят вовсе (src/media/labels.ts).
+      const items = await sql<(MediaItem & { label_ids: string[] })[]>`
+        select mi.*, ${visibleLabelIds(request.membership.memory.id, request.user.id)} as label_ids
+        from media_items mi
+        where mi.memory_id = ${request.membership.memory.id} and mi.status <> 'pending_upload'
+        order by coalesce(mi.captured_at, mi.created_at), mi.id
       `;
 
       const ttl = downloadTtlSeconds();
@@ -189,6 +196,12 @@ export function galleryRoutes(app: FastifyInstance) {
           height: item.height,
           duration_seconds: item.duration_seconds,
           created_at: item.created_at,
+          // В каких лейблах этот кадр лежит — и только в тех, что видны
+          // спрашивающему. Чужой личный лейбл не оставляет здесь следа: ни id,
+          // ни лишней длины массива. Галерея приходит без параметров и
+          // фильтруется на телефоне, поэтому кадр несёт свои лейблы с собой, а
+          // не отбирается по ним на сервере (doc-13).
+          label_ids: item.label_ids,
           // Derivatives only. The original is deliberately not linked from
           // here — the gallery shows the light version, and the original goes
           // out only when somebody asks for it, through the two `/download`
