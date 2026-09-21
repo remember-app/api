@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { dropKeys, removeMedia } from "../media/gallery.ts";
+import { handOverLabels } from "../media/labels.ts";
 import { type ContributionStatus, type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
 
@@ -378,6 +379,10 @@ export function memberRoutes(app: FastifyInstance) {
           returning user_id
         `;
         if (removed.length === 0) return null;
+        // Его коробки — здесь же, в той же транзакции: личные уходят с ним,
+        // общие достаются организатору (src/media/labels.ts). Кадры, которые он
+        // в них разложил, живут по правилу ниже — своё уходит, чужое остаётся.
+        await handOverLabels(tx, memory.id, userId, memory.organizer_id);
         return removeMedia(tx, memory.id, { uploadedBy: userId });
       });
       if (left === null) return reply.code(404).send(notFound);
