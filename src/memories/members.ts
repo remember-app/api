@@ -49,16 +49,25 @@ const acceptBody = {
 } as const;
 
 /**
- * What a member may say about themselves. Only the two terminal answers: the
- * other two are the api's to write — `not_started` is what an invite leaves
- * behind, and `more_coming` is set by the first upload that lands. An unknown
- * value is a 400 from here rather than a CHECK violation from Postgres.
+ * What a member may say about themselves — the three the settings screen
+ * offers, and nothing is terminal: «Всё загрузил» and «Ждать нечего» are both
+ * answers one may take back, and taking them back is saying «Планирует
+ * загрузить» again, which is `more_coming` (doc-06; on screen `not_started`
+ * and `more_coming` read as that same one line — the difference between «ещё
+ * не начал» and «уже несёт» is bookkeeping, and the frame count beside it
+ * tells how far along the person is).
+ *
+ * `not_started` stays out: it is what an invite leaves behind and nobody may
+ * ask for it back — «я ещё ничего не загрузил» is not a claim one makes about
+ * a memory one has already brought material to, and the count beside the
+ * status would contradict it. An unknown value is a 400 from here rather than
+ * a CHECK violation from Postgres.
  */
 const contributionStatusBody = {
   type: "object",
   required: ["status"],
   additionalProperties: false,
-  properties: { status: { type: "string", enum: ["done", "nothing"] } },
+  properties: { status: { type: "string", enum: ["more_coming", "done", "nothing"] } },
 } as const;
 
 type Invite = { token: string; role: InviteRole };
@@ -187,8 +196,34 @@ export function memberRoutes(app: FastifyInstance) {
       // something else entirely (doc-06 is «кто уже скинул», not «загрузилось
       // ли»). Readable by every member for the same reason the roles are —
       // «кто ещё грузит» is «смотреть», not a power over the memory.
-      return sql<(PublicUser & { role: MemberRole; contribution_status: ContributionStatus })[]>`
-        select u.id, u.username, u.name, mm.role, mm.status as contribution_status
+      //
+      // Null for a `viewer` and not their row's value: they were never asked to
+      // bring anything, so «ничего не загрузил» over them is a reproach for a
+      // job that was never theirs. The screen draws them as a separate group
+      // with no status at all (design/screens/MemorySettings.html), and the
+      // same rule keeps them out of «N из M» in `GET /memories`. Null rather
+      // than a missing key, as elsewhere in this api: one shape for every row.
+      //
+      // `media_count` — how many frames this person brought to *this* memory,
+      // the number that stands beside the status on that screen. Counted here
+      // and not on the client, which used to do it by reading the whole gallery
+      // (TASK-110): the roster is the screen, and the same predicate the
+      // gallery lists by (`status <> 'pending_upload'` — bytes are in the store)
+      // makes the number agree with what the gallery shows. Cast to int because
+      // count() is bigint, which postgres.js hands over as a string.
+      type Row = PublicUser & {
+        role: MemberRole;
+        contribution_status: ContributionStatus | null;
+        media_count: number;
+      };
+      return sql<Row[]>`
+        select u.id, u.username, u.name, mm.role,
+          case when mm.role = 'viewer' then null else mm.status end as contribution_status,
+          (
+            select count(*)::int from media_items mi
+            where mi.memory_id = mm.memory_id and mi.uploaded_by = mm.user_id
+              and mi.status <> 'pending_upload'
+          ) as media_count
         from memory_members mm
         join users u on u.id = mm.user_id
         where mm.memory_id = ${request.membership.memory.id}
@@ -197,18 +232,28 @@ export function memberRoutes(app: FastifyInstance) {
     },
   );
 
-  // «Это всё» / «ждать нечего» — the member's own word about their material,
-  // whether the app asked after their first upload (doc-06) or they said it
-  // unprompted. No role gate at all, `viewer` included: a status grants
-  // nothing, so refusing to let somebody say «у меня ничего нет» would only
-  // leave the organizer waiting.
-  app.post<{ Params: { memoryId: string }; Body: { status: "done" | "nothing" } }>(
+  // «Всё загрузил» / «ждать нечего» / «ещё будет» — the member's own word about
+  // their material, whether the app asked after their first upload (doc-06) or
+  // they said it unprompted, and at any moment: none of the three is a door
+  // that closes, so a person who said «это всё» and then remembered a whole
+  // evening on another phone says «ещё будет» and the roster stops reading
+  // that they are finished.
+  //
+  // A `viewer` may not, and this is the one role gate a status has: they were
+  // invited to look, the organizer is not waiting on material from them, and a
+  // status on their line would put them into a tally nobody means them to be
+  // in. Not a power taken from them — there is nothing to take.
+  app.post<{
+    Params: { memoryId: string };
+    Body: { status: Exclude<ContributionStatus, "not_started"> };
+  }>(
     "/memories/:memoryId/contribution-status",
     {
       preHandler: [app.authenticate, app.requireMembership],
       schema: { body: contributionStatusBody },
     },
-    async (request) => {
+    async (request, reply) => {
+      if (request.membership.role === "viewer") return reply.code(403).send(forbidden);
       const { status } = request.body;
       // Theirs and nobody else's: a status is not something one member sets on
       // another, so there is no `:userId` in this route to begin with.
