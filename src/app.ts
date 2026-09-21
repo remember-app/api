@@ -3,6 +3,7 @@ import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
 import { socialRoutes } from "./auth/social.ts";
 import { contactRoutes } from "./contacts/contacts.ts";
+import { frameRoutes } from "./media/frame.ts";
 import { galleryRoutes } from "./media/gallery.ts";
 import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
@@ -54,6 +55,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   memberRoutes(app);
   uploadRoutes(app);
   galleryRoutes(app);
+  // «Сведения о кадре» — one frame in words, beside the gallery that lists it
+  // and on the same membership check.
+  frameRoutes(app);
   pushRoutes(app);
   // Its `/memories/:memoryId/…` routes mount app.requireMembership too; the
   // internal one the montage worker knocks on mounts neither check and carries

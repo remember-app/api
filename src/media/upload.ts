@@ -35,14 +35,24 @@ export type MediaItem = {
   upload_id: string | null;
   size_bytes: string;
   captured_at: Date | null;
+  // What the file was called on the phone, sent with the intent. Null for
+  // everything that arrived before the app started sending it, and for any
+  // client that does not; «Сведения о кадре» then leaves that line out.
+  file_name: string | null;
   // Written by the montage worker when it probes the original and makes the
   // derivatives; null until then, which the gallery shows as a record still
-  // being worked on.
+  // being worked on. The camera and the place come off the same probe and are
+  // read by «Сведения о кадре» alone (`frame.ts`).
   width: number | null;
   height: number | null;
   duration_seconds: number | null;
   thumbnail_key: string | null;
   preview_key: string | null;
+  camera_model: string | null;
+  focal_length_mm: number | null;
+  aperture: number | null;
+  latitude: number | null;
+  longitude: number | null;
   // The automatic screening's verdict, written by the same worker and read by
   // nobody here but the gallery (doc-03): whether the analysis would throw this
   // frame out and why. Null is «not looked at yet», not «kept» — the reason is
@@ -67,6 +77,11 @@ const intentBody = {
     captured_at: { type: ["string", "null"], format: "date-time" },
     // Required for a video and ignored for a photo; see the handler.
     duration_seconds: { type: ["number", "null"], minimum: 0 },
+    // What the file is called on the phone, shown by «Сведения о кадре»
+    // (doc-02). Optional because the app began sending it later than it began
+    // uploading, and bounded at what a filesystem itself holds — this is a
+    // caption, not a place to carry a payload.
+    file_name: { type: ["string", "null"], maxLength: 255 },
   },
 } as const;
 
@@ -194,6 +209,7 @@ export function uploadRoutes(app: FastifyInstance) {
       size_bytes: number;
       captured_at?: string | null;
       duration_seconds?: number | null;
+      file_name?: string | null;
     };
   }>(
     "/memories/:memoryId/media",
@@ -238,6 +254,14 @@ export function uploadRoutes(app: FastifyInstance) {
           .send({ error: "memory is out of space", limit_bytes: memoryMaxBytes() });
       }
 
+      // The phone's own name for the file, kept as it came — it is shown back
+      // to people and nothing here parses it. A NUL is stripped rather than
+      // refused, as `story_text` strips one: no `text` column can hold that
+      // byte, nobody typed it on purpose, and a 500 over a stray character in a
+      // file name would stop an upload that is otherwise fine. Empty after that
+      // is nothing said at all, and nothing said is null.
+      const fileName = request.body.file_name?.replaceAll("\u0000", "").trim() || null;
+
       // The id is minted here rather than by the database because the key is
       // made of it (architecture.md: «ключ оригинала — по id записи»), and the
       // row must carry the key it was written with.
@@ -245,9 +269,10 @@ export function uploadRoutes(app: FastifyInstance) {
       const [item] = await sql<MediaItem[]>`
         insert into media_items
           (id, memory_id, uploaded_by, kind, original_key, size_bytes, captured_at,
-           duration_seconds)
+           duration_seconds, file_name)
         values (${id}, ${memory.id}, ${request.user.id}, ${kind}, ${`originals/${id}`},
-                ${size_bytes}, ${captured_at ?? null}, ${kind === "video" ? duration : null})
+                ${size_bytes}, ${captured_at ?? null}, ${kind === "video" ? duration : null},
+                ${fileName})
         returning *
       `;
       if (!item) throw new Error("insert into media_items returned no row");
