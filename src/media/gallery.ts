@@ -9,11 +9,12 @@ import type { MediaItem } from "./upload.ts";
 
 /**
  * What becomes of material once it is in: the gallery every member looks at,
- * and the two ways a record leaves — deleted one at a time, or carried out by
- * the person who brought it (architecture.md, «Выход / исключение участника»).
+ * and the three ways a record leaves — deleted one at a time, carried out by
+ * the person who brought it (architecture.md, «Выход / исключение участника»),
+ * or taken down with the memory itself (doc-01).
  *
- * Both ways go through `removeMedia`, which is the point of it: the counters,
- * the per-user tally and the queued previews are settled in one statement, so
+ * All three go through `removeMedia`, which is the point of it: the counters,
+ * the per-user tally and the queued jobs are settled in one statement, so
  * there is no second copy of that arithmetic to drift out of step with this one.
  */
 
@@ -35,12 +36,13 @@ export type Leftovers = { keys: string[]; uploads: { key: string; uploadId: stri
 
 /**
  * Takes media out of a memory for good — the rows, the memory's counters, the
- * uploaders' tallies and the `media_preview` jobs queued for them. Answers with
- * the R2 keys the rows pointed at; the caller drops those *after* the
- * transaction commits (`dropKeys`).
+ * uploaders' tallies, the jobs queued about it and everything the worker wrote
+ * down about each frame. Answers with the R2 keys the rows pointed at; the
+ * caller drops those *after* the transaction commits (`dropKeys`).
  *
- * Exactly one of `mediaId` and `uploadedBy` is given: one record deleted by its
- * uploader or the organizer, or everything one person brought when they leave.
+ * `target` names one record deleted by its uploader or the organizer, or
+ * everything one person brought when they leave; left out, it is the whole
+ * memory's material, which is what deleting the memory itself takes with it.
  * Both filters ride in the same statement rather than in two, so that nothing
  * can be inserted between choosing the rows and counting them — a file that
  * finished uploading while its owner was being excluded would otherwise be left
@@ -52,10 +54,10 @@ export type Leftovers = { keys: string[]; uploads: { key: string; uploadId: stri
 export async function removeMedia(
   tx: TransactionSql,
   memoryId: string,
-  target: { mediaId: string } | { uploadedBy: string },
+  target?: { mediaId: string } | { uploadedBy: string },
 ): Promise<Leftovers> {
-  const mediaId = "mediaId" in target ? target.mediaId : null;
-  const uploadedBy = "uploadedBy" in target ? target.uploadedBy : null;
+  const mediaId = target && "mediaId" in target ? target.mediaId : null;
+  const uploadedBy = target && "uploadedBy" in target ? target.uploadedBy : null;
 
   const gone = await tx<MediaKeys[]>`
     with gone as (
@@ -92,11 +94,23 @@ export async function removeMedia(
       where u.user_id = c.uploaded_by
     ),
     -- The worker must not be sent after material that is no longer there
-    -- (architecture.md, «Участника исключили во время его загрузки»). The jobs
-    -- table belongs to montage; this and the insert in upload.ts are the only
-    -- two statements api runs against it.
+    -- (architecture.md, «Участника исключили во время его загрузки»). Every job
+    -- about these frames and not media_preview alone: a preview, a size, a
+    -- screening and a question to the model are all queued off one upload, and
+    -- one of them cancelled while the rest run would have the worker chasing a
+    -- record nobody can see.
     queued as (
-      delete from jobs where type = 'media_preview' and ref in (select id::text from gone)
+      delete from jobs where ref in (select id::text from gone)
+    ),
+    -- Что воркер про эти кадры записал: описание сцены и расшифровка речи. Обе
+    -- таблицы — его (montage schema.sql), внешних ключей на media_items у них
+    -- нет и быть не может (они заводятся в базе, где миграций api ещё не было),
+    -- поэтому каскад их не заберёт — забирает тот, кто удаляет кадр.
+    said as (
+      delete from media_speech where media_id in (select id::text from gone)
+    ),
+    seen as (
+      delete from media_understandings where media_id in (select id::text from gone)
     )
     select original_key, thumbnail_key, preview_key, status, upload_id from gone
   `;
