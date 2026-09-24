@@ -742,7 +742,7 @@ test("the ceiling is the video the worker assembles out of everything there is",
   // end by `assembly.length_of` less `assembly.CROSSFADE_SECONDS` (0.5) a join.
   // 12 + 30 + 7 + 3 × 2.5 − 5 × 0.5 = 54 seconds: the most that may be ordered
   // is exactly what that order gets. Either number moved on that side moves
-  // `photoSeconds` or `crossfadeSeconds` in montages.ts, and this with it.
+  // `photoSeconds` or `crossfadeSeconds` in material.ts, and this with it.
   const memory = await createMemory(app, organizer.token);
   for (const seconds of [12, 30, 7]) {
     await material(memory.id, organizer.user.id, 1, "ready", "video", seconds);

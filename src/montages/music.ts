@@ -14,7 +14,6 @@ import {
 } from "../media/r2.ts";
 import { completeBody, partCount } from "../media/upload.ts";
 import { uuidPattern } from "../memories/plugin.ts";
-import { musicTracks } from "./montages.ts";
 
 /**
  * «И возможность добавить свою» (doc-03): the organizer's own track, instead of
@@ -35,6 +34,20 @@ import { musicTracks } from "./montages.ts";
  * Mounted from `buildApp` after `memoriesPlugin`, which decorates the
  * membership check these routes hang on.
  */
+
+/**
+ * The tracks the worker has, by id, in the order the app shows them
+ * (`design/screens/MontageMusic.html`: Яркая, Тёплая, Спокойная, Ночь,
+ * Дорога). To refuse an id it does not hold, and — exported — to weigh the
+ * `music_tracks` of an order against the same list (`order.ts`). The files
+ * themselves are the worker's, one per id, listed with their licences in
+ * `projects/montage/tracks/README.md` — and the list is short enough that a
+ * table for it would be a table for five strings. It is the worker's shelf that
+ * decides what belongs here: when that shelf grew from three synthesized tones
+ * to five real tracks, an order for `night` or `road` was refused by this
+ * service alone.
+ */
+export const musicTracks = ["bright", "warm", "calm", "night", "road"] as const;
 
 /** A `music_uploads` row. `size_bytes` is a string for `media_items`'s reason. */
 export type MusicUpload = {

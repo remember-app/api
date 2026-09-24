@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Language } from "../auth/session.ts";
-import { checkOrder, type musicTracks } from "./montages.ts";
+import type { musicTracks } from "./music.ts";
+import { checkOrder } from "./order.ts";
 
 /**
  * Шесть готовых роликов на выбор (doc-03: «Шаблон — это текст истории, музыка,

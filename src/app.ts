@@ -14,6 +14,7 @@ import { memoryRemovalRoutes } from "./memories/removal.ts";
 import { journalRoutes } from "./montages/journal.ts";
 import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
+import { montageReadyRoutes } from "./montages/ready.ts";
 import { montageTemplateRoutes } from "./montages/templates.ts";
 
 /**
@@ -67,10 +68,11 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // рядом с ней — потому что `label_ids` галереи приходят отсюда же.
   labelRoutes(app);
   pushRoutes(app);
-  // Its `/memories/:memoryId/…` routes mount app.requireMembership too; the
-  // internal one the montage worker knocks on mounts neither check and carries
-  // its own shared secret instead.
+  // Its `/memories/:memoryId/…` routes mount app.requireMembership too.
   montageRoutes(app);
+  // Стук воркера о готовом ролике: ни проверки сессии, ни участия — за ним нет
+  // человека, и вместо них общий секрет. Отдельным файлом ровно поэтому.
+  montageReadyRoutes(app);
   // Шесть готовых роликов — тот же заказ, заполненный заранее, поэтому рядом с
   // ним и за той же проверкой членства.
   montageTemplateRoutes(app);

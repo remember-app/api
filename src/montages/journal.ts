@@ -51,6 +51,8 @@ export type StageRow = {
   thought_count: number;
 };
 
+type State = StageRow["state"];
+
 /** Строка `montage_journal_entries` ровно как её держит база. */
 type EntryRow = {
   /** bigint, а postgres.js отдаёт такие строкой — см. `view` ниже. */
@@ -103,6 +105,44 @@ const view = ({ focus_x, focus_y, focus_w, focus_h, id, ...entry }: EntryRow) =>
   id: Number(id),
   focus: focus_x === null ? null : { x: focus_x, y: focus_y, w: focus_w, h: focus_h },
 });
+
+/**
+ * Как далеко ушли ролики, которые ещё собираются: пять этапов по порядку
+ * пайплайна, у каждого своё состояние — по id ролика, на весь список разом.
+ * Этим рисует карточка на ленте свою шкалу и сама считает «3 из 5»
+ * (`design/screens/MemoryFrames.html`, `design/spec.md` №38), не открывая
+ * журнал каждого ролика в списке.
+ *
+ * Состояния, а не голое «3 из 5»: шкала из пяти полос, и упавший этап — свой
+ * цвет; счётчик не скажет, который упал. С именами, а не просто по порядку, по
+ * той же причине, по какой их называет журнал: клиент, читающий позицию вместо
+ * имени, держит контракт, которого никто не записывал.
+ *
+ * Воркер кладёт все пять строк разом, `pending`, как только берёт ролик — до
+ * первого файла и до первой записи в журнале, — так что строк у ролика либо
+ * пять, либо ни одной. Ни одной — ролика в ответе нет вовсе: он ещё в очереди
+ * или отказан раньше, чем воркер до него дошёл, а шкала из пяти пустых полос
+ * утверждала бы, что сборка идёт. Этап без строки читается как `pending`: шкала
+ * — пять полос.
+ */
+export async function stagesFor(montageIds: string[]) {
+  if (montageIds.length === 0) return new Map<string, { stage: StageKey; state: State }[]>();
+  const rows = await sql<({ montage_id: string } & Pick<StageRow, "stage" | "state">)[]>`
+    select montage_id, stage, state from montage_stages where montage_id in ${sql(montageIds)}
+  `;
+  const byMontage = new Map<string, Map<StageKey, State>>();
+  for (const row of rows) {
+    const states = byMontage.get(row.montage_id) ?? new Map<StageKey, State>();
+    states.set(row.stage, row.state);
+    byMontage.set(row.montage_id, states);
+  }
+  return new Map(
+    [...byMontage].map(([montageId, states]) => [
+      montageId,
+      montageStages.map((stage) => ({ stage, state: states.get(stage) ?? "pending" })),
+    ]),
+  );
+}
 
 /**
  * Mounted from `buildApp` after `memoriesPlugin`, которая декорирует проверку
