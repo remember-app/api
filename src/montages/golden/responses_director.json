@@ -71,7 +71,78 @@
             "id": "00000000-0000-4000-8000-b00000000001",
             "status": "processing"
           },
-          "stages": [],
+          "stages": [
+            {
+              "stage": "screening",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 20,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 10,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            }
+          ],
           "entries": [],
           "has_more": false,
           "files": [],
@@ -108,13 +179,69 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:00.000Z",
               "finished_at": null,
-              "eta_seconds": 18,
-              "done_count": 4,
+              "eta_seconds": 0,
+              "done_count": 13,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
               "skipped_count": 4,
+              "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 10,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
               "thought_count": 0
             }
           ],
@@ -272,6 +399,62 @@
               "taken_count": 0,
               "skipped_count": 4,
               "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 10,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [],
@@ -332,14 +515,56 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:06.000Z",
               "finished_at": null,
-              "eta_seconds": 16,
-              "done_count": 5,
+              "eta_seconds": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:17.000Z",
+              "updated_at": "2026-01-01T00:00:06.000Z",
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 5
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -502,14 +727,56 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:06.000Z",
               "finished_at": null,
-              "eta_seconds": 16,
-              "done_count": 5,
+              "eta_seconds": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:17.000Z",
+              "updated_at": "2026-01-01T00:00:06.000Z",
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 5
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -682,14 +949,56 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:06.000Z",
               "finished_at": null,
-              "eta_seconds": 6,
-              "done_count": 10,
+              "eta_seconds": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:17.000Z",
+              "updated_at": "2026-01-01T00:00:06.000Z",
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -852,14 +1161,56 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:06.000Z",
               "finished_at": null,
-              "eta_seconds": 6,
-              "done_count": 10,
+              "eta_seconds": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:17.000Z",
+              "updated_at": "2026-01-01T00:00:06.000Z",
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -961,6 +1312,48 @@
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [],
@@ -1041,14 +1434,42 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:18.000Z",
               "finished_at": null,
-              "eta_seconds": 16,
-              "done_count": 5,
+              "eta_seconds": 6,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:18.000Z",
               "taken_count": 4,
               "skipped_count": 0,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -1227,14 +1648,42 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:18.000Z",
               "finished_at": null,
-              "eta_seconds": 16,
-              "done_count": 5,
+              "eta_seconds": 6,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:18.000Z",
               "taken_count": 4,
               "skipped_count": 0,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -1346,14 +1795,42 @@
               "state": "running",
               "started_at": "2026-01-01T00:00:18.000Z",
               "finished_at": null,
-              "eta_seconds": 16,
-              "done_count": 5,
+              "eta_seconds": 6,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:18.000Z",
               "taken_count": 4,
               "skipped_count": 0,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -1551,13 +2028,41 @@
               "started_at": "2026-01-01T00:00:18.000Z",
               "finished_at": null,
               "eta_seconds": 6,
-              "done_count": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:18.000Z",
               "taken_count": 5,
               "skipped_count": 4,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -1745,13 +2250,41 @@
               "started_at": "2026-01-01T00:00:18.000Z",
               "finished_at": null,
               "eta_seconds": 6,
-              "done_count": 10,
+              "done_count": 0,
               "total_count": 13,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:18.000Z",
               "taken_count": 5,
               "skipped_count": 4,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [
@@ -1876,6 +2409,34 @@
               "taken_count": 5,
               "skipped_count": 4,
               "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
             }
           ],
           "entries": [],
@@ -1976,17 +2537,28 @@
             },
             {
               "stage": "rhythm",
-              "state": "done",
+              "state": "running",
               "started_at": "2026-01-01T00:00:30.000Z",
-              "finished_at": "2026-01-01T00:00:31.000Z",
-              "eta_seconds": 0,
-              "done_count": 5,
+              "finished_at": null,
+              "eta_seconds": 4,
+              "done_count": 0,
               "total_count": 5,
-              "outcome": {
-                "cuts": 0,
-                "track": []
-              },
-              "updated_at": "2026-01-01T00:00:31.000Z",
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:30.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
               "thought_count": 0
@@ -2010,6 +2582,390 @@
     },
     {
       "name": "live_poll_14",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 24,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "screening",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:05.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "kept": 9,
+                "reasons": {
+                  "blur": 1,
+                  "exposure": 2,
+                  "unreadable": 1
+                }
+              },
+              "updated_at": "2026-01-01T00:00:05.000Z",
+              "taken_count": 0,
+              "skipped_count": 4,
+              "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:06.000Z",
+              "finished_at": "2026-01-01T00:00:17.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "faces": 10,
+                "people": 4,
+                "animals": 1,
+                "described": 10
+              },
+              "updated_at": "2026-01-01T00:00:17.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:18.000Z",
+              "finished_at": "2026-01-01T00:00:29.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "parts": 3,
+                "frames": 5,
+                "part_titles": ["Сборы", "Торт", "Тосты"]
+              },
+              "updated_at": "2026-01-01T00:00:29.000Z",
+              "taken_count": 5,
+              "skipped_count": 4,
+              "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:30.000Z",
+              "finished_at": "2026-01-01T00:00:31.000Z",
+              "eta_seconds": 0,
+              "done_count": 5,
+              "total_count": 5,
+              "outcome": {
+                "cuts": 0,
+                "track": []
+              },
+              "updated_at": "2026-01-01T00:00:31.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            }
+          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            },
+            {
+              "id": "00000000-0000-4000-8000-c00000000003",
+              "username": "lena"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_15",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 24,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "screening",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:05.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "kept": 9,
+                "reasons": {
+                  "blur": 1,
+                  "exposure": 2,
+                  "unreadable": 1
+                }
+              },
+              "updated_at": "2026-01-01T00:00:05.000Z",
+              "taken_count": 0,
+              "skipped_count": 4,
+              "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:06.000Z",
+              "finished_at": "2026-01-01T00:00:17.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "faces": 10,
+                "people": 4,
+                "animals": 1,
+                "described": 10
+              },
+              "updated_at": "2026-01-01T00:00:17.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:18.000Z",
+              "finished_at": "2026-01-01T00:00:29.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "parts": 3,
+                "frames": 5,
+                "part_titles": ["Сборы", "Торт", "Тосты"]
+              },
+              "updated_at": "2026-01-01T00:00:29.000Z",
+              "taken_count": 5,
+              "skipped_count": 4,
+              "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:30.000Z",
+              "finished_at": "2026-01-01T00:00:31.000Z",
+              "eta_seconds": 0,
+              "done_count": 5,
+              "total_count": 5,
+              "outcome": {
+                "cuts": 0,
+                "track": []
+              },
+              "updated_at": "2026-01-01T00:00:31.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:32.000Z",
+              "finished_at": null,
+              "eta_seconds": 21,
+              "done_count": 0,
+              "total_count": 5,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:32.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            }
+          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            },
+            {
+              "id": "00000000-0000-4000-8000-c00000000003",
+              "username": "lena"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_16",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 24,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "screening",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:05.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "kept": 9,
+                "reasons": {
+                  "blur": 1,
+                  "exposure": 2,
+                  "unreadable": 1
+                }
+              },
+              "updated_at": "2026-01-01T00:00:05.000Z",
+              "taken_count": 0,
+              "skipped_count": 4,
+              "thought_count": 0
+            },
+            {
+              "stage": "understanding",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:06.000Z",
+              "finished_at": "2026-01-01T00:00:17.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "faces": 10,
+                "people": 4,
+                "animals": 1,
+                "described": 10
+              },
+              "updated_at": "2026-01-01T00:00:17.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 10
+            },
+            {
+              "stage": "directing",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:18.000Z",
+              "finished_at": "2026-01-01T00:00:29.000Z",
+              "eta_seconds": 0,
+              "done_count": 13,
+              "total_count": 13,
+              "outcome": {
+                "of": 13,
+                "parts": 3,
+                "frames": 5,
+                "part_titles": ["Сборы", "Торт", "Тосты"]
+              },
+              "updated_at": "2026-01-01T00:00:29.000Z",
+              "taken_count": 5,
+              "skipped_count": 4,
+              "thought_count": 1
+            },
+            {
+              "stage": "rhythm",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:30.000Z",
+              "finished_at": "2026-01-01T00:00:31.000Z",
+              "eta_seconds": 0,
+              "done_count": 5,
+              "total_count": 5,
+              "outcome": {
+                "cuts": 0,
+                "track": []
+              },
+              "updated_at": "2026-01-01T00:00:31.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            },
+            {
+              "stage": "assembly",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:32.000Z",
+              "finished_at": null,
+              "eta_seconds": 1,
+              "done_count": 2,
+              "total_count": 5,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:32.400Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0
+            }
+          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            },
+            {
+              "id": "00000000-0000-4000-8000-c00000000003",
+              "username": "lena"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_17",
       "request": {
         "as": "organizer",
         "method": "GET",
