@@ -126,8 +126,10 @@ export function journalRoutes(app: FastifyInstance) {
       // Записи в ответе всегда идут от свежих к старым, одним порядком на оба
       // случая: именно так их рисует экран. Выбираются они при этом по-разному
       // — см. `forward` в обработчике.
-      after: { type: "integer", minimum: 0 },
-      before: { type: "integer", minimum: 0 },
+      // Потолок — не лимит журнала, а граница числа: больше него ajv пропустит
+      // то, что `::bigint` уже не примет, и курсор-мусор стал бы 500.
+      after: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      before: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       limit: { type: "integer", minimum: 1, maximum: maxLimit, default: defaultLimit },
       stage: { type: "string", enum: [...montageStages] },
       media_id: { type: "string", pattern: uuidPattern.source },
