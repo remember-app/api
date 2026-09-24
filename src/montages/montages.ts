@@ -7,7 +7,7 @@ import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { notifyMontageReady } from "../memories/push.ts";
-import { montageStages } from "./journal.ts";
+import { montageStages, type StageRow } from "./journal.ts";
 
 /**
  * The videos assembled from a memory's material (doc-03): the organizer orders
@@ -452,11 +452,7 @@ async function view(montage: Montage, ttl: number) {
 }
 
 /** A `montage_stages` row, cut down to what a card on the feed draws with. */
-type StageProgress = {
-  montage_id: string;
-  stage: (typeof montageStages)[number];
-  state: "pending" | "running" | "done" | "failed";
-};
+type StageProgress = Pick<StageRow, "stage" | "state"> & { montage_id: string };
 
 /**
  * How far a video that is still being assembled has got: the five stages in

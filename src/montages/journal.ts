@@ -36,7 +36,7 @@ export const montageStages = [
 type StageKey = (typeof montageStages)[number];
 
 /** Строка `montage_stages` со счётчиками, которые api досчитывает по записям. */
-type StageRow = {
+export type StageRow = {
   stage: StageKey;
   state: "pending" | "running" | "done" | "failed";
   started_at: Date | null;
