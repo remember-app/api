@@ -1,6 +1,6 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { sql } from "../db.ts";
-import { downloadTtlSeconds } from "../media/config.ts";
+import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
 
 /** The three levels architecture.md fixes; the matrix is in the README. */
@@ -60,6 +60,31 @@ declare module "fastify" {
  * Postgres cannot cast — that arrives as a 500.
  */
 export const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
+
+/**
+ * A list of this memory's frames in a request body — a montage order's picks, a
+ * label's batch. Held to uuids because handlers put these straight into a
+ * `where id in (…)` against a uuid column, where «not-a-uuid» is a database
+ * error rather than a 400. The ceiling is the memory's own file limit: a list
+ * longer than the memory can hold files names something twice or is junk. A
+ * function, called at registration: ajv compiles a schema once, so the number
+ * has to be in it by then.
+ */
+export const mediaIdsSchema = () =>
+  ({
+    type: "array",
+    items: { type: "string", pattern: uuidPattern.source },
+    uniqueItems: true,
+    maxItems: memoryMaxFiles(),
+  }) as const;
+
+/**
+ * Such a list as handlers work with it: lowercased, then deduplicated. Postgres
+ * hands uuids back in lower case, so a client echoing an id of ours in capitals
+ * must not be told its own frame is not there; and `uniqueItems` compares the
+ * strings as they arrived, so one frame named twice in two spellings passes it.
+ */
+export const lowerIds = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
 
 /**
  * What a memory is called and when it happened. One object rather than two

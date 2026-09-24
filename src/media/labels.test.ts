@@ -718,10 +718,11 @@ test("чужой личный лейбл на любую запись: «не н
 
   // Никто, кроме хозяйки, его «не находит», организатор тоже: ни положить, ни
   // убрать, ни переименовать, ни удалить — и ответ тот же, что у
-  // несуществующего.
+  // несуществующего. Даже пачка с кадром, которого нет, отвечает «нет такого
+  // лейбла», а не `400` с именами: иначе отказ выдал бы, что лейбл нашёлся.
   for (const token of [organizer.token, boris.token, viewer.token]) {
     for (const answer of [
-      await fill(app, token, memory.id, secret, [hers]),
+      await fill(app, token, memory.id, secret, [hers, randomUUID()]),
       await take(app, token, memory.id, secret, [hers]),
       await editLabel(app, token, memory.id, secret, { title: "Моё" }),
       await dropLabel(app, token, memory.id, secret),
