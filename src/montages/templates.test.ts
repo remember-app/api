@@ -71,16 +71,25 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
   return person;
 }
 
-/** Материал там, где его оставила бы загрузка; секунды — предел длины ролика. */
-async function material(memoryId: string, uploadedBy: string, seconds: number[]) {
-  for (const duration of seconds) {
+/**
+ * Материал там, где его оставила бы загрузка: секунды — видео такой длины
+ * (`null` — видео без измеренной длины), "photo" — фото. Предел длины ролика
+ * считается по ним.
+ */
+async function material(
+  memoryId: string,
+  uploadedBy: string,
+  items: (number | null | "photo")[],
+  status: "ready" | "processing" = "ready",
+) {
+  for (const item of items) {
     await sql`
       insert into media_items (
         memory_id, uploaded_by, kind, status, original_key, size_bytes, duration_seconds
       )
       values (
-        ${memoryId}, ${uploadedBy}, 'video', 'ready', ${`originals/${randomUUID()}`}, 4096,
-        ${duration}
+        ${memoryId}, ${uploadedBy}, ${item === "photo" ? "photo" : "video"}, ${status},
+        ${`originals/${randomUUID()}`}, 4096, ${item === "photo" ? null : item}
       )
     `;
   }
@@ -163,6 +172,10 @@ test("история — из названия, дат и числа тех, ч�
   await material(memory.id, brought.user.id, [100]);
   await member(app, memory.id, "contributor", organizer.user.id);
   await member(app, memory.id, "viewer", organizer.user.id);
+  // Принёс кадры, но ни один ещё не готов: в ролик он не попадёт, а значит, и в
+  // счёт людей тоже.
+  const pending = await member(app, memory.id, "contributor", organizer.user.id);
+  await material(memory.id, pending.user.id, [100], "processing");
 
   const summary = await preview(app, organizer.token, memory.id);
   expect(summary.statusCode).toBe(200);
@@ -277,30 +290,63 @@ test("шаблоны — организатору: участнику 403, зр�
   expect(anonymous.statusCode).toBe(401);
 });
 
-test("каждый шаблон принимается заказом как есть", async () => {
+test("каждый шаблон принимается заказом как есть, на любом материале и на обоих языках", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
-  const memory = await createMemory(app, organizer.token);
-  await material(memory.id, organizer.user.id, [600, 600, 600]);
 
-  const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
-  expect(templates).toHaveLength(6);
+  // С запасом, впритык по секундам, только фото, и такой, где предел — пара
+  // секунд из фото и видео без длины: во всех шаблон зажат под предел, а не
+  // отвергнут.
+  const stocks: [string, (number | null | "photo")[], number][] = [
+    ["roomy", [600, 600, 600], 600],
+    ["forty", [20, 10, 10], 40],
+    ["photos", ["photo", "photo", "photo"], 7],
+    ["blind", ["photo", "photo", null], 5],
+  ];
+  // Длины из макета: выше предела шаблон не поднимается, ниже — не опускается.
+  const drawn: Record<string, number> = {
+    for_myself: 180,
+    quick: 60,
+    report: 120,
+    short_form: 30,
+    parents: 150,
+    dopamine: 45,
+  };
+  for (const language of ["ru", "en"] as const) {
+    expect((await speak(app, organizer.token, language)).statusCode).toBe(200);
+    for (const [name, items, ceiling] of stocks) {
+      const memory = await createMemory(app, organizer.token);
+      await material(memory.id, organizer.user.id, items);
 
-  for (const { id, music_note, ...body } of templates) {
-    // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
-    const ordered = await app.inject(
-      as(organizer.token, {
-        method: "POST",
-        url: `/memories/${memory.id}/montages`,
-        payload: { ...body, ...(music_note === null ? {} : { music_note }) },
-      }),
-    );
-    expect(ordered.statusCode, `${id}: ${ordered.body}`).toBe(201);
-    expect(ordered.json().params).toMatchObject({
-      target_seconds: body.target_seconds,
-      story_text: body.story_text,
-      orientation: body.orientation,
-      music_tracks: body.music_tracks,
-    });
+      const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
+      expect(templates).toHaveLength(6);
+      const { people } = (await preview(app, organizer.token, memory.id)).json();
+
+      for (const { id, music_note, ...body } of templates) {
+        const where = `${language} ${name} ${id}`;
+        expect(body.target_seconds, where).toBe(Math.min(ceiling, drawn[id] ?? 0));
+        expect(body.story_text, where).toContain(`${language === "ru" ? "от" : "from"} ${people} `);
+        // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
+        const payload = { ...body, ...(music_note === null ? {} : { music_note }) };
+        const summary = await preview(app, organizer.token, memory.id, payload);
+        expect(summary.statusCode, `${where}: ${summary.body}`).toBe(200);
+        expect(summary.json().target_seconds, where).toBe(body.target_seconds);
+        const ordered = await app.inject(
+          as(organizer.token, {
+            method: "POST",
+            url: `/memories/${memory.id}/montages`,
+            payload,
+          }),
+        );
+        expect(ordered.statusCode, `${where}: ${ordered.body}`).toBe(201);
+        expect(ordered.json().params).toMatchObject({
+          target_seconds: body.target_seconds,
+          story_text: body.story_text,
+          orientation: body.orientation,
+          music_tracks: body.music_tracks,
+          ...(music_note === null ? {} : { music_note }),
+        });
+      }
+    }
   }
 });
