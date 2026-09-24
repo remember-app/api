@@ -135,48 +135,54 @@ export async function downloadUrl(key: string, ttlSeconds: number): Promise<stri
  * row is going too: `media_items.upload_id` is the only record of the id, so an
  * upload not aborted here can never be named by anything again, the worker's
  * hourly sweep included (montage `sweep_stale_uploads`).
- *
- * `NoSuchUpload` is not a failure, for the reason a missing key is not one
- * below: an upload aborted twice, or one that completed after all, is already
- * the outcome this wanted.
  */
-export async function abortUploads(uploads: { key: string; uploadId: string }[]): Promise<void> {
-  const aws = client();
-  const answers = await Promise.all(
-    uploads.map(({ key, uploadId }) =>
-      aws.fetch(`${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`, { method: "DELETE" }),
+export const abortUploads = (uploads: { key: string; uploadId: string }[]) =>
+  deleteAll(
+    "aborts",
+    uploads.map(
+      ({ key, uploadId }) => `${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`,
     ),
   );
-  const refused = answers.filter((answer) => !answer.ok && answer.status !== 404);
-  if (refused.length > 0) {
-    throw new Error(
-      `R2 refused ${refused.length} of ${uploads.length} aborts: ` +
-        refused.map((answer) => answer.status).join(", "),
-    );
-  }
-}
 
 /**
- * Drops objects by key. A key that is not there is **not** a failure: a record
- * may well be deleted before the worker has made its preview, and a missing
- * derivative must not stop the original from going — S3 answers a delete of
- * nothing with 204 anyway.
+ * Drops objects by key.
  *
  * ponytail: one request per key instead of S3's multi-object delete. That call
  * brings an XML body, a Content-MD5 header and an error shape of its own, to
- * save round trips nobody is counting — one departure on this pilot is tens of
- * files. Swap it in if a departure ever means thousands.
+ * save round trips nobody is counting. Swap it in if the slices below stop
+ * being enough.
  */
-export async function deleteObjects(keys: string[]): Promise<void> {
+export const deleteObjects = (keys: string[]) => deleteAll("deletes", keys.map(objectUrl));
+
+/** How many of those requests are in the air at once — see `deleteAll`. */
+const AT_ONCE = 32;
+
+/**
+ * A `DELETE` on every one of them, and one account of what the bucket refused.
+ *
+ * A 404 is never a failure: a key that is not there — a record deleted before
+ * the worker made its preview — and an upload already released or completed
+ * after all are both the outcome the caller asked for.
+ *
+ * In slices and not in one `Promise.all`: a memory holds up to a thousand files
+ * (`memoryMaxFiles`) with three keys each, beside its videos and its music, and
+ * deleting it whole would otherwise open a socket for every one of them in the
+ * same breath.
+ */
+async function deleteAll(what: string, urls: string[]): Promise<void> {
   const aws = client();
-  const answers = await Promise.all(
-    keys.map((key) => aws.fetch(objectUrl(key), { method: "DELETE" })),
-  );
-  const refused = answers.filter((answer) => !answer.ok && answer.status !== 404);
+  const refused: number[] = [];
+  for (let from = 0; from < urls.length; from += AT_ONCE) {
+    const answers = await Promise.all(
+      urls.slice(from, from + AT_ONCE).map((url) => aws.fetch(url, { method: "DELETE" })),
+    );
+    refused.push(
+      ...answers.filter((one) => !one.ok && one.status !== 404).map((one) => one.status),
+    );
+  }
   if (refused.length > 0) {
     throw new Error(
-      `R2 refused ${refused.length} of ${keys.length} deletes: ` +
-        refused.map((answer) => answer.status).join(", "),
+      `R2 refused ${refused.length} of ${urls.length} ${what}: ${refused.join(", ")}`,
     );
   }
 }

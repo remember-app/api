@@ -292,7 +292,7 @@ test("every track on the shelf can be listened to, and nothing else can", async 
   for (const id of shelf) {
     const answer = await app.inject(as(listener.token, { method: "GET", url: listen(id) }));
     expect(answer.statusCode).toBe(200);
-    // The worker's key, signed: `tracks/<id>.mp3` is where `python worker.py
+    // The worker's key, signed: `tracks/<id>.mp3` is where `python -m montage
     // tracks` lays the five files out, and the signature is what makes the link
     // openable by a phone that holds no credentials.
     const url = new URL(answer.json().url);

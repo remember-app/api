@@ -20,7 +20,7 @@ const postgrator = new Postgrator({
 
 /**
  * The queue table api writes into but does not own: `jobs` belongs to montage
- * (`schema.sql`, `python worker.py init`). Its file is applied here, never
+ * (`schema.sql`, `python -m montage init`). Its file is applied here, never
  * copied into a migration — that keeps montage the single source of its shape
  * while a local database (and `npm test`) still has the table. The file is
  * idempotent by design, so running this again changes nothing.

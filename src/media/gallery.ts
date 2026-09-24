@@ -41,8 +41,9 @@ export type Leftovers = { keys: string[]; uploads: { key: string; uploadId: stri
  * caller drops those *after* the transaction commits (`dropKeys`).
  *
  * `target` names one record deleted by its uploader or the organizer, or
- * everything one person brought when they leave; left out, it is the whole
- * memory's material, which is what deleting the memory itself takes with it.
+ * everything one person brought when they leave, or — spelled out, never by
+ * omission — the whole memory's material, which is what deleting the memory
+ * itself takes with it.
  * Both filters ride in the same statement rather than in two, so that nothing
  * can be inserted between choosing the rows and counting them — a file that
  * finished uploading while its owner was being excluded would otherwise be left
@@ -54,10 +55,11 @@ export type Leftovers = { keys: string[]; uploads: { key: string; uploadId: stri
 export async function removeMedia(
   tx: TransactionSql,
   memoryId: string,
-  target?: { mediaId: string } | { uploadedBy: string },
+  target: { mediaId: string } | { uploadedBy: string } | "everything",
 ): Promise<Leftovers> {
-  const mediaId = target && "mediaId" in target ? target.mediaId : null;
-  const uploadedBy = target && "uploadedBy" in target ? target.uploadedBy : null;
+  const mediaId = typeof target === "object" && "mediaId" in target ? target.mediaId : null;
+  const uploadedBy =
+    typeof target === "object" && "uploadedBy" in target ? target.uploadedBy : null;
 
   const gone = await tx<MediaKeys[]>`
     with gone as (
@@ -145,15 +147,14 @@ export async function removeMedia(
  */
 export async function dropKeys(log: FastifyBaseLogger, left: Leftovers): Promise<void> {
   if (!storageConfigured()) return;
-  try {
-    // The aborts first: a `DELETE` on a key that a multipart is still writing
-    // to leaves the parts behind, so releasing the upload is the half that
-    // cannot be skipped.
-    if (left.uploads.length > 0) await abortUploads(left.uploads);
-    if (left.keys.length > 0) await deleteObjects(left.keys);
-  } catch (error) {
+  const said = (error: unknown) =>
     log.warn({ err: error, ...left }, "media records are gone but their objects are not");
-  }
+  // The aborts first: a `DELETE` on a key that a multipart is still writing to
+  // leaves the parts behind. First, but never instead of — each half answers
+  // for itself, or one upload the bucket refuses to release would keep every
+  // object of a deleted memory in it.
+  if (left.uploads.length > 0) await abortUploads(left.uploads).catch(said);
+  if (left.keys.length > 0) await deleteObjects(left.keys).catch(said);
 }
 
 /**

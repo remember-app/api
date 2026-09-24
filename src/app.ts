@@ -57,8 +57,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // After memoriesPlugin, not merely after authPlugin: these mount
   // app.requireMembership, which that one decorates.
   memberRoutes(app);
-  // «Удалить воспоминание» целиком, отдельным файлом: он снимает не поля
-  // строки, а всё, что на ней висит, — и медиа, и ролики, и хранилище.
   memoryRemovalRoutes(app);
   uploadRoutes(app);
   galleryRoutes(app);
