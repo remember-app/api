@@ -116,6 +116,11 @@ async function fill(memoryId: string, organizerId: string, contributorId: string
   const brought = await frame(contributorId, "ready", 500);
   const uploading = await frame(contributorId, "pending_upload", 700);
 
+  // The face of the memory, which most of them have (migration 110): the frame
+  // it points at is deleted by the same statement that updates the counters on
+  // this very row, and `ON DELETE SET NULL` writes to it a third time.
+  await sql`update memories set cover_media_id = ${kept} where id = ${memoryId}`;
+
   // The tallies as the upload path would have left them, so a deletion that
   // forgets them is visible as a number that never comes back down.
   for (const [who, bytes] of [
@@ -223,16 +228,15 @@ const under = async (memoryId: string) => {
  * join while the rows sat there for ever.
  */
 const traces = async (mediaIds: string[], montageIds: string[]) => {
-  const media = mediaIds.map((id) => id.toString());
   const [row] = await sql<Record<string, number>[]>`
     select
       (select count(*)::int from montage_journal_entries where montage_id in ${sql(montageIds)}) as journal,
       (select count(*)::int from montage_stages where montage_id in ${sql(montageIds)}) as stages,
       (select count(*)::int from montage_viewers where montage_id in ${sql(montageIds)}) as viewers,
       (select count(*)::int from montage_frames where montage_id in ${sql(montageIds)}) as layout,
-      (select count(*)::int from jobs where ref in ${sql([...media, ...montageIds])}) as jobs,
-      (select count(*)::int from media_speech where media_id in ${sql(media)}) as speech,
-      (select count(*)::int from media_understandings where media_id in ${sql(media)}) as described
+      (select count(*)::int from jobs where ref in ${sql([...mediaIds, ...montageIds])}) as jobs,
+      (select count(*)::int from media_speech where media_id in ${sql(mediaIds)}) as speech,
+      (select count(*)::int from media_understandings where media_id in ${sql(mediaIds)}) as described
   `;
   if (!row) throw new Error("a count of one memory's traces answered no row");
   return row;
@@ -389,8 +393,7 @@ test("only the organizer may delete: everybody else is refused and the memory st
   }
 
   // Everything is where it was: four refusals moved nothing.
-  expect((await under(memory.id)).memories).toBe(1);
-  expect((await under(memory.id)).media).toBe(3);
+  expect(await under(memory.id)).toMatchObject({ memories: 1, media: 3 });
   expect((await gallery(app, contributor.token, memory.id)).statusCode).toBe(200);
 
   await app.close();
@@ -409,8 +412,7 @@ test("the objects are named for the bucket, and a bucket that refuses leaves the
     union all select preview_key from media_items where memory_id = ${memory.id}
     union all select video_key from montages where memory_id = ${memory.id}
     union all select poster_key from montages where memory_id = ${memory.id}
-    union all select object_key from music_uploads
-      where memory_id = ${memory.id} and status = 'ready'
+    union all select object_key from music_uploads where memory_id = ${memory.id}
   `;
 
   // Nothing listens there, so every request is refused at once — the same way
@@ -427,9 +429,15 @@ test("the objects are named for the bucket, and a bucket that refuses leaves the
   // The rows are gone whatever the bucket answered — a deletion that reported a
   // failure would say it had not happened when it had.
   expect((await under(memory.id)).memories).toBe(0);
-  const logged = lines
+  const complaints = lines
     .map((line) => JSON.parse(line) as { msg?: string; keys?: string[]; uploads?: unknown[] })
-    .findLast((line) => line.msg === "media records are gone but their objects are not");
+    .filter((line) => line.msg === "media records are gone but their objects are not");
+  // Two lines and not one: the unfinished uploads and the objects are released
+  // by different calls, and a bucket that refuses the first still has to be
+  // asked for the second — otherwise one stuck upload keeps every file of a
+  // deleted memory in the bucket for ever.
+  expect(complaints).toHaveLength(2);
+  const logged = complaints.at(-1);
   // Every file of the memory is in that line: the originals and both
   // derivatives of each frame, the video, its cover and the track.
   expect(new Set(logged?.keys)).toEqual(new Set(keys.map((row) => row.key)));

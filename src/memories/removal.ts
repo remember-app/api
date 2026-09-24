@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
-import { dropKeys, type Leftovers, removeMedia } from "../media/gallery.ts";
+import { dropKeys, removeMedia } from "../media/gallery.ts";
 
 /**
  * «Удалить воспоминание» — the one act that takes a whole memory down (doc-01,
@@ -26,13 +26,12 @@ export function memoryRemovalRoutes(app: FastifyInstance) {
       // a memory is deleted by the one person who cannot leave it (doc-01).
       if (role !== "organizer") return reply.code(403).send({ error: "forbidden" });
 
-      const left = await sql.begin(async (tx): Promise<Leftovers> => {
+      const left = await sql.begin(async (tx) => {
         // Everything anybody brought here, through the one statement a single
-        // frame and a departure also go through: the rows, the uploaders'
-        // tallies, the jobs queued about them, and what the worker wrote down
-        // about each frame. The memory's own counters move with it and are
-        // gone a moment later.
-        const media = await removeMedia(tx, memory.id);
+        // frame and a departure also go through. The memory's own counters are
+        // moved for nothing on the way — the row carrying them is gone a
+        // moment later — and a branch to skip that would cost more than it.
+        const media = await removeMedia(tx, memory.id, "everything");
 
         // The assembled videos. Deleted by hand and not by the cascade below
         // only because the cascade cannot hand back what to take out of the
@@ -54,9 +53,9 @@ export function memoryRemovalRoutes(app: FastifyInstance) {
         `;
 
         // Свои треки организатора. Счётчиков они не двигали (`music.ts`), так
-        // что от них остаётся ровно то, что лежит в хранилище: объект у
-        // загруженного и недоделанная multipart-загрузка у остальных — ровно
-        // то же деление, что у медиа.
+        // что от них остаётся ровно то, что лежит в хранилище: ключ и, у
+        // недокачанного, незакрытая multipart-загрузка — ровно то же деление,
+        // что у медиа.
         const music = await tx<{ object_key: string; status: string; upload_id: string | null }[]>`
           delete from music_uploads where memory_id = ${memory.id}
           returning object_key, status, upload_id
@@ -68,7 +67,7 @@ export function memoryRemovalRoutes(app: FastifyInstance) {
           keys: [
             ...media.keys,
             ...montages.flatMap((row) => [row.video_key, row.poster_key]),
-            ...music.flatMap((row) => (row.status === "ready" ? [row.object_key] : [])),
+            ...music.map((row) => row.object_key),
           ].filter((key): key is string => key !== null),
           uploads: [
             ...media.uploads,

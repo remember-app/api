@@ -201,7 +201,7 @@ export function musicRoutes(app: FastifyInstance) {
   // outside `/memories/:memoryId` — the library is one shelf for the whole
   // product, the same five for everyone, so there is no membership to check and
   // no role to weigh. The worker lays the files out under `tracks/<id>.mp3`
-  // (`python worker.py tracks`); signing a link to one is all of this route.
+  // (`python -m montage tracks`); signing a link to one is all of this route.
   app.get<{ Params: { trackId: string } }>(
     "/music/tracks/:trackId",
     { preHandler: [app.authenticate] },
