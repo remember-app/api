@@ -165,7 +165,7 @@ export function montageRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       if (role !== "organizer") return reply.code(403).send(forbidden);
       // «Not a uuid» is «no such montage», the house rule of everything behind
-      // this check (docs/montages.md, «404 один на всех»), and not a params
+      // this check (docs/auth.md, «404 один на всех»), and not a params
       // schema for the reason the media routes give: a schema answers before the
       // membership check has run, from outside the memory.
       const { montageId } = request.params;
@@ -186,7 +186,7 @@ export function montageRoutes(app: FastifyInstance) {
         // that is a whole queue away — and until then the card on the feed
         // would paint the old red stage under a video that is merely waiting,
         // and the journal of a `queued` montage is empty by contract
-        // (docs/montages.md, «Журнал монтажа»). Deleted rather than reset to
+        // (docs/journal.md, «Журнал монтажа»). Deleted rather than reset to
         // `pending`, which is what the worker does on its own arrival: no rows
         // at all is «не взяли ещё» (`stagesFor`), and that is exactly what this
         // row now is.

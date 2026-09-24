@@ -821,7 +821,10 @@ test("gmail's dots and googlemail.com are one mailbox for the limiter", async ()
     );
   } finally {
     setEnv("EMAIL_LOGIN_RATE_MAX", previous);
-    await sql`delete from users where email like ${"task05-dots-%"}`;
+    // `%` where the dot goes: two of the six spellings above are the dotted
+    // ones, and a pattern without it leaves them behind on every run — which is
+    // how a test file ends up seeding somebody's live database.
+    await sql`delete from users where email like ${"task%05-dots-%"}`;
     await app.close();
   }
 });
