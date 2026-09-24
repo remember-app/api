@@ -13,6 +13,11 @@ import { sql } from "../db.ts";
  * читает приложение, сверяет с `golden/responses_*.json` (или перезаписывает, если
  * позвать с JOURNAL_RECORD_RESPONSES=1).
  *
+ * Живой сеанс ведёт базу так же, как воркер (`../montage/journal.py`): `begin` заводит все
+ * пять этапов разом, в ожидании и с оценкой времени, до первой записи; дальше этапы только
+ * меняются (`start`, `progress`, `finish`) и дописываются записи. Этап, которого нет в базе,
+ * тест не «создаёт» — он такой шаг сделать не может (см. `worker` ниже).
+ *
  * Хранилища нет, как и в journal.test.ts: ссылки подписываются локально.
  * MONTAGE_VIEWER_WINDOW_SECONDS раздут, чтобы «кто смотрит» не зависело от того,
  * насколько загружена машина: записанные ответы обязаны быть одними и теми же.
@@ -105,6 +110,33 @@ const iso = (stamp: string | null) => (stamp === null ? null : new Date(stamp).t
 // Съёмка файлов — от произвольной, но одной и той же отправной точки.
 const shotBase = Date.UTC(2025, 11, 31, 18);
 const shotAt = (seconds: number) => new Date(shotBase + seconds * 1000).toISOString();
+
+/**
+ * Копия ручки оценки воркера `journal.ESTIMATE`: секунд на файл материала и на секунду
+ * заказанного ролика. Снимок оценку начала сборки не хранит (закрытый этап стоит с нулём),
+ * а `begin` пишет её первой, — поэтому она здесь копией, как и сами снимки (README, «Снимки —
+ * копии»): воркер подстроил числа — обновить их тут и перезаписать ответы.
+ */
+const ESTIMATE: Record<string, [number, number]> = {
+  screening: [1.5, 0],
+  understanding: [0.8, 0],
+  directing: [0.5, 0],
+  rhythm: [0.2, 0.1],
+  assembly: [0, 1.4],
+};
+/** Округление Python (`round`): половина — к чётному; `Math.round` дало бы на «6,5» семь вместо шести. */
+const roundLikePython = (x: number) => {
+  const floor = Math.floor(x);
+  const rest = x - floor;
+  return rest < 0.5 || (rest === 0.5 && floor % 2 === 0) ? floor : floor + 1;
+};
+/** Оценка этапа, которую `journal.begin` ставит в самом начале сборки. */
+const beginEstimate = (snap: Snapshot, stage: string) => {
+  const [perFile, perSecond] = ESTIMATE[stage] ?? [0, 0];
+  return roundLikePython(
+    perFile * snap.files.length + perSecond * Number(snap.montage.params.target_seconds),
+  );
+};
 
 // ---------------------------------------------------------------- ответы api
 
@@ -280,6 +312,92 @@ async function stand(app: App, snap: Snapshot) {
       on conflict (montage_id, stage) do update set ${sql(fields)}
     `;
   };
+  /**
+   * Этапы, как их пишет воркер (`journal.py`). `begin` заводит все пять строк разом; `start`,
+   * `progress` и `finish` только `UPDATE`-ят — строки, которой нет, они не создают, как и
+   * воркер. Каждый шаг отдаёт строку такой, какой она легла в базу.
+   */
+  const worker = (montageId: string) => {
+    type Row = Omit<SnapStage, "started_at" | "finished_at" | "updated_at"> & {
+      started_at: Date | null;
+      finished_at: Date | null;
+      updated_at: Date;
+    };
+    const columns = sql`stage, state, started_at, finished_at, eta_seconds, done_count, total_count, outcome, updated_at`;
+    const said = (rows: Row[], stage: string): SnapStage => {
+      const [row] = rows;
+      if (!row) throw new Error(`воркер меняет этап, которого нет в базе: ${stage}`);
+      return {
+        ...row,
+        started_at: row.started_at?.toISOString() ?? null,
+        finished_at: row.finished_at?.toISOString() ?? null,
+        updated_at: row.updated_at.toISOString(),
+      };
+    };
+    return {
+      /** До первого файла: пять этапов в ожидании, у каждого — оценка от числа файлов и длины ролика. */
+      begin: async (moment: Date) => {
+        const rows: SnapStage[] = [];
+        for (const { stage } of snap.stages) {
+          const written = await sql<Row[]>`
+            insert into montage_stages (montage_id, stage, eta_seconds, updated_at)
+            values (${montageId}, ${stage}, ${beginEstimate(snap, stage)}, ${moment})
+            on conflict (montage_id, stage) do update
+              set state = 'pending', started_at = null, finished_at = null,
+                  eta_seconds = excluded.eta_seconds, done_count = 0, total_count = null,
+                  outcome = '{}', updated_at = excluded.updated_at
+            returning ${columns}
+          `;
+          rows.push(said(written, stage));
+        }
+        return rows;
+      },
+      /** Этап пошёл: `running`, начало и сколько считать. Оценку не трогает — она с `begin`. */
+      start: async (row: SnapStage) =>
+        said(
+          await sql<Row[]>`
+            update montage_stages
+               set state = 'running', started_at = ${at(row.started_at)}, finished_at = null,
+                   total_count = coalesce(${row.total_count}, total_count),
+                   updated_at = ${at(row.started_at)}
+             where montage_id = ${montageId} and stage = ${row.stage}
+            returning ${columns}
+          `,
+          row.stage,
+        ),
+      /** «N из M» и пересчёт оценки по факту: потрачено на сделанное, умноженное на оставшееся. */
+      progress: async (row: SnapStage, done: number, moment: Date) =>
+        said(
+          await sql<Row[]>`
+            update montage_stages
+               set done_count = ${done}::int,
+                   eta_seconds = case
+                     when ${done}::int > 0 and started_at is not null and total_count >= ${done}::int
+                     then greatest(round(extract(epoch from ${moment}::timestamptz - started_at)
+                                         / ${done}::int * (total_count - ${done}::int)), 0)
+                     else eta_seconds end,
+                   updated_at = ${moment}
+             where montage_id = ${montageId} and stage = ${row.stage}
+            returning ${columns}
+          `,
+          row.stage,
+        ),
+      /** Этап кончился, итог — из снимка: он и есть то, что воркер записал. */
+      finish: async (row: SnapStage) =>
+        said(
+          await sql<Row[]>`
+            update montage_stages
+               set state = ${row.state}, finished_at = ${at(row.finished_at)},
+                   eta_seconds = ${row.eta_seconds}, done_count = ${row.done_count},
+                   outcome = ${sql.json(row.outcome as Parameters<typeof sql.json>[0])},
+                   updated_at = ${at(row.updated_at)}
+             where montage_id = ${montageId} and stage = ${row.stage}
+            returning ${columns}
+          `,
+          row.stage,
+        ),
+    };
+  };
   const putEntries = async (montageId: string, entries: SnapEntry[]) => {
     for (const e of entries) {
       const [row] = await sql<{ id: string }[]>`
@@ -434,6 +552,7 @@ async function stand(app: App, snap: Snapshot) {
     montage,
     ordered,
     putStage,
+    worker,
     putEntries,
     putLayout,
     finish,
@@ -552,26 +671,11 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
     let cursor = 0;
     let layoutWritten = false;
     let poll = 0;
-    const model = new Map<string, Pick<SnapStage, "state" | "done_count" | "eta_seconds">>();
-    const running = (row: SnapStage, done: number) => {
-      const over = {
-        state: "running",
-        finished_at: null,
-        // Оценка выдумана (две секунды на кадр); настоящие только итоговые строки.
-        eta_seconds: 2 * Math.max((row.total_count ?? 0) - done, 0),
-        done_count: done,
-        outcome: sql.json({}),
-      };
-      model.set(row.stage, { state: "running", done_count: done, eta_seconds: over.eta_seconds });
-      return s.putStage(id, row, over);
-    };
-    const done = (row: SnapStage) => {
-      model.set(row.stage, {
-        state: row.state,
-        done_count: row.done_count,
-        eta_seconds: row.eta_seconds,
-      });
-      return s.putStage(id, row);
+    // Строки этапов такими, какими воркер их оставил на этот миг (`worker` отдаёт их из базы).
+    const w = s.worker(id);
+    const model = new Map<string, SnapStage>();
+    const track = (rows: SnapStage | SnapStage[]) => {
+      for (const row of [rows].flat()) model.set(row.stage, row);
     };
 
     /** Опрос «что легло после курсора» — и вперёд, пока сказано, что есть ещё. */
@@ -590,13 +694,14 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
         expect(body.has_more).toBe(seen.length < written.length);
 
         expect(body.montage).toEqual({ id, status: "processing" });
-        // Этапы — по порядку пайплайна, с тем, что легло в записи на этот миг.
-        expect(body.stages.map((st) => st.stage)).toEqual(
-          snap.stages.map((st) => st.stage).filter((st) => model.has(st)),
+        // Этапы есть всегда и все пять, в порядке пайплайна: строка каждого — такая, какой её
+        // оставил воркер, со счётчиками по записям, что легли на этот миг.
+        expect(body.stages).toEqual(
+          snap.stages.map(({ stage }) => ({
+            ...model.get(stage),
+            ...countersOf(stage, written),
+          })),
         );
-        for (const st of body.stages) {
-          expect(st).toMatchObject({ ...model.get(st.stage), ...countersOf(st.stage, written) });
-        }
         expect(body.viewers.map((v) => v.id)).toContain(people.organizer.user.id);
         expectFiles(s, snap, body, layoutWritten);
         if (!body.has_more) break;
@@ -605,30 +710,59 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
       expect(seen.map((e) => saidByApi(e, s.label))).toEqual(written.map(saidBySnapshot));
     };
 
-    // Экран открыли раньше первой записи: пусто, курсор — ноль.
+    // Воркер взял ролик и в самом начале, до первого скачанного файла, завёл все пять этапов
+    // в ожидании; время — та же секунда, с какой начинается первый этап.
+    const [firstStage] = snap.stages;
+    if (!firstStage) throw new Error("в снимке нет этапов");
+    track(await w.begin(at(firstStage.started_at) as Date));
+
+    // Экран открыли раньше первой записи: записей нет, курсор — ноль, а этапы уже стоят —
+    // все пять в ожидании, с оценкой времени, которую поставил `begin`.
     const first = await ask<Journal>("live_first_open_empty", "organizer", path, { limit: 4 });
     expect(first.body).toMatchObject({
-      ...bare("processing", id),
+      montage: { id, status: "processing" },
+      entries: [],
+      has_more: false,
+      files: [],
       viewers: [{ id: people.organizer.user.id }],
     });
+    expect(first.body.stages).toEqual(
+      snap.stages.map(({ stage }) => ({
+        stage,
+        state: "pending",
+        started_at: null,
+        finished_at: null,
+        eta_seconds: beginEstimate(snap, stage),
+        done_count: 0,
+        total_count: null,
+        outcome: {},
+        updated_at: iso(firstStage.started_at),
+        taken_count: 0,
+        skipped_count: 0,
+        thought_count: 0,
+      })),
+    );
 
     for (const row of snap.stages) {
       const mine = snap.entries.filter((e) => e.stage === row.stage);
-      await running(row, 0);
-      if (row.stage === "rhythm") {
+      if (row.stage === "assembly") {
+        // Раскладку воркер пишет между ритмом и склейкой; журнал строит места по ней.
         await s.putLayout(id);
         layoutWritten = true;
       }
+      track(await w.start(row));
+      // У этапа без записей глазу нечем двигаться, кроме самой строки: опрос — сразу за началом.
+      if (mine.length === 0) await catchUp();
       for (const [i, chunk] of chunks(mine, 5).entries()) {
         await s.putEntries(id, chunk);
         written.push(...chunk);
-        await running(
-          row,
-          Math.min(
-            written.filter((e) => e.stage === row.stage).length,
-            row.total_count ?? Infinity,
-          ),
-        );
+        const last = chunk.at(-1);
+        if (row.stage === "screening" && last?.media) {
+          // Отсев двигает счётчик по файлу — и после каждой записи о нём: файлов раньше нашего
+          // по порядку съёмки уже просмотрено столько, какой он по счёту.
+          const position = snap.files.find((f) => f.label === last.media)?.position ?? 0;
+          track(await w.progress(row, position, new Date(last.created_at)));
+        }
         await catchUp();
 
         if (row.stage === "understanding" && i === 0) {
@@ -671,7 +805,15 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
           ]);
         }
       }
-      await done(row);
+      if (row.stage === "assembly") {
+        // Склейка двигает счётчик по готовому куску; на середине пути — опрос.
+        const half = Math.floor((row.total_count ?? 0) / 2);
+        const span = Date.parse(row.finished_at ?? "") - Date.parse(row.started_at ?? "");
+        const moment = Date.parse(row.started_at ?? "") + (span * half) / (row.total_count || 1);
+        track(await w.progress(row, half, new Date(moment)));
+        await catchUp();
+      }
+      track(await w.finish(row));
       await catchUp();
     }
 
@@ -777,7 +919,7 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
     // Собрался до склейки и упал на ней.
     const last = snap.stages.at(-1);
     if (!last) throw new Error("в снимке нет этапов");
-    await s.putStage(id, last, { state: "failed", finished_at: null, eta_seconds: null });
+    await s.putStage(id, last, { state: "failed", eta_seconds: null });
     await sql`update montages set status = 'failed', error_text = 'ffmpeg упал на склейке' where id = ${id}`;
     const retry = (who: "organizer" | "contributor") =>
       app.inject({
