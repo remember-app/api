@@ -211,9 +211,13 @@ export function journalRoutes(app: FastifyInstance) {
         `,
         // Порция от курсора. Лишняя запись сверх лимита — это и есть ответ на
         // «есть ли ещё»; считать всё подходящее вторым запросом значило бы
-        // платить за полный скан на каждом опросе.
+        // платить за полный скан на каждом опросе. Колонки названы, а не `*`:
+        // таблицу пишет воркер, а наружу уходит только контракт.
         sql<EntryRow[]>`
-          select * from montage_journal_entries
+          select id, stage, media_id, thought, decision, reason, series_size, story_part,
+            story_part_title, source_from_seconds, source_to_seconds, labels,
+            focus_x, focus_y, focus_w, focus_h, created_at
+          from montage_journal_entries
           where montage_id = ${montage.id}
             and (${after ?? null}::bigint is null or id > ${after ?? null}::bigint)
             and (${before ?? null}::bigint is null or id < ${before ?? null}::bigint)
