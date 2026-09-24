@@ -4,7 +4,7 @@ import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { dropKeys, removeMedia } from "../media/gallery.ts";
 import { handOverLabels } from "../media/labels.ts";
-import { type ContributionStatus, type MemberRole, type Memory, uuidPattern } from "./plugin.ts";
+import { type ContributionStatus, cards, type MemberRole, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
 
 /**
@@ -104,21 +104,6 @@ async function activeInvite(memoryId: string, role: InviteRole, createdBy: strin
   if (!raced[0]) throw new Error("invite mint lost a race with a revoke");
   return raced[0];
 }
-
-/**
- * The memory as its member sees it — the body `POST /memories` answers with,
- * so that accepting an invite lands the client on the same shape it already
- * knows how to open.
- */
-const memoryFor = async (memoryId: string, userId: string) => {
-  const [row] = await sql<(Memory & { role: MemberRole })[]>`
-    select m.*, mm.role
-    from memory_members mm
-    join memories m on m.id = mm.memory_id
-    where mm.memory_id = ${memoryId} and mm.user_id = ${userId}
-  `;
-  return row;
-};
 
 /**
  * Getting into a memory and out of one — by username, by link and removal —
@@ -334,7 +319,12 @@ export function memberRoutes(app: FastifyInstance) {
         on conflict (memory_id, user_id) do nothing
       `;
       // No push: this person acted themselves, they know where they are.
-      return memoryFor(invite.memory_id, request.user.id);
+      // Answered with the card the listing holds, so that accepting an invite
+      // lands the client on the shape it already knows how to open — tail of
+      // frames, counters and cover included. Gone from the list by now means
+      // they were shown out between the two statements: no such memory.
+      const [card] = await cards(request.user.id, invite.memory_id);
+      return card ?? reply.code(404).send(notFound);
     },
   );
 

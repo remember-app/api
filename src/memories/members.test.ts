@@ -299,9 +299,22 @@ test("accepting a link makes a member once, and says nothing about a token it do
 
   const joined = await accept(app, guest.token, link.token);
   expect(joined.statusCode).toBe(200);
-  // The body is what `POST /memories` answers with, so the app opens the
-  // memory it was deep-linked into without a second call.
-  expect(joined.json()).toMatchObject({ id: created.id, title: created.title, role: "viewer" });
+  // The body is the card the listing holds — field for field, tail of frames,
+  // counters and cover included — so the app opens the memory it was
+  // deep-linked into without a second call. A viewer joins a roster of one
+  // organizer and is counted in neither number.
+  const listed = await app.inject(as(guest.token, { method: "GET", url: "/memories" }));
+  expect(joined.json()).toEqual(listed.json()[0]);
+  expect(joined.json()).toMatchObject({
+    id: created.id,
+    title: created.title,
+    role: "viewer",
+    member_count: 1,
+    contributed_member_count: 0,
+    recent_thumbnail_urls: [],
+    cover_media_id: null,
+    cover_thumbnail_url: null,
+  });
   expect(await roleOf(created.id, guest.id)).toBe("viewer");
 
   // Following the same link twice is not an error and changes nothing.

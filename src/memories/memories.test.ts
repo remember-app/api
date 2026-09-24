@@ -534,13 +534,16 @@ test("the organizer edits the title and the window, under the rules creating hol
   expect(opened.json().event_end).toBeNull();
 
   // The refusals creating gives, given again: blank title and a bare date —
-  // and an empty body, which is not an edit at all.
+  // and a body that touches nothing, which is not an edit at all: empty, or
+  // holding only fields the route does not know (a misspelt name is the same
+  // silence as no name, and must not be answered 200).
   const refusals = await Promise.all([
     patch(app, token, memory.id, { title: "   " }),
     patch(app, token, memory.id, { event_start: "2026-09-04" }),
     patch(app, token, memory.id, {}),
+    patch(app, token, memory.id, { coverMediaId: randomUUID() }),
   ]);
-  expect(refusals.map((r) => r.statusCode)).toEqual([400, 400, 400]);
+  expect(refusals.map((r) => r.statusCode)).toEqual([400, 400, 400, 400]);
 
   // A backwards window is refused against the row as it will be, not against
   // what arrived: this end is before the start already stored.
@@ -711,6 +714,67 @@ test("deleting the frame that is the cover takes the cover off and leaves the me
   const wiped = await app.inject(as(token, { method: "DELETE", url: `/memories/${memory.id}` }));
   expect(wiped.statusCode).toBe(404);
   expect((await list(app, token)).json()).toHaveLength(1);
+
+  await app.close();
+});
+
+test("the cover goes with the person who brought it, whether they walk out or are shown out", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = (
+    await create(app, organizer.token, { title: title(), event_start: "2026-08-02T12:00:00Z" })
+  ).json();
+
+  // Two contributors, each with a finished frame, put in the way an invite
+  // would put them.
+  const brought: { token: string; userId: string; frameId: string }[] = [];
+  for (const name of ["leaves", "excluded"]) {
+    const member = await signIn(app, email());
+    await sql`
+      insert into memory_members (memory_id, user_id, role, invited_by)
+      values (${memory.id}, ${member.user.id}, 'contributor', ${organizer.user.id})
+    `;
+    const [frame] = await ready(
+      memory.id,
+      member.user.id,
+      `${titleTag}-${randomUUID()}-${name}.jpg`,
+      "2026-08-02T13:00:00Z",
+    );
+    if (!frame) throw new Error("no media row");
+    brought.push({ token: member.token, userId: member.user.id, frameId: frame.id });
+  }
+  const [walker, shown] = brought;
+  if (!walker || !shown) throw new Error("no members");
+
+  const coverOf = async () => (await list(app, organizer.token)).json()[0].cover_media_id;
+  const depart = (token: string, userId: string) =>
+    app.inject(as(token, { method: "DELETE", url: `/memories/${memory.id}/members/${userId}` }));
+
+  // The cover is the frame of somebody who then walks out: their material goes
+  // with them, and the cover with it — the same rule that holds for one deleted
+  // record, through the other path material leaves a memory by.
+  expect(
+    (await patch(app, organizer.token, memory.id, { cover_media_id: walker.frameId })).statusCode,
+  ).toBe(200);
+  expect(await coverOf()).toBe(walker.frameId);
+  expect((await depart(walker.token, walker.userId)).statusCode).toBe(200);
+  expect(await coverOf()).toBeNull();
+
+  // And shown out by the organizer, which is the same act on the same rows.
+  expect(
+    (await patch(app, organizer.token, memory.id, { cover_media_id: shown.frameId })).statusCode,
+  ).toBe(200);
+  expect(await coverOf()).toBe(shown.frameId);
+  expect((await depart(organizer.token, shown.userId)).statusCode).toBe(200);
+  const [card] = (await list(app, organizer.token)).json();
+  expect(card).toMatchObject({
+    id: memory.id,
+    cover_media_id: null,
+    cover_thumbnail_url: null,
+    role: "organizer",
+    member_count: 1,
+    recent_thumbnail_urls: [],
+  });
 
   await app.close();
 });
