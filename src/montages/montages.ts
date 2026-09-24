@@ -477,11 +477,11 @@ type StageProgress = Pick<StageRow, "stage" | "state"> & { montage_id: string };
  * ordered, for the same reason the journal names them: a client reading a
  * position rather than a name has a contract nobody wrote down.
  *
- * A stage the worker has laid no row for is `pending` rather than missing: it
- * writes them one at a time, as it reaches them, and five bars have to be five
- * whatever it has got round to. Nothing at all — not one row — is `null`: that
- * is a video the worker has not picked up yet, and a scale of five empty bars
- * would claim it is under way.
+ * The worker lays all five rows at once, `pending`, the moment it picks the
+ * video up — before its first file or journal entry — so a video has five rows
+ * or none. None is `null`: a video still queued, or refused before the worker
+ * got that far, and a scale of five empty bars would claim it is under way. A
+ * stage with no row reads `pending` all the same: the scale is five bars.
  */
 const stagesOf = (montageId: string, rows: StageProgress[]) => {
   const state = new Map(

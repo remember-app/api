@@ -188,9 +188,10 @@ export function journalRoutes(app: FastifyInstance) {
       // там дыра невозможна, экран листает журнал от «сейчас».
       const forward = after !== undefined;
       const [stages, rows, viewers] = await Promise.all([
-        // Пять строк на ролик, когда воркер до них дошёл. Счётчики «взял /
-        // мимо / мысли» api считает сам, по записям: воркер и так пишет каждую
-        // из них, а второй его счёт мог бы разойтись с первым.
+        // Пять строк на ролик: воркер заводит их разом, в `pending`, когда
+        // берёт ролик, а до того их нет вовсе. Счётчики «взял / мимо / мысли»
+        // api считает сам, по записям: воркер и так пишет каждую из них, а
+        // второй его счёт мог бы разойтись с первым.
         sql<StageRow[]>`
           select s.stage, s.state, s.started_at, s.finished_at, s.eta_seconds,
             s.done_count, s.total_count, s.outcome, s.updated_at,
@@ -306,7 +307,7 @@ export function journalRoutes(app: FastifyInstance) {
 
       return {
         montage,
-        // В порядке пайплайна, а не в том, в котором их завёл воркер: «этап 3
+        // В порядке пайплайна: запрос выше строки не упорядочивает, а «этап 3
         // из 5» на экране — это позиция в этом списке.
         stages: stages.sort(
           (a, b) => montageStages.indexOf(a.stage) - montageStages.indexOf(b.stage),
