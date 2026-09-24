@@ -209,7 +209,7 @@ test("список лейблов: общие — всем, личные — т�
 
   // Организатор: оба общих и свой личный. Сперва общие, внутри — по названию.
   // Рядом с каждым — что ему с этим лейблом можно: общий лейбл Анны он не
-  // заводил (`mine` false), но правит его как организатор.
+  // заводил (`mine` false), но правит его, как и любой участник.
   const mine = await labels(app, organizer.token, memory.id);
   expect(mine.statusCode).toBe(200);
   expect(mine.json()).toEqual([
@@ -218,10 +218,10 @@ test("список лейблов: общие — всем, личные — т�
     { ...card(favourites, "Любимые", 6, false), mine: true, media_count: 1 },
   ]);
 
-  // Анна: те же два общих и свой личный вместо чужого. Чужой общий лейбл она
-  // наполняет, но не правит — она не хозяйка и не организатор.
+  // Анна: те же два общих и свой личный вместо чужого. Чужой общий лейбл она и
+  // наполняет, и правит, хоть не хозяйка и не организатор.
   expect((await labels(app, anna.token, memory.id)).json()).toEqual([
-    { ...card(best, "Лучшее", 1, true), mine: false, can_edit: false, media_count: 2 },
+    { ...card(best, "Лучшее", 1, true), mine: false, media_count: 2 },
     { ...card(funny, "Смешное", 4, true), mine: true, media_count: 0 },
     { ...card(secret, "Секрет", 8, false), mine: true, media_count: 2 },
   ]);
@@ -446,16 +446,11 @@ test("пачка: положить, повторить, убрать — кад�
     await newLabel(app, organizer.token, memory.id, { title: "Лучшее", color: 1, shared: true })
   ).json().id;
 
-  // Кладёт Анна — чужую коробку она наполняет, но не правит. И чужой кадр в
-  // пачке её не смущает: лейбл прав не даёт и не отнимает.
+  // Кладёт Анна, в чужую коробку. И чужой кадр в пачке её не смущает: лейбл
+  // прав не даёт и не отнимает.
   const put = await fill(app, anna.token, memory.id, best, [early, middle]);
   expect(put.statusCode).toBe(200);
-  expect(put.json()).toEqual({
-    ...card(best, "Лучшее", 1, true),
-    mine: false,
-    can_edit: false,
-    media_count: 2,
-  });
+  expect(put.json()).toEqual({ ...card(best, "Лучшее", 1, true), mine: false, media_count: 2 });
 
   // Уже лежащий кадр в пачке — не ошибка и не дубль.
   expect((await fill(app, anna.token, memory.id, best, [middle, late])).json().media_count).toBe(3);
@@ -585,13 +580,12 @@ test("переименовать, перекрасить, удалить — и 
   await app.close();
 });
 
-test("права на общем лейбле: кто правит, кто кладёт, кто убирает (ВРЕМЕННО, decision-12)", async () => {
+test("права на общем лейбле: правит, кладёт и убирает любой участник, не только создатель", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   const anna = await member(app, memory.id, "contributor", organizer.user.id);
   const boris = await member(app, memory.id, "contributor", organizer.user.id);
-  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
 
   const hers = await frame(memory.id, anna.user.id, "2026-09-02T19:00:00+03:00");
   const his = await frame(memory.id, boris.user.id, "2026-09-02T20:00:00+03:00");
@@ -606,72 +600,69 @@ test("права на общем лейбле: кто правит, кто кл�
   const funny = created.json().id;
 
   // Что кому можно, сказано прямо в списке — тем же правилом, что отказывает
-  // маршрутам, чтобы экран не считал это сам.
-  const seen = async (token: string) => (await labels(app, token, memory.id)).json()[0];
-  expect(await seen(organizer.token)).toEqual({
-    ...card(funny, "Смешное", 4, true),
-    mine: false,
-    media_count: 1,
-  });
-  expect(await seen(boris.token)).toEqual({
-    ...card(funny, "Смешное", 4, true),
-    mine: false,
-    can_edit: false,
-    media_count: 1,
-  });
-  expect(await seen(viewer.token)).toEqual({
-    ...card(funny, "Смешное", 4, true),
-    mine: false,
-    can_edit: false,
-    can_add_media: false,
-    media_count: 1,
-  });
-
-  // Сосед-contributor чужой общий лейбл наполняет, но не правит и не удаляет.
-  expect((await editLabel(app, boris.token, memory.id, funny, { title: "Моё" })).statusCode).toBe(
-    403,
-  );
-  const refused = await dropLabel(app, boris.token, memory.id, funny);
-  expect(refused.statusCode).toBe(403);
-  expect(refused.body).toBe('{"error":"forbidden"}');
-  expect((await fill(app, boris.token, memory.id, funny, [his])).statusCode).toBe(200);
-
-  // Организатор правит и чужой общий: он в воспоминании за всё.
-  expect(
-    (await editLabel(app, organizer.token, memory.id, funny, { title: "Общее" })).statusCode,
-  ).toBe(200);
-
-  // Убирает тот, кто положил. Чужой кадр Борису не убрать, и пачка с ним
-  // отказывается целиком — половины не бывает.
-  expect((await take(app, boris.token, memory.id, funny, [hers])).statusCode).toBe(403);
-  expect((await take(app, boris.token, memory.id, funny, [his, hers])).statusCode).toBe(403);
-  expect(await links(funny)).toBe(2);
-  expect((await take(app, boris.token, memory.id, funny, [his])).statusCode).toBe(200);
-  expect(await links(funny)).toBe(1);
-
-  // А хозяйка лейбла и организатор убирают что угодно, кто бы ни положил.
-  await fill(app, boris.token, memory.id, funny, [his]);
-  expect((await take(app, anna.token, memory.id, funny, [his])).statusCode).toBe(200);
-  await fill(app, boris.token, memory.id, funny, [his]);
-  expect((await take(app, organizer.token, memory.id, funny, [his])).statusCode).toBe(200);
-
-  // Зритель на общем лейбле не пишет ничего — тем же «нельзя», каким ему
-  // отказывают остальные маршруты.
-  expect(
-    (await newLabel(app, viewer.token, memory.id, { title: "Общий", color: 1, shared: true }))
-      .statusCode,
-  ).toBe(403);
-  for (const answer of [
-    await fill(app, viewer.token, memory.id, funny, [hers]),
-    await take(app, viewer.token, memory.id, funny, [hers]),
-    await editLabel(app, viewer.token, memory.id, funny, { title: "Никак" }),
-    await dropLabel(app, viewer.token, memory.id, funny),
-  ]) {
-    expect(answer.statusCode).toBe(403);
-    expect(answer.body).toBe('{"error":"forbidden"}');
+  // маршрутам, чтобы экран не считал это сам. Лейбл Анны правят и наполняют
+  // все, хоть никто из них его не заводил.
+  for (const token of [organizer.token, boris.token]) {
+    expect((await labels(app, token, memory.id)).json()).toEqual([
+      { ...card(funny, "Смешное", 4, true), mine: false, media_count: 1 },
+    ]);
   }
 
-  // Свой личный он заводит и наполняет — это у зрителя есть.
+  // Борис не создатель и не организатор: кладёт свой кадр, вынимает положенный
+  // Анной, переименовывает.
+  expect((await fill(app, boris.token, memory.id, funny, [his])).statusCode).toBe(200);
+  expect((await take(app, boris.token, memory.id, funny, [hers])).statusCode).toBe(200);
+  const renamed = await editLabel(app, boris.token, memory.id, funny, { title: "Общее" });
+  expect(renamed.statusCode).toBe(200);
+  expect(renamed.json()).toEqual({ ...card(funny, "Общее", 4, true), mine: false, media_count: 1 });
+  expect(await shelf(app, anna.token, memory.id)).toEqual([
+    [hers, []],
+    [his, [funny]],
+  ]);
+  // Кто положил, записывается по-прежнему, хоть правило этого и не спрашивает.
+  const [link] = await sql<{ added_by: string | null }[]>`
+    select added_by from label_media where label_id = ${funny} and media_id = ${his}
+  `;
+  expect(link).toEqual({ added_by: boris.user.id });
+
+  // И удаляет чужую коробку тоже он.
+  expect((await dropLabel(app, boris.token, memory.id, funny)).statusCode).toBe(200);
+  expect(await stored(memory.id)).toEqual([]);
+
+  await app.close();
+});
+
+test("зритель: общий лейбл не заводит, личный заводит, чужой общий правит и наполняет", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const anna = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+
+  const hers = await frame(memory.id, anna.user.id, "2026-09-02T19:00:00+03:00");
+  const his = await frame(memory.id, organizer.user.id, "2026-09-02T20:00:00+03:00");
+
+  const funny = (
+    await newLabel(app, anna.token, memory.id, {
+      title: "Смешное",
+      color: 4,
+      shared: true,
+      media_ids: [hers],
+    })
+  ).json().id;
+
+  // Завести общий лейбл зритель не может — решение человека: «заводить не
+  // даём — у него только просмотр».
+  const refused = await newLabel(app, viewer.token, memory.id, {
+    title: "Общий",
+    color: 1,
+    shared: true,
+  });
+  expect(refused.statusCode).toBe(403);
+  expect(refused.body).toBe('{"error":"forbidden"}');
+  expect(await stored(memory.id)).toEqual([funny]);
+
+  // Свой личный заводит и наполняет.
   const own = await newLabel(app, viewer.token, memory.id, {
     title: "Моё",
     color: 2,
@@ -680,7 +671,29 @@ test("права на общем лейбле: кто правит, кто кл�
   });
   expect(own.statusCode).toBe(201);
   expect(own.json()).toEqual({ ...card(own.json().id, "Моё", 2, false), media_count: 1 });
-  expect((await take(app, viewer.token, memory.id, own.json().id, [hers])).statusCode).toBe(200);
+
+  // Чужой общий — наравне со всеми: список говорит «можно», и маршруты с ним
+  // согласны. Кладёт чужой кадр, вынимает положенный Анной, перекрашивает,
+  // удаляет.
+  expect((await labels(app, viewer.token, memory.id)).json()).toEqual([
+    { ...card(funny, "Смешное", 4, true), mine: false, media_count: 1 },
+    { ...card(own.json().id, "Моё", 2, false), media_count: 1 },
+  ]);
+  expect((await fill(app, viewer.token, memory.id, funny, [his])).statusCode).toBe(200);
+  expect((await take(app, viewer.token, memory.id, funny, [hers])).statusCode).toBe(200);
+  const recoloured = await editLabel(app, viewer.token, memory.id, funny, { color: 7 });
+  expect(recoloured.statusCode).toBe(200);
+  expect(recoloured.json()).toEqual({
+    ...card(funny, "Смешное", 7, true),
+    mine: false,
+    media_count: 1,
+  });
+  expect(await shelf(app, anna.token, memory.id)).toEqual([
+    [hers, []],
+    [his, [funny]],
+  ]);
+  expect((await dropLabel(app, viewer.token, memory.id, funny)).statusCode).toBe(200);
+  expect(await stored(memory.id)).toEqual([own.json().id]);
 
   await app.close();
 });
@@ -690,6 +703,8 @@ test("чужой личный лейбл на любую запись: «не н
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   const anna = await member(app, memory.id, "contributor", organizer.user.id);
+  const boris = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
   const hers = await frame(memory.id, anna.user.id, "2026-09-02T19:00:00+03:00");
 
   const secret = (
@@ -701,16 +716,19 @@ test("чужой личный лейбл на любую запись: «не н
     })
   ).json().id;
 
-  // Даже организатор его «не находит»: ни положить, ни убрать, ни
-  // переименовать, ни удалить — и ответ тот же, что у несуществующего.
-  for (const answer of [
-    await fill(app, organizer.token, memory.id, secret, [hers]),
-    await take(app, organizer.token, memory.id, secret, [hers]),
-    await editLabel(app, organizer.token, memory.id, secret, { title: "Моё" }),
-    await dropLabel(app, organizer.token, memory.id, secret),
-  ]) {
-    expect(answer.statusCode).toBe(404);
-    expect(answer.body).toBe('{"error":"not found"}');
+  // Никто, кроме хозяйки, его «не находит», организатор тоже: ни положить, ни
+  // убрать, ни переименовать, ни удалить — и ответ тот же, что у
+  // несуществующего.
+  for (const token of [organizer.token, boris.token, viewer.token]) {
+    for (const answer of [
+      await fill(app, token, memory.id, secret, [hers]),
+      await take(app, token, memory.id, secret, [hers]),
+      await editLabel(app, token, memory.id, secret, { title: "Моё" }),
+      await dropLabel(app, token, memory.id, secret),
+    ]) {
+      expect(answer.statusCode).toBe(404);
+      expect(answer.body).toBe('{"error":"not found"}');
+    }
   }
   expect(await links(secret)).toBe(1);
   expect(await stored(memory.id)).toEqual([secret]);
@@ -757,7 +775,7 @@ test("ушёл участник: личные лейблы уходят с ни�
   // Личный ушёл вместе с ней — из базы, а не только из чьего-то списка.
   expect(await stored(memory.id)).toEqual([shared]);
   expect(await links(personal)).toBe(0);
-  // Общий остался стоять, и хозяин ему теперь организатор: он его и правит.
+  // Общий остался стоять, и хозяин ему теперь организатор (`mine`).
   expect((await labels(app, organizer.token, memory.id)).json()).toEqual([
     { ...card(shared, "Смешное", 4, true), media_count: 1 },
   ]);

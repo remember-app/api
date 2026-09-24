@@ -29,7 +29,8 @@ import { memoryMaxFiles } from "./config.ts";
 /**
  * Строка списка. `mine` — «завёл ли его спрашивающий»; что ему при этом
  * **можно**, говорят `can_edit` и `can_add_media`, и говорит их правило прав, а
- * не звание владельца: общий лейбл правит и его создатель, и организатор.
+ * не звание владельца: общий лейбл правит любой участник, а не только тот, кто
+ * его завёл.
  */
 export type LabelListItem = {
   id: string;
@@ -84,25 +85,23 @@ export const visibleLabelIds = (memoryId: string, userId: string) => sql`
   )
 `;
 
-/** Что с лейблом делают: положить кадры, убрать кадры, править саму коробку. */
-type LabelWrite = "add" | "remove" | "edit";
+/**
+ * Что с лейблом делают: завести его — или писать в заведённый (положить и
+ * убрать кадры, переименовать, перекрасить, удалить: право на всё это одно).
+ */
+type LabelWrite = "create" | "change";
 
 /**
- * **ВРЕМЕННО, по decision-12** — ответа человека, кто что должен мочь с
- * лейблами, ещё нет, и до ответа действует это правило. Оно здесь целиком, в
- * одной функции: и все маршруты записи, и флаги `can_edit`/`can_add_media` в
- * списке спрашивают её. Придёт ответ — меняется она одна, а не шесть маршрутов
- * и экран следом.
+ * Кто что может с лейблом — правило целиком, решением человека (decision-12):
+ * «права на лейбл общие — могу изменять все, личные только человек» и про
+ * зрителя — «заводить не даём — у него только просмотр». Его спрашивают и все
+ * маршруты записи, и флаги `can_edit`/`can_add_media` в списке, чтобы экран не
+ * повторял правило у себя. Те же слова — в README, «Лейблы — как это устроено».
  *
- * Правило (те же слова — в README, «Лейблы — как это устроено»):
- * - чужой личный лейбл на любую запись — «не найдено», как будто его нет;
- * - зритель на общем лейбле не пишет ничего — тем же `403`, каким ему
- *   отказывают остальные маршруты;
- * - переименовывает, перекрашивает и удаляет общий лейбл его создатель и
- *   организатор;
- * - кладёт в общий лейбл любой, кому вообще можно добавлять материал;
- * - убирает кадр из общего лейбла создатель лейбла, организатор и тот, кто этот
- *   кадр туда положил (`added_by`).
+ * - личный лейбл — только хозяина; всем остальным, организатору тоже, его нет;
+ * - общий лейбл пишет любой участник, зритель тоже, кто бы его ни завёл и кто бы
+ *   ни положил в него кадр;
+ * - завести общий лейбл зритель не может, личный — может.
  *
  * Отвечает кодом отказа, а не словом: маршруту остаётся отдать его тем же
  * телом, каким это семейство отказывает всегда.
@@ -111,27 +110,11 @@ function labelDenial(
   write: LabelWrite,
   label: { owner_id: string; shared: boolean },
   caller: Caller,
-  addedBy: string | null = null,
 ): 403 | 404 | null {
-  // Личный лейбл — хозяина и больше ничей: он и правит, и наполняет, и убирает
-  // из него, кем бы в воспоминании ни стоял. Всем остальным его нет: `404`, а
-  // не `403`, потому что «нельзя» — это ответ о том, что он существует.
+  // Чужому личный лейбл — `404`, а не `403`: «нельзя» было бы ответом о том,
+  // что он существует.
   if (!label.shared) return label.owner_id === caller.id ? null : 404;
-
-  // Дальше только общие лейблы.
-  if (caller.role === "viewer") return 403;
-  const mine = label.owner_id === caller.id;
-  const organizer = caller.role === "organizer";
-  switch (write) {
-    // Кому можно приносить материал, тому можно и разложить его по общим
-    // коробкам — включая чужие кадры: лейбл прав не даёт и не отнимает (doc-13).
-    case "add":
-      return null;
-    case "edit":
-      return mine || organizer ? null : 403;
-    case "remove":
-      return mine || organizer || addedBy === caller.id ? null : 403;
-  }
+  return write === "create" && caller.role === "viewer" ? 403 : null;
 }
 
 /**
@@ -187,12 +170,15 @@ async function labelCards(
   // переписанное вторым разом на SQL оно разошлось бы с тем, по которому
   // отказывают маршруты. `owner_id` дальше списка не идёт — кто завёл общий
   // лейбл, экрану знать незачем, ему нужно «можно ли мне».
-  return rows.map(({ owner_id, ...label }) => ({
-    ...label,
-    mine: owner_id === caller.id,
-    can_edit: labelDenial("edit", { owner_id, shared: label.shared }, caller) === null,
-    can_add_media: labelDenial("add", { owner_id, shared: label.shared }, caller) === null,
-  }));
+  return rows.map(({ owner_id, ...label }) => {
+    const writable = labelDenial("change", { owner_id, shared: label.shared }, caller) === null;
+    return {
+      ...label,
+      mine: owner_id === caller.id,
+      can_edit: writable,
+      can_add_media: writable,
+    };
+  });
 }
 
 /** Тот же ответ, что и у списка, но об одном лейбле — им отвечает каждая запись. */
@@ -234,6 +220,9 @@ async function missingFrames(memoryId: string, ids: string[]): Promise<string[]>
  * Postgres — то есть ничто между проверкой и записью не может подсунуть сюда
  * кадр чужого воспоминания. Уже лежащий кадр не ошибка и не дубль: `on conflict
  * do nothing` — это «он уже там», а не «не вышло».
+ *
+ * `added_by` — записанный факт, кто положил кадр; правило прав его не
+ * спрашивает.
  */
 const putFrames = (
   // Тем же запросом и в одиночку, и внутри транзакции создания лейбла: у
@@ -375,9 +364,7 @@ export function labelRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       const caller = { id: request.user.id, role };
       const { title, color, shared } = request.body;
-      // Завести — то же право, что и положить: заводя коробку, человек её же и
-      // наполняет. Оттого зритель заводит только личные.
-      const denied = labelDenial("add", { owner_id: caller.id, shared }, caller);
+      const denied = labelDenial("create", { owner_id: caller.id, shared }, caller);
       if (denied) return deny(reply, denied);
 
       const ids = lower(request.body.media_ids);
@@ -417,7 +404,7 @@ export function labelRoutes(app: FastifyInstance) {
       const caller = { id: request.user.id, role };
       const label = await held(reply, memory.id, request.params.labelId);
       if (!label) return reply;
-      const denied = labelDenial("edit", label, caller);
+      const denied = labelDenial("change", label, caller);
       if (denied) return deny(reply, denied);
 
       const { title, color } = request.body;
@@ -442,7 +429,7 @@ export function labelRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       const label = await held(reply, memory.id, request.params.labelId);
       if (!label) return reply;
-      const denied = labelDenial("edit", label, { id: request.user.id, role });
+      const denied = labelDenial("change", label, { id: request.user.id, role });
       if (denied) return deny(reply, denied);
 
       await sql`delete from labels where id = ${label.id}`;
@@ -460,7 +447,7 @@ export function labelRoutes(app: FastifyInstance) {
       const caller = { id: request.user.id, role };
       const label = await held(reply, memory.id, request.params.labelId);
       if (!label) return reply;
-      const denied = labelDenial("add", label, caller);
+      const denied = labelDenial("change", label, caller);
       if (denied) return deny(reply, denied);
 
       const ids = lower(request.body.media_ids);
@@ -479,7 +466,8 @@ export function labelRoutes(app: FastifyInstance) {
 
   // Убрать кадры из коробки — повторный тап по той же строке листа. Сами кадры
   // остаются в галерее на своих местах: убирают из лейбла, а не из
-  // воспоминания.
+  // воспоминания. Кадр, которого в коробке и не было, — не ошибка: убирать
+  // нечего, как не ошибка и положить уже лежащее.
   app.delete<{ Params: { memoryId: string; labelId: string }; Body: { media_ids: string[] } }>(
     "/memories/:memoryId/labels/:labelId/media",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: mediaBody } },
@@ -488,26 +476,10 @@ export function labelRoutes(app: FastifyInstance) {
       const caller = { id: request.user.id, role };
       const label = await held(reply, memory.id, request.params.labelId);
       if (!label) return reply;
-      // Сперва про коробку целиком: чужой личный лейбл — «не найдено», зритель
-      // на общем — «нельзя». `added_by` здесь свой, то есть спрошен самый мягкий
-      // случай — если человеку нельзя убрать даже то, что он сам положил,
-      // смотреть на связи уже незачем.
-      const denied = labelDenial("remove", label, caller, caller.id);
+      const denied = labelDenial("change", label, caller);
       if (denied) return deny(reply, denied);
 
       const ids = lower(request.body.media_ids);
-      const links = await sql<{ added_by: string | null }[]>`
-        select added_by from label_media
-        where label_id = ${label.id} and media_id in ${sql(ids)}
-      `;
-      // Отказ всей пачке, а не тихо вынутая половина: человек отметил кадры и
-      // должен услышать «нельзя», а не увидеть, что часть осталась лежать.
-      // Кадра, которого в коробке и не было, среди связей нет — убирать нечего,
-      // и это не ошибка, как не ошибка и положить уже лежащее.
-      if (links.some((link) => labelDenial("remove", label, caller, link.added_by) !== null)) {
-        return deny(reply, 403);
-      }
-
       await sql`
         delete from label_media where label_id = ${label.id} and media_id in ${sql(ids)}
       `;
