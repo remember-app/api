@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import type { Language } from "../auth/session.ts";
-import { sql } from "../db.ts";
 import { materialLeft, type musicTracks } from "./montages.ts";
 
 /**
@@ -214,23 +213,17 @@ export function montageTemplateRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       if (role !== "organizer") return reply.code(403).send({ error: "forbidden" });
 
-      // Предел считается по всему готовому материалу: вычеркнутых кадров на
-      // этом шаге ещё нет, и приложение пережмёт длину само, когда они
-      // появятся (итог заказа).
-      const { min_seconds, max_seconds } = await materialLeft(memory.id);
-      // Те, с кого спрашивают кадры: организатор и участники. Зрителей не
-      // звали ничего приносить, поэтому в рассказе их нет — тот же счёт, что у
-      // карточки на главном экране (`memories/plugin.ts`).
-      const [counted] = await sql<{ people: number }[]>`
-        select count(*)::int as people from memory_members
-        where memory_id = ${memory.id} and role <> 'viewer'
-      `;
+      // Предел и «от N человек» — по всему готовому материалу: вычеркнутых
+      // кадров на этом шаге ещё нет, и итог заказа пересчитает оба по тому, что
+      // останется. Люди — те, чьи кадры в материале, тем же счётом, что `people`
+      // на итоге, иначе два соседних экрана назовут разные числа.
+      const { min_seconds, max_seconds, people } = await materialLeft(memory.id);
 
       const language = request.user.language;
       const facts = {
         title: memory.title,
         dates: spellDates(language, memory.event_start, memory.event_end),
-        people: spellPeople(language, counted?.people ?? 0),
+        people: spellPeople(language, people),
       };
       return templates.map(({ id, seconds, orientation, tracks, story, note }) => ({
         id,
