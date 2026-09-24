@@ -10,6 +10,7 @@ import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
 import { pushRoutes } from "./memories/push.ts";
+import { memoryRemovalRoutes } from "./memories/removal.ts";
 import { journalRoutes } from "./montages/journal.ts";
 import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
@@ -56,6 +57,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // After memoriesPlugin, not merely after authPlugin: these mount
   // app.requireMembership, which that one decorates.
   memberRoutes(app);
+  // «Удалить воспоминание» целиком, отдельным файлом: он снимает не поля
+  // строки, а всё, что на ней висит, — и медиа, и ролики, и хранилище.
+  memoryRemovalRoutes(app);
   uploadRoutes(app);
   galleryRoutes(app);
   // «Сведения о кадре» — one frame in words, beside the gallery that lists it

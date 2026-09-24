@@ -705,14 +705,13 @@ test("deleting the frame that is the cover takes the cover off and leaves the me
     recent_thumbnail_urls: [],
   });
 
-  // And the two things doc-01 keeps out of the MVP are still out of it: the
-  // organizer cannot walk out of their own memory, and no route deletes one.
+  // And what doc-01 still keeps out of the MVP is out of it: the organizer
+  // cannot walk out of their own memory. Deleting it whole they may — that is
+  // the one way out they have, and it is `src/memories/removal.test.ts`.
   const abdicate = await app.inject(
     as(token, { method: "DELETE", url: `/memories/${memory.id}/members/${user.id}` }),
   );
   expect(abdicate.statusCode).toBe(409);
-  const wiped = await app.inject(as(token, { method: "DELETE", url: `/memories/${memory.id}` }));
-  expect(wiped.statusCode).toBe(404);
   expect((await list(app, token)).json()).toHaveLength(1);
 
   await app.close();
