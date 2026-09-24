@@ -701,14 +701,6 @@ test("the length a montage may be ordered at is cut from the memory's own materi
     max_seconds: 35,
   });
 
-  // Nothing measured at all is a ceiling of nothing — refused as too little
-  // material, by the order and the summary alike, rather than written as 0.
-  const unmeasured = await createMemory(app, organizer.token);
-  await material(unmeasured.id, organizer.user.id, 3, "ready", "video", null);
-  for (const asked of [order, preview]) {
-    expect((await asked(app, organizer.token, unmeasured.id, {})).statusCode).toBe(409);
-  }
-
   // And ten minutes however much material there is (doc-03): fifteen minutes of
   // video still buys a ten-minute ceiling.
   const long = await createMemory(app, organizer.token);
@@ -1504,6 +1496,281 @@ test("the summary counts what would go in and refuses whatever the order refuses
   expect(placed.statusCode).toBe(201);
   expect(placed.json().params).toMatchObject({ target_seconds: 120, orientation: "portrait" });
   expect(await jobsFor(placed.json().id)).toEqual([{ type: "montage", status: "queued" }]);
+
+  await app.close();
+});
+
+/**
+ * The summary and the order asked the same thing: one code, one body — and when
+ * it goes through, the same length. The order is placed for real, so a body
+ * that passes leaves a montage behind; the tests count on nothing else.
+ */
+async function alike(app: App, token: string, memoryId: string, payload: object) {
+  const shown = await preview(app, token, memoryId, payload);
+  const placed = await order(app, token, memoryId, payload);
+  const context = JSON.stringify(payload);
+  if (placed.statusCode === 201) {
+    expect(shown.statusCode, context).toBe(200);
+    expect(shown.json().target_seconds, context).toBe(placed.json().params.target_seconds);
+  } else {
+    expect(shown.statusCode, context).toBe(placed.statusCode);
+    expect(shown.json(), context).toEqual(placed.json());
+  }
+  return placed;
+}
+
+test("the summary and the order agree on every edge of the band, whatever is left in the memory", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const out = (min_seconds: number, max_seconds: number) => ({
+    error: "target_seconds out of range",
+    min_seconds,
+    max_seconds,
+  });
+  const scarce = (ready_items: number) => ({
+    error: "not enough material for a montage",
+    ready_items,
+    need: 3,
+  });
+  // Every row: what is asked, what both routes answer, and — when the answer is
+  // a length — the one the order wrote down.
+  const check = async (
+    memoryId: string,
+    payload: object,
+    status: number,
+    expected?: { body?: object; target_seconds?: number },
+  ) => {
+    const placed = await alike(app, token, memoryId, payload);
+    expect(placed.statusCode, JSON.stringify(payload)).toBe(status);
+    if (expected?.body) expect(placed.json()).toEqual(expected.body);
+    if (expected?.target_seconds !== undefined) {
+      expect(placed.json().params.target_seconds).toBe(expected.target_seconds);
+    }
+  };
+
+  // Two thirty-second videos, one nobody measured, two photos: 65 seconds.
+  const mixed = await createMemory(app, token);
+  const [long1 = "", long2 = ""] = await material(
+    mixed.id,
+    organizer.user.id,
+    2,
+    "ready",
+    "video",
+    30,
+  );
+  const [blind = ""] = await material(mixed.id, organizer.user.id, 1, "ready", "video", null);
+  const [photo1 = "", photo2 = ""] = await material(
+    mixed.id,
+    organizer.user.id,
+    2,
+    "ready",
+    "photo",
+  );
+  await check(mixed.id, {}, 201, { target_seconds: 60 });
+  await check(mixed.id, { target_seconds: 65 }, 201, { target_seconds: 65 });
+  await check(mixed.id, { target_seconds: 10 }, 201, { target_seconds: 10 });
+  for (const target_seconds of [66, 9, 0, -1]) {
+    await check(mixed.id, { target_seconds }, 400, { body: out(10, 65) });
+  }
+  // A crossed-out frame takes its seconds off the ceiling, on both routes alike.
+  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 35 }, 201);
+  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 36 }, 400, {
+    body: out(10, 35),
+  });
+  // Both thirty-second videos out: what is left is a photo pair and a video with
+  // no length — five seconds, a band that has collapsed onto its ceiling, and
+  // the default length squeezed into it.
+  const stripped = { exclude_media_ids: [long1, long2] };
+  await check(mixed.id, stripped, 201, { target_seconds: 5 });
+  await check(mixed.id, { ...stripped, target_seconds: 5 }, 201);
+  await check(mixed.id, { ...stripped, target_seconds: 6 }, 400, { body: out(5, 5) });
+  await check(mixed.id, { ...stripped, target_seconds: 4 }, 400, { body: out(5, 5) });
+  // Two left is too little material, and it is two whatever was crossed out.
+  await check(mixed.id, { exclude_media_ids: [long1, long2, photo1] }, 409, { body: scarce(2) });
+  await check(mixed.id, { exclude_media_ids: [long1, long2, blind] }, 409, { body: scarce(2) });
+  await check(mixed.id, { exclude_media_ids: [long1, long2, blind, photo1, photo2] }, 409, {
+    body: scarce(0),
+  });
+
+  // Only photos: seven seconds is the whole band.
+  const photos = await createMemory(app, token);
+  await material(photos.id, organizer.user.id, 3, "ready", "photo");
+  await check(photos.id, {}, 201, { target_seconds: 7 });
+  await check(photos.id, { target_seconds: 7 }, 201);
+  await check(photos.id, { target_seconds: 6 }, 400, { body: out(7, 7) });
+  await check(photos.id, { target_seconds: 8 }, 400, { body: out(7, 7) });
+
+  // Nothing but videos nobody measured: a ceiling of nothing, refused as too
+  // little material — with the count of what is there — by both routes.
+  const unmeasured = await createMemory(app, token);
+  await material(unmeasured.id, organizer.user.id, 3, "ready", "video", null);
+  await check(unmeasured.id, {}, 409, { body: scarce(3) });
+  await check(unmeasured.id, { target_seconds: 60 }, 409, { body: scarce(3) });
+  // One photo beside them is two and a half seconds: the ceiling of two, and
+  // taking the photo out puts the memory back to nothing.
+  const [lone = ""] = await material(unmeasured.id, organizer.user.id, 1, "ready", "photo");
+  await check(unmeasured.id, {}, 201, { target_seconds: 2 });
+  await check(unmeasured.id, { target_seconds: 3 }, 400, { body: out(2, 2) });
+  await check(unmeasured.id, { exclude_media_ids: [lone] }, 409, { body: scarce(3) });
+
+  // The ceiling is the whole seconds of the sum, and ten minutes at the most.
+  const fractional = await createMemory(app, token);
+  await material(fractional.id, organizer.user.id, 1, "ready", "video", 199.9);
+  await material(fractional.id, organizer.user.id, 2, "ready", "video", 200);
+  await check(fractional.id, { target_seconds: 599 }, 201);
+  await check(fractional.id, { target_seconds: 600 }, 400, { body: out(10, 599) });
+  const long = await createMemory(app, token);
+  await material(long.id, organizer.user.id, 3, "ready", "video", 300);
+  await check(long.id, { target_seconds: 600 }, 201);
+  await check(long.id, { target_seconds: 601 }, 400, { body: out(10, 600) });
+  await check(long.id, {}, 201, { target_seconds: 60 });
+  const exact = await createMemory(app, token);
+  await material(exact.id, organizer.user.id, 3, "ready", "video", 200);
+  await check(exact.id, { target_seconds: 600 }, 201);
+  await check(exact.id, { target_seconds: 601 }, 400, { body: out(10, 600) });
+
+  await app.close();
+});
+
+test("a montage ordered before the music became a list is still listed and can still be repeated", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3);
+  const ownKey = await track(memory.id, organizer.user.id);
+
+  // As the api wrote them before `music_tracks`: one track by id or by key, no
+  // list and no note. Nothing writes these any more, and no order may ask for
+  // them — but the videos ordered with them are still on the shelf.
+  const placeOld = async (params: Record<string, string | number>, status: string) => {
+    const [row] = await sql<{ id: string }[]>`
+      insert into montages (memory_id, ordered_by, params, status, error_text)
+      values (
+        ${memory.id}, ${organizer.user.id}, ${sql.json(params)}, ${status},
+        ${status === "failed" ? "ffmpeg said no" : null}
+      )
+      returning id
+    `;
+    return row?.id ?? "";
+  };
+  const byId = { target_seconds: 60, music_track_id: "warm" };
+  const byKey = { target_seconds: 90, music_track_key: ownKey, orientation: "portrait" };
+  const oldFailedById = await placeOld(byId, "failed");
+  const oldFailedByKey = await placeOld(byKey, "failed");
+  const oldReady = await placeOld(byId, "processing");
+  await assembled(oldReady);
+
+  const paramsOf = async () =>
+    new Map(
+      (
+        (await list(app, organizer.token, memory.id)).json() as { id: string; params: object }[]
+      ).map((item) => [item.id, item.params]),
+    );
+  let listed = await paramsOf();
+  expect(listed.get(oldFailedById)).toEqual(byId);
+  expect(listed.get(oldFailedByKey)).toEqual(byKey);
+  expect(listed.get(oldReady)).toEqual(byId);
+
+  // The material is gone since — an order for this memory now is a refusal, and
+  // repeating a video that fell is not an order: it goes back to the worker as
+  // it was, without being weighed again.
+  await sql`delete from media_items where memory_id = ${memory.id}`;
+  expect((await order(app, organizer.token, memory.id, {})).statusCode).toBe(409);
+
+  for (const id of [oldFailedById, oldFailedByKey]) {
+    const again = await retry(app, organizer.token, memory.id, id);
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ id, status: "queued", error_text: null });
+    expect(await jobsFor(id)).toEqual([{ type: "montage", status: "queued" }]);
+  }
+  listed = await paramsOf();
+  expect(listed.get(oldFailedById)).toEqual(byId);
+  expect(listed.get(oldFailedByKey)).toEqual(byKey);
+  // Nobody ordered anything: the counters stay where they were.
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
+
+  await app.close();
+});
+
+test("the music is a list of any tracks, the organizer's and the shelf's, and both routes refuse the same bad ones", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  const elsewhere = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+  const own1 = await track(memory.id, organizer.user.id);
+  const own2 = await track(memory.id, organizer.user.id);
+  const foreign = await track(elsewhere.id, organizer.user.id);
+  const asked = async (payload: object) => alike(app, token, memory.id, payload);
+
+  // Two of their own and two off the shelf, interleaved: written down in the
+  // order they were named, not grouped by where they come from.
+  const mixed = [own2, "road", own1, "bright"];
+  const interleaved = await asked({ music_tracks: mixed, music_note: "по кругу" });
+  expect(interleaved.statusCode).toBe(201);
+  expect(interleaved.json().params).toMatchObject({ music_tracks: mixed, music_note: "по кругу" });
+
+  // As many as an order may carry, all their own.
+  const many = Array.from({ length: 50 }, () => `music/${randomUUID()}`);
+  await sql`
+    insert into music_uploads ${sql(
+      many.map((object_key) => ({
+        memory_id: memory.id,
+        uploaded_by: organizer.user.id,
+        status: "ready",
+        object_key,
+        size_bytes: 4096,
+      })),
+    )}
+  `;
+  const wall = await asked({ music_tracks: many });
+  expect(wall.statusCode).toBe(201);
+  expect(wall.json().params.music_tracks).toEqual(many);
+
+  // A track that is not there is the same refusal whoever it belonged to: never
+  // uploaded, another memory's, or a shelf id spelt the wrong way round.
+  const ghost = `music/${randomUUID()}`;
+  for (const named of [ghost, foreign, "Calm", "x".repeat(200)]) {
+    const refused = await asked({ music_tracks: [named] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual({ error: "no such music track", music_tracks: [named] });
+  }
+
+  // Too long a string, a track named twice and the two old fields fail the
+  // schema — by name, with the field in the message, and the same on both routes.
+  for (const [payload, field] of [
+    [{ music_tracks: ["x".repeat(201)] }, "music_tracks"],
+    [{ music_tracks: [own1, own1] }, "music_tracks"],
+    [{ music_track_id: "calm" }, "music_track_id"],
+    [{ music_track_key: own1 }, "music_track_key"],
+    [{ music_tracks: ["calm"], music_note: "я".repeat(501) }, "music_note"],
+  ] as const) {
+    const refused = await asked(payload);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().message).toContain(field);
+  }
+
+  // A wish about music needs music, and a list that only *looks* filled — an
+  // empty name — has none: it is the same «без музыки» when alone and gives the
+  // wish nothing to be about.
+  const orphan = { error: "music_note needs music_tracks" };
+  for (const payload of [
+    { music_note: "погромче" },
+    { music_tracks: [""], music_note: "погромче" },
+  ]) {
+    const refused = await asked(payload);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual(orphan);
+  }
+  const blank = await asked({ music_tracks: [""] });
+  expect(blank.statusCode).toBe(201);
+  expect(blank.json().params.music_tracks).toEqual([]);
+  // The longest wish there is.
+  const longest = await asked({ music_tracks: ["calm"], music_note: "я".repeat(500) });
+  expect(longest.statusCode).toBe(201);
+  expect(longest.json().params.music_note).toHaveLength(500);
 
   await app.close();
 });
