@@ -88,20 +88,25 @@ const createBody = {
   properties: memoryFields,
 } as const;
 
+const editFields = {
+  ...memoryFields,
+  // The cover, named by the id of a frame of this memory; `null` takes it
+  // off. Spelled as a pattern and not `format: "uuid"` for the reason
+  // `uuidPattern` gives — and `pattern` says nothing about `null`, which is
+  // how both shapes pass one schema.
+  cover_media_id: { type: ["string", "null"], pattern: uuidPattern.source },
+} as const;
+
 const editBody = {
   type: "object",
-  // Nothing is required — the screen sends what the organizer touched — but an
-  // empty body is not an edit, and answering 200 to one would say it was.
-  minProperties: 1,
+  // Nothing is required — the screen sends what the organizer touched — but a
+  // body that touches nothing is not an edit, and answering 200 to one would
+  // say it was. Named fields rather than `minProperties`: ajv counts before it
+  // drops what the schema does not list, so `{"cover": "…"}` would pass a count
+  // and arrive here as `{}`.
+  anyOf: Object.keys(editFields).map((field) => ({ required: [field] })),
   additionalProperties: false,
-  properties: {
-    ...memoryFields,
-    // The cover, named by the id of a frame of this memory; `null` takes it
-    // off. Spelled as a pattern and not `format: "uuid"` for the reason
-    // `uuidPattern` gives — and `pattern` says nothing about `null`, which is
-    // how both shapes pass one schema.
-    cover_media_id: { type: ["string", "null"], pattern: uuidPattern.source },
-  },
+  properties: editFields,
 } as const;
 
 /**
@@ -268,7 +273,9 @@ export function memoriesPlugin(app: FastifyInstance) {
 
 /**
  * The cards of the main screen — every memory the caller is in, or just the
- * one, which is what the edit route answers with.
+ * one, which is what the routes that answer with a single memory (editing it,
+ * accepting an invite into it) hand back: the one builder is what keeps every
+ * memory the app receives in one shape.
  *
  * The card shows real frames from inside the memory, so the keys ride along on
  * the listing itself: this screen holds every memory one is in, and a call per
@@ -276,7 +283,7 @@ export function memoriesPlugin(app: FastifyInstance) {
  * draws — enough of the material to speak for itself, so nothing has to count
  * the rest beside them.
  */
-async function cards(userId: string, memoryId?: string) {
+export async function cards(userId: string, memoryId?: string) {
   type Row = Memory & {
     role: MemberRole;
     thumbnail_keys: string[];
