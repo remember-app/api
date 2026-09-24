@@ -147,8 +147,9 @@ test("длина шаблона не выходит за предел воспо
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
-  // Ровно сорок секунд материала — предел этого воспоминания.
-  await material(memory.id, organizer.user.id, [20, 10, 10]);
+  // Сорок одна секунда видео без двух склеек по полсекунды — ровно сорок,
+  // предел этого воспоминания.
+  await material(memory.id, organizer.user.id, [21, 10, 10]);
 
   const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
   // Шаблон на три минуты отдаёт сорок, а тот, что короче предела, — себя.
@@ -296,12 +297,12 @@ test("каждый шаблон принимается заказом как е�
 
   // С запасом, впритык по секундам, только фото, и такой, где предел — пара
   // секунд из фото и видео без длины: во всех шаблон зажат под предел, а не
-  // отвергнут.
+  // отвергнут. Предел — за вычетом склеек, по полсекунды на каждую.
   const stocks: [string, (number | null | "photo")[], number][] = [
     ["roomy", [600, 600, 600], 600],
-    ["forty", [20, 10, 10], 40],
-    ["photos", ["photo", "photo", "photo"], 7],
-    ["blind", ["photo", "photo", null], 5],
+    ["forty", [21, 10, 10], 40],
+    ["photos", ["photo", "photo", "photo"], 6],
+    ["blind", ["photo", "photo", null], 4],
   ];
   // Длины из макета: выше предела шаблон не поднимается, ниже — не опускается.
   const drawn: Record<string, number> = {

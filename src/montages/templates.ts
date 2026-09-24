@@ -228,8 +228,8 @@ export function montageTemplateRoutes(app: FastifyInstance) {
       return templates.map(({ id, seconds, orientation, tracks, story, note }) => ({
         id,
         story_text: story[language](facts),
-        // Длина шаблона в пределах этого воспоминания: три минуты на сорока
-        // секундах материала — это сорок. Нижний край держится тем же зажимом,
+        // Длина шаблона в пределах этого воспоминания: три минуты при пределе в
+        // сорок секунд — это сорок. Нижний край держится тем же зажимом,
         // хотя сегодня до него не дотягивается ни один шаблон.
         target_seconds: Math.min(Math.max(seconds, min_seconds), max_seconds),
         orientation,

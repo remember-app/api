@@ -76,7 +76,7 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
 /**
  * Material in the memory, written where the upload would have left it. Videos
  * of two minutes, because the length a montage may be ordered at is cut from
- * the material (`montages.ts`): three photos are worth seven seconds, and the
+ * the material (`montages.ts`): three photos are worth six seconds, and the
  * order below asks for the default minute.
  */
 async function material(memoryId: string, uploadedBy: string, count: number) {
