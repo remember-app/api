@@ -106,7 +106,7 @@ test("шесть шаблонов в порядке макета, каждый �
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   // Материала с запасом: длины шаблонов не должны быть ничем зажаты.
-  await material(memory.id, organizer.user.id, [600, 600]);
+  await material(memory.id, organizer.user.id, [600, 600, 600]);
 
   const reply = await ask(app, organizer.token, memory.id);
   expect(reply.statusCode).toBe(200);
@@ -231,7 +231,7 @@ test("период показан одним куском, а один чело�
   );
   expect(created.statusCode).toBe(201);
   const memory = created.json() as { id: string };
-  await material(memory.id, organizer.user.id, [600]);
+  await material(memory.id, organizer.user.id, [600, 600, 600]);
 
   const [first] = (await ask(app, organizer.token, memory.id)).json() as Template[];
   expect(first?.story_text).toContain("2–5 сентября 2026");
@@ -253,7 +253,7 @@ test("с самым длинным названием рассказ всё ещ
   // нет, и новая заготовка длиннее прежних споткнётся здесь.
   const long = `${titleTag} ${"о".repeat(200 - titleTag.length - 1)}`;
   const memory = await createMemory(app, organizer.token, long);
-  await material(memory.id, organizer.user.id, [600]);
+  await material(memory.id, organizer.user.id, [600, 600, 600]);
 
   for (const language of ["ru", "en"] as const) {
     expect((await speak(app, organizer.token, language)).statusCode).toBe(200);
@@ -289,6 +289,58 @@ test("шаблоны — организатору: участнику 403, зр�
     url: `/memories/${memory.id}/montage-templates`,
   });
   expect(anonymous.statusCode).toBe(401);
+});
+
+test("где заказ откажут за нехваткой материала, шаблоны отвечают тем же отказом", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const order = (memoryId: string) =>
+    app.inject(
+      as(organizer.token, { method: "POST", url: `/memories/${memoryId}/montages`, payload: {} }),
+    );
+
+  // Пусто; два готовых кадра и третий ещё в обработке; три видео без длины —
+  // кадров хватает, а предел выходит нулём. Заказ без пожеланий отказывает во
+  // всех трёх, и вход в мастер — тем же кодом и тем же телом, слово в слово.
+  const empty = await createMemory(app, organizer.token);
+  const thin = await createMemory(app, organizer.token);
+  await material(thin.id, organizer.user.id, [600, "photo"]);
+  await material(thin.id, organizer.user.id, [600], "processing");
+  const blind = await createMemory(app, organizer.token);
+  await material(blind.id, organizer.user.id, [null, null, null]);
+
+  for (const [memory, ready_items] of [
+    [empty, 0],
+    [thin, 2],
+    [blind, 3],
+  ] as const) {
+    const templates = await ask(app, organizer.token, memory.id);
+    const placed = await order(memory.id);
+    expect(templates.statusCode, `${ready_items}`).toBe(409);
+    expect(templates.json()).toEqual({
+      error: "not enough material for a montage",
+      ready_items,
+      need: 3,
+    });
+    expect(placed.statusCode).toBe(409);
+    expect(templates.json()).toEqual(placed.json());
+  }
+
+  // Права по-прежнему раньше материала: участнику — 403, а не отказ заказа.
+  const contributor = await member(app, thin.id, "contributor", organizer.user.id);
+  expect((await ask(app, contributor.token, thin.id)).statusCode).toBe(403);
+
+  // Одно фото рядом с видео без длины — и материала хватает: ответ прежний,
+  // шесть шаблонов, зажатых в предел, «от 1 человека».
+  await material(blind.id, organizer.user.id, ["photo"]);
+  const enough = await ask(app, organizer.token, blind.id);
+  expect(enough.statusCode).toBe(200);
+  const templates = enough.json() as Template[];
+  expect(templates).toHaveLength(6);
+  for (const template of templates) {
+    expect(template.target_seconds).toBe(1);
+    expect(template.story_text).toContain("от 1 человека");
+  }
 });
 
 test("каждый шаблон принимается заказом как есть, на любом материале и на обоих языках", async () => {

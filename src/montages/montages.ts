@@ -187,7 +187,7 @@ const maxTracks = 50;
  * template has to be squeezed into it and say «от N человек» with the number the
  * summary will show.
  */
-export async function materialLeft(memoryId: string, exclude: string[] = []) {
+async function materialLeft(memoryId: string, exclude: string[]) {
   const [row] = await sql<
     { ready: number; photos: number; videos: number; people: number; seconds: number }[]
   >`
