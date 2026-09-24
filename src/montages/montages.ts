@@ -176,7 +176,8 @@ const maxTracks = 50;
  *
  * Apart from the route because two screens after this one ask it without
  * ordering anything (doc-03): «итог перед монтажом» shows the ceiling, and a
- * template has to be squeezed into it.
+ * template has to be squeezed into it and say «от N человек» with the number the
+ * summary will show.
  */
 export async function materialLeft(memoryId: string, exclude: string[] = []) {
   const [row] = await sql<

@@ -148,21 +148,32 @@ test("длина шаблона не выходит за предел воспо
   expect(templates.find((one) => one.id === "short_form")?.target_seconds).toBe(30);
 });
 
-test("история собрана из названия, дат и числа участников, на языке организатора", async () => {
+const preview = (app: App, token: string, memoryId: string, payload: object = {}) =>
+  app.inject(as(token, { method: "POST", url: `/memories/${memoryId}/montages/preview`, payload }));
+
+test("история — из названия, дат и числа тех, чьи кадры в материале, того же, что на итоге", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const named = title();
   const memory = await createMemory(app, organizer.token, named);
-  await material(memory.id, organizer.user.id, [600]);
-  // Двое принесут кадры, зритель — нет, и в рассказе его быть не должно.
+  await material(memory.id, organizer.user.id, [200, 200, 200]);
+  // Кадры принёс один участник из двух. Второй и зритель не принесли ничего,
+  // и ни в рассказе, ни на итоге их нет.
+  const brought = await member(app, memory.id, "contributor", organizer.user.id);
+  await material(memory.id, brought.user.id, [100]);
   await member(app, memory.id, "contributor", organizer.user.id);
   await member(app, memory.id, "viewer", organizer.user.id);
+
+  const summary = await preview(app, organizer.token, memory.id);
+  expect(summary.statusCode).toBe(200);
+  const { people } = summary.json() as { people: number };
+  expect(people).toBe(2);
 
   const russian = (await ask(app, organizer.token, memory.id)).json() as Template[];
   for (const template of russian) {
     expect(template.story_text).toContain(named);
     expect(template.story_text).toContain("2 сентября 2026");
-    expect(template.story_text).toContain("от 2 человек");
+    expect(template.story_text).toContain(`от ${people} человек`);
     expect(template.story_text.length).toBeLessThanOrEqual(600);
   }
 
@@ -171,12 +182,23 @@ test("история собрана из названия, дат и числа 
   for (const [index, template] of english.entries()) {
     expect(template.story_text).toContain(named);
     expect(template.story_text).toContain("2 September 2026");
-    expect(template.story_text).toContain("from 2 people");
+    expect(template.story_text).toContain(`from ${people} people`);
     expect(template.story_text.length).toBeLessThanOrEqual(600);
     // Написано руками с нуля, а не тем же текстом на другой раскладке.
     expect(template.story_text).not.toBe(russian[index]?.story_text);
   }
   expect(english.find((one) => one.id === "parents")?.music_note).toMatch(/beat/);
+
+  // Итог считает по тому, что осталось: вычеркнув единственный кадр участника,
+  // организатор заказывает ролик из кадров одного человека.
+  const clips = await sql<{ id: string }[]>`
+    select id from media_items where memory_id = ${memory.id} and uploaded_by = ${brought.user.id}
+  `;
+  const narrowed = await preview(app, organizer.token, memory.id, {
+    exclude_media_ids: clips.map(({ id }) => id),
+  });
+  expect(narrowed.statusCode).toBe(200);
+  expect(narrowed.json()).toMatchObject({ people: 1 });
 });
 
 test("период показан одним куском, а один человек — в единственном числе", async () => {
