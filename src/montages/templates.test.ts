@@ -161,6 +161,28 @@ test("длина шаблона не выходит за предел воспо
 const preview = (app: App, token: string, memoryId: string, payload: object = {}) =>
   app.inject(as(token, { method: "POST", url: `/memories/${memoryId}/montages/preview`, payload }));
 
+test("отсеянное в предел шаблонов не идёт — предел тот же, что на итоге", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  // Сорок секунд у организатора и полминуты от участника, которую отсев счёл
+  // смазанной: воркер её не возьмёт, и шаблон на три минуты отдаёт сорок, а
+  // рассказ — «от 1 человека», как и итог.
+  await material(memory.id, organizer.user.id, [21, 10, 10]);
+  const brought = await member(app, memory.id, "contributor", organizer.user.id);
+  await material(memory.id, brought.user.id, [30]);
+  await sql`
+    update media_items set screening_rejected = true, screening_reason = 'blur'
+    where memory_id = ${memory.id} and uploaded_by = ${brought.user.id}
+  `;
+
+  const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
+  const summary = (await preview(app, organizer.token, memory.id)).json();
+  expect(summary).toMatchObject({ max_seconds: 40, people: 1 });
+  expect(templates.find((one) => one.id === "for_myself")?.target_seconds).toBe(40);
+  for (const template of templates) expect(template.story_text).toContain("от 1 человека");
+});
+
 test("история — из названия, дат и числа тех, чьи кадры в материале, того же, что на итоге", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
