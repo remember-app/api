@@ -101,6 +101,15 @@ async function material(
 }
 
 /**
+ * The отсев's verdict on a frame, written where the worker leaves it
+ * (`screening.py`): a reason is «отсеять», `null` is «оставить».
+ */
+const screened = (id: string, reason: string | null) => sql`
+  update media_items set screening_rejected = ${reason !== null}, screening_reason = ${reason}
+  where id = ${id}
+`;
+
+/**
  * A track of the organizer's own, written where its upload would have left it
  * (`music.ts`); answers with the key the order names it by.
  */
@@ -761,6 +770,87 @@ test("the ceiling is the video the worker assembles out of everything there is",
     min_seconds: 10,
     max_seconds: 80,
   });
+
+  await app.close();
+});
+
+test("what the отсев turned down is out of the ceiling and the floor, unless it is taken back", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const out = (min_seconds: number, max_seconds: number) => ({
+    error: "target_seconds out of range",
+    min_seconds,
+    max_seconds,
+  });
+
+  // Two thirty-second clips and four photos: 70 seconds less five joins, 67 —
+  // and 67 still while the отсев has not looked, or has looked and kept.
+  const memory = await createMemory(app, token);
+  const [blurred = ""] = await material(memory.id, organizer.user.id, 2, "ready", "video", 30);
+  const [dark = "", broken = "", kept = ""] = await material(
+    memory.id,
+    organizer.user.id,
+    4,
+    "ready",
+    "photo",
+  );
+  const everything = { photos: 4, videos: 2, min_seconds: 10, max_seconds: 67 };
+  expect((await preview(app, token, memory.id, {})).json()).toMatchObject(everything);
+  await screened(kept, null);
+  expect((await preview(app, token, memory.id, {})).json()).toMatchObject(everything);
+
+  // A blurred clip, a dark photo and one nobody can read are what the worker
+  // leaves out: their 35 seconds and three joins go — a clip and two photos
+  // are 35 less two joins, 34. The summary and the order say so alike.
+  await screened(blurred, "blur");
+  await screened(dark, "exposure");
+  await screened(broken, "unreadable");
+  expect((await preview(app, token, memory.id, {})).json()).toMatchObject({
+    photos: 2,
+    videos: 1,
+    min_seconds: 10,
+    max_seconds: 34,
+  });
+  expect((await alike(app, token, memory.id, { target_seconds: 34 })).statusCode).toBe(201);
+  expect((await alike(app, token, memory.id, { target_seconds: 35 })).json()).toEqual(out(10, 34));
+
+  // Crossed out by name as well, the way the app sends them, it is the same
+  // material: they were not counted to begin with.
+  const named = { exclude_media_ids: [blurred, dark, broken] };
+  expect((await preview(app, token, memory.id, named)).json()).toEqual(
+    (await preview(app, token, memory.id, {})).json(),
+  );
+
+  // Taken back, the clip counts again, seconds and join: 65 less three joins.
+  // An unreadable frame does not, taken back or not — the worker has no frame
+  // of it to put in.
+  const back = { include_media_ids: [blurred, broken] };
+  expect((await preview(app, token, memory.id, back)).json()).toMatchObject({
+    videos: 2,
+    photos: 2,
+    max_seconds: 63,
+  });
+  expect((await alike(app, token, memory.id, { ...back, target_seconds: 63 })).statusCode).toBe(
+    201,
+  );
+  expect((await alike(app, token, memory.id, { ...back, target_seconds: 64 })).json()).toEqual(
+    out(10, 63),
+  );
+
+  // The floor of three is held against the same frames: three photos with one
+  // turned down are two, which is too little, until it is taken back.
+  const thin = await createMemory(app, token);
+  const [spoiled = ""] = await material(thin.id, organizer.user.id, 3, "ready", "photo");
+  await screened(spoiled, "blur");
+  expect((await alike(app, token, thin.id, {})).json()).toEqual({
+    error: "not enough material for a montage",
+    ready_items: 2,
+    need: 3,
+  });
+  const taken = await alike(app, token, thin.id, { include_media_ids: [spoiled] });
+  expect(taken.statusCode).toBe(201);
+  expect(taken.json().params.target_seconds).toBe(6);
 
   await app.close();
 });

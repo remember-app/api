@@ -177,6 +177,15 @@ const maxTracks = 50;
  * everywhere here: material still uploading or still being probed has no
  * derivative the worker can measure, and no length either.
  *
+ * A frame the отсев turned down counts only when the order takes it back by
+ * name, and an unreadable one not even then — the worker's own rule
+ * (`selection.choose`, and its floor in `montage.py`). The worker does not read
+ * the stored verdict: it judges every file again at the order, with the same
+ * `selection.judge` on the same copy (`screening.py`), so the stored one is the
+ * answer it will come to. A frame not judged yet counts as before — a ceiling
+ * there is approximate, and a guess at a verdict nobody has made would not be
+ * less so (chief, 2026-09-24).
+ *
  * The exclusions go into the `where` rather than being subtracted afterwards:
  * counted apart, a frame deleted between the two reads gives a count that no
  * longer holds every id — and a bare subtraction then puts a negative number in
@@ -187,7 +196,7 @@ const maxTracks = 50;
  * template has to be squeezed into it and say «от N человек» with the number the
  * summary will show.
  */
-async function materialLeft(memoryId: string, exclude: string[]) {
+async function materialLeft(memoryId: string, include: string[], exclude: string[]) {
   const [row] = await sql<
     { ready: number; photos: number; videos: number; people: number; seconds: number }[]
   >`
@@ -201,6 +210,8 @@ async function materialLeft(memoryId: string, exclude: string[]) {
       ), 0)::float8 as seconds
     from media_items
     where memory_id = ${memoryId} and status = 'ready' and id <> all(${exclude}::uuid[])
+      and (screening_rejected is not true
+        or (id = any(${include}::uuid[]) and screening_reason <> 'unreadable'))
   `;
   const ready = row?.ready ?? 0;
   const assembled = (row?.seconds ?? 0) - crossfadeSeconds * Math.max(ready - 1, 0);
@@ -329,7 +340,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // is left, so the floor has to be held against what is left. Counted first, a
   // memory of five with three crossed out passed a bar of three and left the
   // worker to assemble a minute from two.
-  const left = await materialLeft(memoryId, exclude);
+  const left = await materialLeft(memoryId, include, exclude);
   const { ready, min_seconds, max_seconds } = left;
   // A ceiling of nothing — every frame left a video nobody measured — is too
   // little material as well: the band is then 0…0, and 0 is the one length the
@@ -620,8 +631,9 @@ export function montageRoutes(app: FastifyInstance) {
 
       return {
         // The frames that would go in — everything ready, less what this same
-        // body crossed out. The included ones are already among them: «войти
-        // должен» pins a frame in the video, it does not add one.
+        // body crossed out and what the отсев turned down and nobody took back.
+        // «Войти должен» pins a frame in the video, and adds one only when it
+        // takes back what the отсев turned down (`materialLeft`).
         photos: left.photos,
         videos: left.videos,
         people: left.people,
