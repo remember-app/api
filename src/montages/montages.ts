@@ -132,21 +132,21 @@ const defaultTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS", 60);
 /**
  * The band a length may be asked for inside, which is the product's rule and
  * not a knob (doc-03, «Длина ролика — число секунд, предел: сумма всех видео
- * плюс 2,5 секунды на фото, но не больше 10 минут»). It used to be two
- * environment variables, and they are gone: the real ceiling is the memory's
- * own material, which no setting can know — a memory of three photos cannot
- * make five minutes of video however high a number is configured.
+ * плюс 2,5 секунды на фото минус полсекунды на каждую склейку, но не больше 10
+ * минут — обещанное число достижимо»). It used to be two environment
+ * variables, and they are gone: the real ceiling is the memory's own material,
+ * which no setting can know — a memory of three photos cannot make five
+ * minutes of video however high a number is configured.
  *
  * A photo is worth the time it hangs on screen; a video is worth its own
  * length, and one the worker has not measured is worth nothing, which is the
  * safe way round — an unmeasured file cannot lengthen the ceiling.
  *
- * And every join costs a crossfade: the worker lays each piece half a second
- * over the one before, so a video of everything there is runs the sum less one
- * crossfade per join — forty photos make eighty and a half seconds, not a
- * hundred. Both numbers are the worker's (`selection.PHOTO_SECONDS`,
- * `assembly.CROSSFADE_SECONDS` and `assembly.length_of` in projects/montage)
- * and move with it, or the ceiling promises a video it cannot make.
+ * A join is the worker's crossfade, each piece laid half a second over the one
+ * before: forty photos make eighty and a half seconds, not a hundred. Both
+ * numbers are the worker's (`selection.PHOTO_SECONDS`, `assembly.CROSSFADE_SECONDS`
+ * and `assembly.length_of` in projects/montage) and move with it, or the
+ * ceiling promises a video it cannot make.
  */
 const minSeconds = 10;
 const maxSeconds = 600;
