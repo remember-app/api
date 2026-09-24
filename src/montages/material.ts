@@ -59,7 +59,11 @@ const crossfadeSeconds = 0.5;
  * `selection.judge` on the same copy (`screening.py`), so the stored one is the
  * answer it will come to. A frame not judged yet counts as before — a ceiling
  * there is approximate, and a guess at a verdict nobody has made would not be
- * less so (chief, 2026-09-24).
+ * less so (chief, 2026-09-24). «Is distinct from» and not `<>`: the two
+ * screening columns are the worker's, written a repository away and held in step
+ * by nothing but one line there — migration 060 declines a CHECK on purpose —
+ * and a `true` with no reason beside it would turn `<>` into `null` and drop a
+ * frame the organizer asked for by name.
  *
  * The exclusions go into the `where` rather than being subtracted afterwards:
  * counted apart, a frame deleted between the two reads gives a count that no
@@ -81,7 +85,8 @@ export async function materialLeft(memoryId: string, include: string[], exclude:
     from media_items
     where memory_id = ${memoryId} and status = 'ready' and id <> all(${exclude}::uuid[])
       and (screening_rejected is not true
-        or (id = any(${include}::uuid[]) and screening_reason <> 'unreadable'))
+        or (id = any(${include}::uuid[])
+            and screening_reason is distinct from 'unreadable'))
   `;
   const ready = row?.ready ?? 0;
   const assembled = (row?.seconds ?? 0) - crossfadeSeconds * Math.max(ready - 1, 0);

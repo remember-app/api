@@ -616,6 +616,19 @@ test("what the отсев turned down is out of the ceiling and the floor, unles
     out(10, 63),
   );
 
+  // Thrown out with no reason written beside it. The worker fills the two
+  // columns together, but nothing in the database makes it (migration 060
+  // declines a CHECK on purpose, because the vocabulary is the worker's), and
+  // a `<>` against the empty one answers neither yes nor no — which would
+  // quietly drop a frame the organizer asked for by name.
+  await sql`
+    update media_items set screening_rejected = true, screening_reason = null
+    where id = ${dark}
+  `;
+  expect(
+    (await preview(app, token, memory.id, { include_media_ids: [dark] })).json(),
+  ).toMatchObject({ photos: 3 });
+
   // The floor of three is held against the same frames: three photos with one
   // turned down are two, which is too little, until it is taken back.
   const thin = await createMemory(app, token);
