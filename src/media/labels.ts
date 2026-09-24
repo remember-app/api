@@ -1,18 +1,12 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
-import { type MemberRole, uuidPattern } from "../memories/plugin.ts";
-import { memoryMaxFiles } from "./config.ts";
+import { lowerIds, type MemberRole, mediaIdsSchema, uuidPattern } from "../memories/plugin.ts";
 
 /**
  * Лейблы — коробки с названием и цветом, по которым участник раскладывает кадры
  * воспоминания (doc-13). Общий лейбл видят все участники, личный — только
  * хозяин: ни названия, ни состава, ни следа в галерее.
- *
- * Здесь всё, что с лейблом делают: список, кто что может, завести (можно сразу
- * с кадрами), положить кадры пачкой, убрать пачкой, переименовать, перекрасить,
- * удалить — и что становится с лейблами ушедшего участника
- * (`handOverLabels`, зовётся из src/memories/members.ts).
  *
  * Приватность держится на одном предикате — «общий или мой», — и оба чтения
  * берут его отсюда, из `visibleLabels`. Скопировать его во второе место значит
@@ -184,20 +178,11 @@ async function labelCards(
 /** Тот же ответ, что и у списка, но об одном лейбле — им отвечает каждая запись. */
 async function labelCard(memoryId: string, caller: Caller, labelId: string) {
   const [card] = await labelCards(memoryId, caller, labelId);
-  // Невидимым себе лейбл записавшего быть не может: чужой личный до записи не
-  // допущен вовсе, а общий и свой личный он видит.
+  // Чужой личный до записи не допущен, общий и свой личный записавший видит;
+  // не нашёлся — его удалили одновременно из другого запроса (редкая гонка, `500`).
   if (!card) throw new Error("the written label is not in its own author's list");
   return card;
 }
-
-/**
- * Пачка к виду, в котором с ней можно работать: нижним регистром и без
- * повторов. Postgres отдаёт uuid маленькими буквами, поэтому клиент, отправивший
- * свой же id заглавными, не должен услышать «нет такого кадра»; а `uniqueItems`
- * схемы сравнивает строки как они пришли, так что один кадр, названный дважды в
- * двух написаниях, её проходит.
- */
-const lower = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
 
 /**
  * Чего из пачки в этом воспоминании нет. Кадр соседнего воспоминания, кадр,
@@ -247,24 +232,9 @@ export function labelRoutes(app: FastifyInstance) {
   const deny = (reply: FastifyReply, code: 403 | 404) =>
     reply.code(code).send(code === 404 ? notFound : forbidden);
 
-  /**
-   * Пачка кадров: тем же описанием, что у заказа ролика
-   * (src/montages/montages.ts), и по тем же причинам. Только uuid — маршрут
-   * кладёт их прямо в `where id in (…)` по uuid-колонке, где «не uuid» это
-   * ошибка базы, а не `400`. Потолок — файловый предел самого воспоминания:
-   * пачка длиннее, чем воспоминание вмещает файлов, называет что-то дважды или
-   * является мусором. Собрано при регистрации, а не в обработчике: ajv
-   * компилирует схему один раз, и число должно стоять в ней к этому моменту.
-   */
-  const mediaIds = {
-    type: "array",
-    items: { type: "string", pattern: uuidPattern.source },
-    // Пустая пачка — не действие: отвечать на неё `200` значило бы сказать, что
-    // что-то положено.
-    minItems: 1,
-    uniqueItems: true,
-    maxItems: memoryMaxFiles(),
-  } as const;
+  // Пустая пачка — не действие: отвечать на неё `200` значило бы сказать, что
+  // что-то положено.
+  const mediaIds = { ...mediaIdsSchema(), minItems: 1 } as const;
 
   /**
    * Что у лейбла можно написать. `pattern` — это поиск без якорей, то есть
@@ -316,26 +286,34 @@ export function labelRoutes(app: FastifyInstance) {
   } as const;
 
   /**
-   * Лейбл этого воспоминания по id из пути. Правам он не судья — их спрашивают
-   * у `labelDenial` в самом маршруте; здесь только «есть ли такая строка».
+   * Лейбл из пути — если спрашивающему можно в него писать. Все записи в
+   * заведённый лейбл входят через эту дверь, поэтому забыть спросить права
+   * маршруту негде. Нельзя или нет такого — ответ уже отправлен, и маршруту
+   * остаётся вернуть `reply`.
    */
-  const held = async (reply: FastifyReply, memoryId: string, labelId: string) => {
+  const writableLabel = async (
+    request: FastifyRequest<{ Params: { memoryId: string; labelId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { memory, role } = request.membership;
+    const caller = { id: request.user.id, role };
+    const { labelId } = request.params;
     // «Не uuid» — это «нет такого лейбла», домашнее правило семейства (README,
     // «404 один на всех»), и проверка стоит здесь, а не схемой параметров: та
     // отвечает раньше проверки членства и сказала бы `400` снаружи
-    // воспоминания.
-    if (!uuidPattern.test(labelId)) {
-      reply.code(404).send(notFound);
+    // воспоминания. Лейбл соседнего воспоминания — «нет такого» по той же
+    // причине, по которой соседнее воспоминание — «нет такого воспоминания».
+    const [label] = uuidPattern.test(labelId)
+      ? await sql<LabelRow[]>`
+          select id, owner_id, shared from labels where id = ${labelId} and memory_id = ${memory.id}
+        `
+      : [];
+    const denied = label ? labelDenial("change", label, caller) : 404;
+    if (!label || denied) {
+      deny(reply, denied ?? 404);
       return null;
     }
-    const [label] = await sql<(LabelRow & { title: string; color: number })[]>`
-      select id, owner_id, shared, title, color from labels
-      where id = ${labelId} and memory_id = ${memoryId}
-    `;
-    // Лейбл соседнего воспоминания — это «нет такого лейбла» ровно по той же
-    // причине, по которой соседнее воспоминание — «нет такого воспоминания».
-    if (!label) reply.code(404).send(notFound);
-    return label ?? null;
+    return { memory, caller, label };
   };
 
   // Лист «В лейбл» (design/screens/SheetLabels.html). Читает любой участник,
@@ -367,7 +345,7 @@ export function labelRoutes(app: FastifyInstance) {
       const denied = labelDenial("create", { owner_id: caller.id, shared }, caller);
       if (denied) return deny(reply, denied);
 
-      const ids = lower(request.body.media_ids);
+      const ids = lowerIds(request.body.media_ids);
       const missing = await missingFrames(memory.id, ids);
       if (missing.length > 0) {
         return reply.code(400).send({ error: "no such media in this memory", media_ids: missing });
@@ -400,20 +378,18 @@ export function labelRoutes(app: FastifyInstance) {
     "/memories/:memoryId/labels/:labelId",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: editBody } },
     async (request, reply) => {
-      const { memory, role } = request.membership;
-      const caller = { id: request.user.id, role };
-      const label = await held(reply, memory.id, request.params.labelId);
-      if (!label) return reply;
-      const denied = labelDenial("change", label, caller);
-      if (denied) return deny(reply, denied);
+      const held = await writableLabel(request, reply);
+      if (!held) return reply;
+      const { memory, caller, label } = held;
 
       const { title, color } = request.body;
       // Чего не прислали, то остаётся как было: экран шлёт то, что человек
-      // тронул.
+      // тронул. `coalesce` в самом запросе, а не прочитанное до него: две
+      // одновременные правки разных полей не затирают друг друга.
       await sql`
         update labels
-        set title = ${title === undefined ? label.title : title.trim()},
-          color = ${color ?? label.color}, updated_at = now()
+        set title = coalesce(${title?.trim() ?? null}, title),
+          color = coalesce(${color ?? null}, color), updated_at = now()
         where id = ${label.id}
       `;
       return labelCard(memory.id, caller, label.id);
@@ -426,13 +402,9 @@ export function labelRoutes(app: FastifyInstance) {
     "/memories/:memoryId/labels/:labelId",
     { preHandler: [app.authenticate, app.requireMembership] },
     async (request, reply) => {
-      const { memory, role } = request.membership;
-      const label = await held(reply, memory.id, request.params.labelId);
-      if (!label) return reply;
-      const denied = labelDenial("change", label, { id: request.user.id, role });
-      if (denied) return deny(reply, denied);
-
-      await sql`delete from labels where id = ${label.id}`;
+      const held = await writableLabel(request, reply);
+      if (!held) return reply;
+      await sql`delete from labels where id = ${held.label.id}`;
       return { ok: true };
     },
   );
@@ -443,14 +415,11 @@ export function labelRoutes(app: FastifyInstance) {
     "/memories/:memoryId/labels/:labelId/media",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: mediaBody } },
     async (request, reply) => {
-      const { memory, role } = request.membership;
-      const caller = { id: request.user.id, role };
-      const label = await held(reply, memory.id, request.params.labelId);
-      if (!label) return reply;
-      const denied = labelDenial("change", label, caller);
-      if (denied) return deny(reply, denied);
+      const held = await writableLabel(request, reply);
+      if (!held) return reply;
+      const { memory, caller, label } = held;
 
-      const ids = lower(request.body.media_ids);
+      const ids = lowerIds(request.body.media_ids);
       // Вся пачка или ничего: кадр соседнего воспоминания или несуществующий —
       // это ошибка клиента целиком, а не повод положить остальные и промолчать
       // о нём. Отвечаем, какие именно, как отвечает заказ ролика.
@@ -472,14 +441,11 @@ export function labelRoutes(app: FastifyInstance) {
     "/memories/:memoryId/labels/:labelId/media",
     { preHandler: [app.authenticate, app.requireMembership], schema: { body: mediaBody } },
     async (request, reply) => {
-      const { memory, role } = request.membership;
-      const caller = { id: request.user.id, role };
-      const label = await held(reply, memory.id, request.params.labelId);
-      if (!label) return reply;
-      const denied = labelDenial("change", label, caller);
-      if (denied) return deny(reply, denied);
+      const held = await writableLabel(request, reply);
+      if (!held) return reply;
+      const { memory, caller, label } = held;
 
-      const ids = lower(request.body.media_ids);
+      const ids = lowerIds(request.body.media_ids);
       await sql`
         delete from label_media where label_id = ${label.id} and media_id in ${sql(ids)}
       `;

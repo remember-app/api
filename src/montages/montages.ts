@@ -3,9 +3,9 @@ import type { FastifyInstance } from "fastify";
 import { env, positive } from "../auth/config.ts";
 import { bearerToken, hashToken } from "../auth/session.ts";
 import { sql } from "../db.ts";
-import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
+import { downloadTtlSeconds } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
-import { uuidPattern } from "../memories/plugin.ts";
+import { lowerIds, mediaIdsSchema, uuidPattern } from "../memories/plugin.ts";
 import { notifyMontageReady } from "../memories/push.ts";
 import { montageStages } from "./journal.ts";
 
@@ -273,17 +273,10 @@ export type Checked =
  */
 export async function checkOrder(memoryId: string, body: OrderBody): Promise<Checked> {
   // The frames the organizer picked out by hand (doc-03: «отмечает, какие
-  // кадры войти должны, а какие нет»). Lowercased on the way in and on the way
-  // out: Postgres hands uuids back in lower case, so a client echoing an id of
-  // ours in capitals must not be told its own frame is not there, and the
-  // worker must not have to compare two spellings of one id.
-  //
-  // And deduplicated after that, not before: the schema's `uniqueItems`
-  // compares the strings as they arrived, so one frame named twice in two
-  // spellings passes it and would otherwise reach the worker twice.
-  const lower = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
-  const include = lower(body?.include_media_ids);
-  const exclude = lower(body?.exclude_media_ids);
+  // кадры войти должны, а какие нет»). Normalised before anything else, so the
+  // worker never gets one id in two spellings, or twice.
+  const include = lowerIds(body?.include_media_ids);
+  const exclude = lowerIds(body?.exclude_media_ids);
   const excluded = new Set(exclude);
   const both = include.filter((id) => excluded.has(id));
   if (both.length > 0) {
@@ -497,18 +490,8 @@ export function montageRoutes(app: FastifyInstance) {
   const notFound = { error: "not found" };
   const forbidden = { error: "forbidden" };
 
-  // One list of frames, used for both «включить» and «исключить». Held to
-  // uuids because the handler puts these straight into a `where id in (…)`
-  // against a uuid column, where «not-a-uuid» is a database error rather than a
-  // 400. The ceiling is the memory's own file limit: a list longer than the
-  // memory can hold files names something twice or is junk, and `uniqueItems`
-  // refuses the first of those outright.
-  const mediaIds = {
-    type: "array",
-    items: { type: "string", pattern: uuidPattern.source },
-    uniqueItems: true,
-    maxItems: memoryMaxFiles(),
-  } as const;
+  // One list of frames, used for both «включить» and «исключить».
+  const mediaIds = mediaIdsSchema();
 
   // Built here, at registration, rather than read per request as the media
   // limits are: ajv compiles a schema once, so the numbers have to be in it by
