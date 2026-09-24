@@ -71,7 +71,7 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
  * ids, which is what «включить этот кадр» is said with.
  *
  * Two-minute videos unless asked otherwise, because the length a montage may be
- * ordered at is cut from the material itself: three photos are worth seven
+ * ordered at is cut from the material itself: three photos are worth six
  * seconds and would refuse every order in this file that names a minute.
  * Photos, and videos of a given length, are asked for where they are the point.
  */
@@ -650,46 +650,48 @@ test("the length a montage may be ordered at is cut from the memory's own materi
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
 
-  // Three photos: two and a half seconds each, and the ceiling floors to a
-  // whole second. The floor of ten gives way to it — a band with nothing in it
-  // would refuse every length there is — so the only length this memory can be
-  // asked for is seven, and «ничего не сказали» gets seven rather than a
-  // refusal nobody asked for.
+  // Three photos: two and a half seconds each, less half a second for each of
+  // the two joins the worker crossfades — six and a half, floored to a whole
+  // second. The floor of ten gives way to it — a band with nothing in it would
+  // refuse every length there is — so the only length this memory can be asked
+  // for is six, and «ничего не сказали» gets six rather than a refusal nobody
+  // asked for.
   const thin = await createMemory(app, organizer.token);
   await material(thin.id, organizer.user.id, 3, "ready", "photo");
-  expect((await order(app, organizer.token, thin.id, {})).json().params.target_seconds).toBe(7);
-  const tooLong = await order(app, organizer.token, thin.id, { target_seconds: 10 });
+  expect((await order(app, organizer.token, thin.id, {})).json().params.target_seconds).toBe(6);
+  const tooLong = await order(app, organizer.token, thin.id, { target_seconds: 7 });
   expect(tooLong.statusCode).toBe(400);
   expect(tooLong.json()).toEqual({
     error: "target_seconds out of range",
-    min_seconds: 7,
-    max_seconds: 7,
+    min_seconds: 6,
+    max_seconds: 6,
   });
-  expect((await order(app, organizer.token, thin.id, { target_seconds: 7 })).statusCode).toBe(201);
+  expect((await order(app, organizer.token, thin.id, { target_seconds: 6 })).statusCode).toBe(201);
 
   // Videos are worth their own length, photos two and a half seconds, and a
   // video the worker never measured is worth nothing — an unmeasured file must
   // not lengthen the ceiling. Two of thirty, one unmeasured and two photos:
-  // sixty-five seconds, and the default sixty fits inside it.
+  // sixty-five seconds less four joins, sixty-three, and the default sixty fits
+  // inside it.
   const mixed = await createMemory(app, organizer.token);
   const [half = ""] = await material(mixed.id, organizer.user.id, 2, "ready", "video", 30);
   await material(mixed.id, organizer.user.id, 1, "ready", "video", null);
   await material(mixed.id, organizer.user.id, 2, "ready", "photo");
   expect((await order(app, organizer.token, mixed.id, {})).json().params.target_seconds).toBe(60);
-  expect((await order(app, organizer.token, mixed.id, { target_seconds: 65 })).statusCode).toBe(
+  expect((await order(app, organizer.token, mixed.id, { target_seconds: 63 })).statusCode).toBe(
     201,
   );
   for (const [target_seconds, bounds] of [
-    [66, { min_seconds: 10, max_seconds: 65 }],
-    [9, { min_seconds: 10, max_seconds: 65 }],
+    [64, { min_seconds: 10, max_seconds: 63 }],
+    [9, { min_seconds: 10, max_seconds: 63 }],
   ] as const) {
     const refused = await order(app, organizer.token, mixed.id, { target_seconds });
     expect(refused.statusCode).toBe(400);
     expect(refused.json()).toEqual({ error: "target_seconds out of range", ...bounds });
   }
 
-  // A crossed-out frame takes its seconds with it: the video is assembled out
-  // of what is left, so the ceiling is what is left too.
+  // A crossed-out frame takes its seconds with it, and its join: the video is
+  // assembled out of what is left, so the ceiling is what is left too.
   const shortened = await order(app, organizer.token, mixed.id, {
     target_seconds: 40,
     exclude_media_ids: [half],
@@ -698,7 +700,7 @@ test("the length a montage may be ordered at is cut from the memory's own materi
   expect(shortened.json()).toEqual({
     error: "target_seconds out of range",
     min_seconds: 10,
-    max_seconds: 35,
+    max_seconds: 33,
   });
 
   // And ten minutes however much material there is (doc-03): fifteen minutes of
@@ -714,6 +716,50 @@ test("the length a montage may be ordered at is cut from the memory's own materi
     error: "target_seconds out of range",
     min_seconds: 10,
     max_seconds: 600,
+  });
+
+  await app.close();
+});
+
+test("the ceiling is the video the worker assembles out of everything there is", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+
+  // The worker's own material beside the worker's own arithmetic. Clips of 12,
+  // 30 and 7 seconds and three photos are what projects/montage orders «всё,
+  // что есть» out of (test_selection.py,
+  // `test_an_order_for_everything_there_is_takes_every_piece_whole`): every
+  // piece held whole, a photo for `selection.PHOTO_SECONDS` (2.5), laid end to
+  // end by `assembly.length_of` less `assembly.CROSSFADE_SECONDS` (0.5) a join.
+  // 12 + 30 + 7 + 3 × 2.5 − 5 × 0.5 = 54 seconds: the most that may be ordered
+  // is exactly what that order gets. Either number moved on that side moves
+  // `photoSeconds` or `crossfadeSeconds` in montages.ts, and this with it.
+  const memory = await createMemory(app, organizer.token);
+  for (const seconds of [12, 30, 7]) {
+    await material(memory.id, organizer.user.id, 1, "ready", "video", seconds);
+  }
+  await material(memory.id, organizer.user.id, 3, "ready", "photo");
+  const everything = 54;
+
+  const summary = await preview(app, organizer.token, memory.id, {});
+  expect(summary.json()).toMatchObject({ min_seconds: 10, max_seconds: everything });
+  const whole = await alike(app, organizer.token, memory.id, { target_seconds: everything });
+  expect(whole.statusCode).toBe(201);
+  const past = await alike(app, organizer.token, memory.id, { target_seconds: everything + 1 });
+  expect(past.json()).toEqual({
+    error: "target_seconds out of range",
+    min_seconds: 10,
+    max_seconds: everything,
+  });
+
+  // Forty photos: a hundred seconds of stills, less thirty-nine joins. The
+  // worker's video of all forty runs 80.5, so eighty is the most that may be
+  // asked for — not the hundred the stills add up to.
+  const stills = await createMemory(app, organizer.token);
+  await material(stills.id, organizer.user.id, 40, "ready", "photo");
+  expect((await preview(app, organizer.token, stills.id, {})).json()).toMatchObject({
+    min_seconds: 10,
+    max_seconds: 80,
   });
 
   await app.close();
@@ -1346,8 +1392,8 @@ test("the summary counts what would go in and refuses whatever the order refuses
 
   // Three photos of the organizer's and two minute-long videos of the
   // contributor's: five frames from two people, 7,5 + 120 seconds of material
-  // behind them. One more of the organizer's is still being probed — it is in
-  // no summary, exactly as it is in no montage.
+  // behind them less four joins. One more of the organizer's is still being
+  // probed — it is in no summary, exactly as it is in no montage.
   const [photo = ""] = await material(memory.id, organizer.user.id, 3, "ready", "photo");
   const [clip = "", clipToo = ""] = await material(
     memory.id,
@@ -1370,7 +1416,7 @@ test("the summary counts what would go in and refuses whatever the order refuses
     videos: 2,
     people: 2,
     min_seconds: 10,
-    max_seconds: 127,
+    max_seconds: 125,
     target_seconds: 60,
     orientation: "landscape",
     estimate_minutes: 2,
@@ -1413,14 +1459,14 @@ test("the summary counts what would go in and refuses whatever the order refuses
     videos: 1,
     people: 2,
     min_seconds: 10,
-    max_seconds: 67,
+    max_seconds: 66,
     target_seconds: 60,
     orientation: "landscape",
     estimate_minutes: 2,
   });
 
-  // Both of them gone and it is three photos from one person: seven seconds of
-  // material, a band collapsed onto its ceiling, and a wait that never falls
+  // Both of them gone and it is three photos from one person: six seconds of
+  // video, a band collapsed onto its ceiling, and a wait that never falls
   // under a minute however little there is to do.
   const photosOnly = await preview(app, organizer.token, memory.id, {
     exclude_media_ids: [clip, clipToo],
@@ -1429,9 +1475,9 @@ test("the summary counts what would go in and refuses whatever the order refuses
     photos: 3,
     videos: 0,
     people: 1,
-    min_seconds: 7,
-    max_seconds: 7,
-    target_seconds: 7,
+    min_seconds: 6,
+    max_seconds: 6,
+    target_seconds: 6,
     orientation: "landscape",
     estimate_minutes: 1,
   });
@@ -1447,7 +1493,7 @@ test("the summary counts what would go in and refuses whatever the order refuses
     { include_media_ids: [photo], exclude_media_ids: [photo] },
     { include_media_ids: [randomUUID()] },
     { target_seconds: 9 },
-    { target_seconds: 128 },
+    { target_seconds: 126 },
     { music_tracks: ["epic"] },
     { music_note: "погромче к финалу" },
     { orientation: "square" },
@@ -1549,7 +1595,8 @@ test("the summary and the order agree on every edge of the band, whatever is lef
     }
   };
 
-  // Two thirty-second videos, one nobody measured, two photos: 65 seconds.
+  // Two thirty-second videos, one nobody measured, two photos: 65 seconds less
+  // four joins, 63.
   const mixed = await createMemory(app, token);
   const [long1 = "", long2 = ""] = await material(
     mixed.id,
@@ -1568,24 +1615,25 @@ test("the summary and the order agree on every edge of the band, whatever is lef
     "photo",
   );
   await check(mixed.id, {}, 201, { target_seconds: 60 });
-  await check(mixed.id, { target_seconds: 65 }, 201, { target_seconds: 65 });
+  await check(mixed.id, { target_seconds: 63 }, 201, { target_seconds: 63 });
   await check(mixed.id, { target_seconds: 10 }, 201, { target_seconds: 10 });
-  for (const target_seconds of [66, 9, 0, -1]) {
-    await check(mixed.id, { target_seconds }, 400, { body: out(10, 65) });
+  for (const target_seconds of [64, 9, 0, -1]) {
+    await check(mixed.id, { target_seconds }, 400, { body: out(10, 63) });
   }
-  // A crossed-out frame takes its seconds off the ceiling, on both routes alike.
-  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 35 }, 201);
-  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 36 }, 400, {
-    body: out(10, 35),
+  // A crossed-out frame takes its seconds and its join off the ceiling, on both
+  // routes alike: 35 seconds less three joins.
+  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 33 }, 201);
+  await check(mixed.id, { exclude_media_ids: [long1], target_seconds: 34 }, 400, {
+    body: out(10, 33),
   });
   // Both thirty-second videos out: what is left is a photo pair and a video with
-  // no length — five seconds, a band that has collapsed onto its ceiling, and
-  // the default length squeezed into it.
+  // no length — five seconds less two joins, a band that has collapsed onto its
+  // ceiling, and the default length squeezed into it.
   const stripped = { exclude_media_ids: [long1, long2] };
-  await check(mixed.id, stripped, 201, { target_seconds: 5 });
-  await check(mixed.id, { ...stripped, target_seconds: 5 }, 201);
-  await check(mixed.id, { ...stripped, target_seconds: 6 }, 400, { body: out(5, 5) });
-  await check(mixed.id, { ...stripped, target_seconds: 4 }, 400, { body: out(5, 5) });
+  await check(mixed.id, stripped, 201, { target_seconds: 4 });
+  await check(mixed.id, { ...stripped, target_seconds: 4 }, 201);
+  await check(mixed.id, { ...stripped, target_seconds: 5 }, 400, { body: out(4, 4) });
+  await check(mixed.id, { ...stripped, target_seconds: 3 }, 400, { body: out(4, 4) });
   // Two left is too little material, and it is two whatever was crossed out.
   await check(mixed.id, { exclude_media_ids: [long1, long2, photo1] }, 409, { body: scarce(2) });
   await check(mixed.id, { exclude_media_ids: [long1, long2, blind] }, 409, { body: scarce(2) });
@@ -1593,40 +1641,44 @@ test("the summary and the order agree on every edge of the band, whatever is lef
     body: scarce(0),
   });
 
-  // Only photos: seven seconds is the whole band.
+  // Only photos: 7,5 seconds less two joins, floored — six is the whole band.
   const photos = await createMemory(app, token);
   await material(photos.id, organizer.user.id, 3, "ready", "photo");
-  await check(photos.id, {}, 201, { target_seconds: 7 });
-  await check(photos.id, { target_seconds: 7 }, 201);
-  await check(photos.id, { target_seconds: 6 }, 400, { body: out(7, 7) });
-  await check(photos.id, { target_seconds: 8 }, 400, { body: out(7, 7) });
+  await check(photos.id, {}, 201, { target_seconds: 6 });
+  await check(photos.id, { target_seconds: 6 }, 201);
+  await check(photos.id, { target_seconds: 5 }, 400, { body: out(6, 6) });
+  await check(photos.id, { target_seconds: 7 }, 400, { body: out(6, 6) });
 
-  // Nothing but videos nobody measured: a ceiling of nothing, refused as too
-  // little material — with the count of what is there — by both routes.
+  // Nothing but videos nobody measured: a ceiling of nothing, which their
+  // joins do not take below zero — refused as too little material, with the
+  // count of what is there, by both routes.
   const unmeasured = await createMemory(app, token);
   await material(unmeasured.id, organizer.user.id, 3, "ready", "video", null);
   await check(unmeasured.id, {}, 409, { body: scarce(3) });
   await check(unmeasured.id, { target_seconds: 60 }, 409, { body: scarce(3) });
-  // One photo beside them is two and a half seconds: the ceiling of two, and
-  // taking the photo out puts the memory back to nothing.
+  // One photo beside them is two and a half seconds less three joins: the
+  // ceiling of one, and taking the photo out puts the memory back to nothing.
   const [lone = ""] = await material(unmeasured.id, organizer.user.id, 1, "ready", "photo");
-  await check(unmeasured.id, {}, 201, { target_seconds: 2 });
-  await check(unmeasured.id, { target_seconds: 3 }, 400, { body: out(2, 2) });
+  await check(unmeasured.id, {}, 201, { target_seconds: 1 });
+  await check(unmeasured.id, { target_seconds: 2 }, 400, { body: out(1, 1) });
   await check(unmeasured.id, { exclude_media_ids: [lone] }, 409, { body: scarce(3) });
 
-  // The ceiling is the whole seconds of the sum, and ten minutes at the most.
+  // The ceiling is the whole seconds of what the worker assembles, and ten
+  // minutes at the most: 599,9 less two joins is 598.
   const fractional = await createMemory(app, token);
   await material(fractional.id, organizer.user.id, 1, "ready", "video", 199.9);
   await material(fractional.id, organizer.user.id, 2, "ready", "video", 200);
-  await check(fractional.id, { target_seconds: 599 }, 201);
-  await check(fractional.id, { target_seconds: 600 }, 400, { body: out(10, 599) });
+  await check(fractional.id, { target_seconds: 598 }, 201);
+  await check(fractional.id, { target_seconds: 599 }, 400, { body: out(10, 598) });
   const long = await createMemory(app, token);
   await material(long.id, organizer.user.id, 3, "ready", "video", 300);
   await check(long.id, { target_seconds: 600 }, 201);
   await check(long.id, { target_seconds: 601 }, 400, { body: out(10, 600) });
   await check(long.id, {}, 201, { target_seconds: 60 });
+  // Ten minutes to the second once the joins are paid: 601 less two of them.
   const exact = await createMemory(app, token);
-  await material(exact.id, organizer.user.id, 3, "ready", "video", 200);
+  await material(exact.id, organizer.user.id, 2, "ready", "video", 200);
+  await material(exact.id, organizer.user.id, 1, "ready", "video", 201);
   await check(exact.id, { target_seconds: 600 }, 201);
   await check(exact.id, { target_seconds: 601 }, 400, { body: out(10, 600) });
 

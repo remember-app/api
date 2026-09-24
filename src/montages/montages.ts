@@ -140,10 +140,18 @@ const defaultTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS", 60);
  * A photo is worth the time it hangs on screen; a video is worth its own
  * length, and one the worker has not measured is worth nothing, which is the
  * safe way round — an unmeasured file cannot lengthen the ceiling.
+ *
+ * And every join costs a crossfade: the worker lays each piece half a second
+ * over the one before, so a video of everything there is runs the sum less one
+ * crossfade per join — forty photos make eighty and a half seconds, not a
+ * hundred. Both numbers are the worker's (`selection.PHOTO_SECONDS`,
+ * `assembly.CROSSFADE_SECONDS` and `assembly.length_of` in projects/montage)
+ * and move with it, or the ceiling promises a video it cannot make.
  */
 const minSeconds = 10;
 const maxSeconds = 600;
 const photoSeconds = 2.5;
+const crossfadeSeconds = 0.5;
 
 /**
  * How long the note about the music may be. A guard of `story_text`'s kind and
@@ -179,7 +187,7 @@ const maxTracks = 50;
  * template has to be squeezed into it and say «от N человек» with the number the
  * summary will show.
  */
-export async function materialLeft(memoryId: string, exclude: string[] = []) {
+async function materialLeft(memoryId: string, exclude: string[]) {
   const [row] = await sql<
     { ready: number; photos: number; videos: number; people: number; seconds: number }[]
   >`
@@ -194,12 +202,17 @@ export async function materialLeft(memoryId: string, exclude: string[] = []) {
     from media_items
     where memory_id = ${memoryId} and status = 'ready' and id <> all(${exclude}::uuid[])
   `;
-  const max = Math.floor(Math.min(maxSeconds, row?.seconds ?? 0));
+  const ready = row?.ready ?? 0;
+  const assembled = (row?.seconds ?? 0) - crossfadeSeconds * Math.max(ready - 1, 0);
+  // Down to whole seconds, since only those can be ordered and a length above
+  // what the material makes is one the worker cannot reach. Never under
+  // nothing: three videos nobody measured are two joins with no length at all.
+  const max = Math.max(0, Math.floor(Math.min(maxSeconds, assembled)));
   // The floor gives way to the ceiling rather than crossing it: a memory of
-  // three photos is worth seven seconds, and «не короче десяти» there would be
+  // three photos is worth six seconds, and «не короче десяти» there would be
   // a band with nothing in it, which refuses every length there is.
   return {
-    ready: row?.ready ?? 0,
+    ready,
     // Split by kind and by whose they are for «итог перед монтажом» (doc-03):
     // «168 фото · 46 видео, от 5 человек» is this same set of rows counted
     // three more ways, so it is this same query — a second one asked a moment
@@ -371,7 +384,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   }
 
   // Not said is the default, squeezed into this memory's band — which is where
-  // a memory of three photos gets a seven-second video instead of a refusal
+  // a memory of three photos gets a six-second video instead of a refusal
   // nobody asked for. Said is obeyed or refused with both numbers, so the app
   // can move its slider to the edge rather than guess where the edge was.
   const target =

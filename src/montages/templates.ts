@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Language } from "../auth/session.ts";
-import { materialLeft, type musicTracks } from "./montages.ts";
+import { checkOrder, type musicTracks } from "./montages.ts";
 
 /**
  * Шесть готовых роликов на выбор (doc-03: «Шаблон — это текст истории, музыка,
@@ -213,11 +213,15 @@ export function montageTemplateRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       if (role !== "organizer") return reply.code(403).send({ error: "forbidden" });
 
-      // Предел и «от N человек» — по всему готовому материалу: вычеркнутых
-      // кадров на этом шаге ещё нет, и итог заказа пересчитает оба по тому, что
-      // останется. Люди — те, чьи кадры в материале, тем же счётом, что `people`
-      // на итоге, иначе два соседних экрана назовут разные числа.
-      const { min_seconds, max_seconds, people } = await materialLeft(memory.id);
+      // Взвешено как заказ без пожеланий — вычеркнутых кадров на этом шаге ещё
+      // нет. Там, где «Начать монтаж» всё равно откажет за нехваткой материала,
+      // мастер получает тот же отказ сразу, а не шесть карточек «от 0 человек».
+      // Предел и «от N человек» — оттуда же, по всему готовому материалу; итог
+      // заказа пересчитает оба по тому, что останется. Люди — тем же счётом,
+      // что `people` на итоге, иначе два соседних экрана назовут разные числа.
+      const checked = await checkOrder(memory.id, null);
+      if (!("params" in checked)) return reply.code(checked.code).send(checked.body);
+      const { min_seconds, max_seconds, people } = checked.left;
 
       const language = request.user.language;
       const facts = {
@@ -228,8 +232,8 @@ export function montageTemplateRoutes(app: FastifyInstance) {
       return templates.map(({ id, seconds, orientation, tracks, story, note }) => ({
         id,
         story_text: story[language](facts),
-        // Длина шаблона в пределах этого воспоминания: три минуты на сорока
-        // секундах материала — это сорок. Нижний край держится тем же зажимом,
+        // Длина шаблона в пределах этого воспоминания: три минуты при пределе в
+        // сорок секунд — это сорок. Нижний край держится тем же зажимом,
         // хотя сегодня до него не дотягивается ни один шаблон.
         target_seconds: Math.min(Math.max(seconds, min_seconds), max_seconds),
         orientation,
