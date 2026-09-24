@@ -404,10 +404,11 @@ export function uploadRoutes(app: FastifyInstance) {
         // status. Also off `nothing` — that one is a claim about the future
         // («материала от меня не будет»), and a file landing is the fact that
         // falsifies it. Left alone, the roster read «ждать нечего» over a
-        // person whose photos were in the gallery, and nothing in the app could
-        // correct it: the question is only asked on a first upload, and the
-        // button that sets a status is hidden once the status is terminal. That
-        // stale line is the exact drift doc-06 exists to remove.
+        // person whose photos were in the gallery, and nothing would correct it
+        // unprompted: the question is only asked on a first upload, and nobody
+        // goes back into the settings to take back what they said before the
+        // photos existed. That stale line is the exact drift doc-06 exists to
+        // remove.
         //
         // `done` is deliberately left standing: it says «я всё загрузил», which
         // more material makes out of date but not untrue, and re-opening it

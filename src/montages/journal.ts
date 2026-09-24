@@ -36,7 +36,7 @@ export const montageStages = [
 type StageKey = (typeof montageStages)[number];
 
 /** Строка `montage_stages` со счётчиками, которые api досчитывает по записям. */
-type StageRow = {
+export type StageRow = {
   stage: StageKey;
   state: "pending" | "running" | "done" | "failed";
   started_at: Date | null;
@@ -126,8 +126,10 @@ export function journalRoutes(app: FastifyInstance) {
       // Записи в ответе всегда идут от свежих к старым, одним порядком на оба
       // случая: именно так их рисует экран. Выбираются они при этом по-разному
       // — см. `forward` в обработчике.
-      after: { type: "integer", minimum: 0 },
-      before: { type: "integer", minimum: 0 },
+      // Потолок — не лимит журнала, а граница числа: больше него ajv пропустит
+      // то, что `::bigint` уже не примет, и курсор-мусор стал бы 500.
+      after: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      before: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       limit: { type: "integer", minimum: 1, maximum: maxLimit, default: defaultLimit },
       stage: { type: "string", enum: [...montageStages] },
       media_id: { type: "string", pattern: uuidPattern.source },
@@ -209,9 +211,13 @@ export function journalRoutes(app: FastifyInstance) {
         `,
         // Порция от курсора. Лишняя запись сверх лимита — это и есть ответ на
         // «есть ли ещё»; считать всё подходящее вторым запросом значило бы
-        // платить за полный скан на каждом опросе.
+        // платить за полный скан на каждом опросе. Колонки названы, а не `*`:
+        // таблицу пишет воркер, а наружу уходит только контракт.
         sql<EntryRow[]>`
-          select * from montage_journal_entries
+          select id, stage, media_id, thought, decision, reason, series_size, story_part,
+            story_part_title, source_from_seconds, source_to_seconds, labels,
+            focus_x, focus_y, focus_w, focus_h, created_at
+          from montage_journal_entries
           where montage_id = ${montage.id}
             and (${after ?? null}::bigint is null or id > ${after ?? null}::bigint)
             and (${before ?? null}::bigint is null or id < ${before ?? null}::bigint)

@@ -360,6 +360,10 @@ test("записи идут порциями от курсора, свежие �
 
   // Сужение неизвестным этапом — отказ схемы, а не молча пустой журнал.
   expect((await read(app, organizer.token, memory.id, id, "?stage=nonsense")).statusCode).toBe(400);
+  // Курсор за пределами bigint — тоже отказ схемы, а не 500 из базы.
+  for (const cursor of ["after=10000000000000000000", "before=1e21"]) {
+    expect((await read(app, organizer.token, memory.id, id, `?${cursor}`)).statusCode).toBe(400);
+  }
 
   await app.close();
 });
@@ -404,6 +408,8 @@ test("запись несёт всё, что режиссёр сказал, а �
     labels: ["Бабушка", "смех"],
     focus: { x: 0.3, y: 0.05, w: 0.25, h: 0.5 },
   });
+  // Ровно контракт: ролик, про который и так спросили, в каждой записи не едет.
+  expect(answer.entries[0]).not.toHaveProperty("montage_id");
 
   // Только файл из отданной порции — второй в неё не попал.
   expect(answer.files).toHaveLength(1);

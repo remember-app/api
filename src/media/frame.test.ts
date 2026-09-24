@@ -371,3 +371,54 @@ test("the upload intent takes the file name the phone sends, and does without it
 
   await app.close();
 });
+
+test("a NUL in the file name is cut out and a name of nothing is no name, not a 500", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+
+  const intent = (file_name: string) =>
+    app.inject(
+      as(organizer.token, {
+        method: "POST",
+        url: `/memories/${memory.id}/media`,
+        payload: { kind: "photo", size_bytes: 4096, file_name },
+      }),
+    );
+
+  // No `text` column holds a NUL, so it is stripped rather than refused; what
+  // is left is trimmed, and nothing left is not a name.
+  const cases: [string, string | null][] = [
+    ["IM\u0000G 4471.HEIC", "IMG 4471.HEIC"],
+    ["  IMG_0001.HEIC  ", "IMG_0001.HEIC"],
+    ["\u0000 \u0000", null],
+    ["", null],
+  ];
+  for (const [sent, kept] of cases) {
+    const asked = await intent(sent);
+    expect(asked.statusCode).toBe(201);
+    const { id } = asked.json() as { id: string };
+    const [stored] = await sql<{ file_name: string | null }[]>`
+      select file_name from media_items where id = ${id}
+    `;
+    expect(stored?.file_name).toBe(kept);
+    // Releases the multipart upload the intent started in the store.
+    await app.inject(
+      as(organizer.token, { method: "DELETE", url: `/memories/${memory.id}/media/${id}` }),
+    );
+  }
+
+  // A caption, not a payload: past what a filesystem holds it is the client's
+  // bug, refused before anything is written.
+  expect((await intent("a".repeat(256))).statusCode).toBe(400);
+  const longest = await intent("a".repeat(255));
+  expect(longest.statusCode).toBe(201);
+  await app.inject(
+    as(organizer.token, {
+      method: "DELETE",
+      url: `/memories/${memory.id}/media/${(longest.json() as { id: string }).id}`,
+    }),
+  );
+
+  await app.close();
+});
