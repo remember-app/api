@@ -2667,7 +2667,7 @@
               "total_count": 4,
               "outcome": {
                 "cuts": 3,
-                "seconds": 10.4
+                "seconds": 10.1
               },
               "updated_at": "2026-01-01T00:00:27.000Z",
               "taken_count": 0,
@@ -2797,7 +2797,7 @@
               "total_count": 4,
               "outcome": {
                 "cuts": 3,
-                "seconds": 10.4
+                "seconds": 10.1
               },
               "updated_at": "2026-01-01T00:00:27.000Z",
               "taken_count": 0,
@@ -2915,7 +2915,7 @@
               "total_count": 4,
               "outcome": {
                 "cuts": 3,
-                "seconds": 10.4
+                "seconds": 10.1
               },
               "updated_at": "2026-01-01T00:00:27.000Z",
               "taken_count": 0,
@@ -3271,7 +3271,7 @@
               "places": [
                 {
                   "start_seconds": 4.23,
-                  "duration_seconds": 4.17
+                  "duration_seconds": 3.5
                 }
               ]
             },
@@ -3311,8 +3311,8 @@
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
               "places": [
                 {
-                  "start_seconds": 7.9,
-                  "duration_seconds": 2.5
+                  "start_seconds": 7.23,
+                  "duration_seconds": 2.83
                 }
               ]
             },
@@ -3453,7 +3453,7 @@
               "total_count": 4,
               "outcome": {
                 "cuts": 3,
-                "seconds": 10.4
+                "seconds": 10.1
               },
               "updated_at": "2026-01-01T00:00:27.000Z",
               "taken_count": 0,
@@ -3546,7 +3546,7 @@
             "memory_id": "00000000-0000-4000-8000-a00000000001",
             "ordered_by": "00000000-0000-4000-8000-c00000000001",
             "status": "ready",
-            "duration_seconds": 10.4,
+            "duration_seconds": 10.07,
             "params": {
               "music_tracks": ["warm"],
               "target_seconds": 10,
