@@ -67,7 +67,7 @@ export function frameRoutes(app: FastifyInstance) {
   // The path is one segment shorter than `/media/:mediaId/download` and
   // `/media/:mediaId/upload`, and a segment longer than the gallery itself, so
   // it takes nothing away from either. `/media/download` keeps working for the
-  // reason the README gives: the router prefers a literal segment to a
+  // reason docs/media.md gives: the router prefers a literal segment to a
   // parameter, whatever the order of declaration.
   app.get<{ Params: { memoryId: string; mediaId: string } }>(
     "/memories/:memoryId/media/:mediaId",
@@ -75,8 +75,8 @@ export function frameRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const memoryId = request.membership.memory.id;
       const { mediaId } = request.params;
-      // «Not a uuid» is «no such record», the house rule of this family (README,
-      // «404 один на всех»), and not a params schema for the reason the delete
+      // «Not a uuid» is «no such record», the house rule of this family
+      // (docs/auth.md, «404 один на всех»), and not a params schema for the reason the delete
       // route gives: a schema answers before the membership check has run.
       if (!uuidPattern.test(mediaId)) return reply.code(404).send(notFound);
 

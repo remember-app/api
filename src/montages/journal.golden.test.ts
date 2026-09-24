@@ -7,7 +7,7 @@ import { sql } from "../db.ts";
 
 /**
  * Журнал, который написал не человек: `golden/journal_*.json` — записанный вывод
- * настоящей сборки воркера (копия из projects/montage/fixtures, см. README, «Журнал
+ * настоящей сборки воркера (копия из projects/montage/fixtures, см. docs/testing.md, «Журнал
  * монтажа — снимки и записанные ответы»). Тест загружает его в базу как ролик
  * настоящего воспоминания и читает только настоящими маршрутами; ответы, которые
  * читает приложение, сверяет с `golden/responses_*.json` (или перезаписывает, если
@@ -114,7 +114,7 @@ const shotAt = (seconds: number) => new Date(shotBase + seconds * 1000).toISOStr
 /**
  * Копия ручки оценки воркера `journal.ESTIMATE`: секунд на файл материала и на секунду
  * заказанного ролика. Снимок оценку начала сборки не хранит (закрытый этап стоит с нулём),
- * а `begin` пишет её первой, — поэтому она здесь копией, как и сами снимки (README, «Снимки —
+ * а `begin` пишет её первой, — поэтому она здесь копией, как и сами снимки (docs/testing.md, «Снимки —
  * копии»): воркер подстроил числа — обновить их тут и перезаписать ответы.
  */
 const ESTIMATE: Record<string, [number, number]> = {
@@ -614,7 +614,7 @@ const checkRecorded = (scenario: string, steps: Step[]) => {
     return;
   }
   const committed = JSON.parse(readFileSync(recorded(scenario), "utf8")) as typeof doc;
-  const hint = "записанные ответы разошлись с тем, что api отдаёт сейчас (README api)";
+  const hint = "записанные ответы разошлись с тем, что api отдаёт сейчас (docs/testing.md)";
   expect(committed.format, hint).toBe(1);
   expect(
     steps.map((step) => step.name),

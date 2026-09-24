@@ -154,7 +154,7 @@ export function musicRoutes(app: FastifyInstance) {
       const { memory } = request.membership;
       const { trackId } = request.params;
       // «Not a uuid» is «no such track», the house rule of everything behind the
-      // membership check (README, «404 один на всех»), and not a params schema
+      // membership check (docs/auth.md, «404 один на всех»), and not a params schema
       // for the reason the media routes give: a schema answers before the
       // membership check has run, from outside the memory.
       if (!uuidPattern.test(trackId)) return reply.code(404).send(notFound);

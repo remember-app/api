@@ -325,7 +325,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   // under `content-type: application/json` is refused by Fastify's own JSON
   // parser before any schema of ours is consulted. Pinned here because it is
   // the shape a client produces by accident — a POST with the header set out
-  // of habit and nothing to send — and the README has to name it rather than
+  // of habit and nothing to send — and the docs have to name it rather than
   // promise «без тела» works whatever the headers say.
   const emptyWithType = await app.inject({
     method: "POST",
@@ -404,7 +404,7 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   });
 
   // Somebody else's memory, one that never existed and an id that is not a
-  // uuid: byte for byte the same answer (README, «404 один на всех»).
+  // uuid: byte for byte the same answer (docs/auth.md, «404 один на всех»).
   for (const id of [memory.id, randomUUID(), "not-a-uuid"]) {
     const answer = await order(app, stranger.token, id, {});
     expect(answer.statusCode).toBe(404);

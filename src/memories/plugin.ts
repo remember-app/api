@@ -3,7 +3,7 @@ import { sql } from "../db.ts";
 import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
 
-/** The three levels architecture.md fixes; the matrix is in the README. */
+/** The three levels architecture.md fixes; the matrix is in docs/auth.md. */
 export type MemberRole = "organizer" | "contributor" | "viewer";
 
 /**
@@ -49,7 +49,7 @@ declare module "fastify" {
     requireMembership: preHandlerAsyncHookHandler;
   }
   interface FastifyRequest {
-    /** Populated only behind `app.requireMembership` — see the README. */
+    /** Populated only behind `app.requireMembership` — see docs/auth.md. */
     membership: { memory: Memory; role: MemberRole; status: ContributionStatus };
   }
 }
@@ -154,7 +154,7 @@ export function memoriesPlugin(app: FastifyInstance) {
     // One 404 for all three of: not a uuid, no such memory, not a member.
     // Telling them apart would answer «does this memory exist?» to anybody
     // holding an id, which is how one enumerates other people's memories.
-    // Downstream features inherit this — see the README.
+    // Downstream features inherit this — see docs/auth.md.
     const notFound = () => reply.code(404).send({ error: "not found" });
     if (!memoryId || !uuidPattern.test(memoryId)) return notFound();
 
@@ -269,7 +269,7 @@ export function memoriesPlugin(app: FastifyInstance) {
         // there is no derivative to draw the card with. Anything else — a
         // neighbour's frame, one still being processed, one that never existed
         // — is «no such frame», the same answer the download route gives for a
-        // record whose bytes are not in the store yet (README, «404 один на
+        // record whose bytes are not in the store yet (docs/auth.md, «404 один на
         // всех»).
         const [frame] = await sql`
           select 1 from media_items

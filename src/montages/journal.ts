@@ -192,7 +192,7 @@ export function journalRoutes(app: FastifyInstance) {
       const { memory } = request.membership;
       const { montageId } = request.params;
       // «Not a uuid» — это «нет такого ролика», домашнее правило всего, что
-      // стоит за проверкой участия (README, «404 один на всех»), и не схема на
+      // стоит за проверкой участия (docs/auth.md, «404 один на всех»), и не схема на
       // параметры пути ровно по причине из `montages.ts`.
       if (!uuidPattern.test(montageId)) return reply.code(404).send(notFound);
 
