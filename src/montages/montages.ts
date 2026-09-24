@@ -221,8 +221,9 @@ export async function materialLeft(memoryId: string, exclude: string[] = []) {
  *
  * A guess and not a promise — the README says so in those words. Nothing holds
  * the worker to it: the queue may be busy, a neural network may be slow, a
- * montage may fall over outright. Веха M-27 counts the wait off the stages the
- * journal records; that arithmetic is its own and shares nothing with this.
+ * montage may fall over outright. The two rates are the worker's own per-stage
+ * estimates summed (`journal.py`, `ESTIMATE`), so this and the wait its journal
+ * first shows agree — they move together or not at all.
  */
 const secondsPerFrame = 3;
 const secondsPerRenderedSecond = 1.5;
@@ -323,7 +324,10 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // worker to assemble a minute from two.
   const left = await materialLeft(memoryId, exclude);
   const { ready, min_seconds, max_seconds } = left;
-  if (ready < minReadyItems) {
+  // A ceiling of nothing — every frame left a video nobody measured — is too
+  // little material as well: the band is then 0…0, and 0 is the one length the
+  // worker reads as «не сказали» and cuts a minute out of.
+  if (ready < minReadyItems || max_seconds === 0) {
     // English like every other error body here, with the numbers beside it:
     // «недостаточно материала для ролика» is what the app says, and it says it
     // in its own words rather than showing ours. `ready_items` is what this
@@ -540,6 +544,11 @@ export function montageRoutes(app: FastifyInstance) {
       },
       music_note: { type: "string", maxLength: maxNoteChars },
       orientation: { type: "string", enum: [...orientations] },
+      // The one-track fields `music_tracks` replaced. Refused rather than
+      // stripped like an invented field: a client still naming its track this
+      // way would get a video with no music and no word about why.
+      music_track_id: false,
+      music_track_key: false,
     },
   } as const;
 
