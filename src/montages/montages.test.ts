@@ -349,15 +349,16 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   ]) {
     expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
   }
-  // The two fields the app used to name one track by are gone from the schema,
-  // so they are unknown fields like any other — dropped on the way in, naming
-  // no music at all. Pinned beside an invented field because that is exactly
-  // what they now are: the music is asked for in `music_tracks` or not at all.
+  // The two fields the app used to name one track by are refused by name: an
+  // order that asked for music must not quietly become one without it.
+  for (const payload of [{ music_track_id: "calm" }, { music_track_key: "music/whatever" }]) {
+    const old = await order(app, organizer.token, memory.id, payload);
+    expect(old.statusCode).toBe(400);
+    expect(old.json().message).toContain(Object.keys(payload)[0]);
+  }
   const stuffed = await order(app, organizer.token, memory.id, {
     target_seconds: 45,
     style: "cinematic",
-    music_track_id: "calm",
-    music_track_key: "music/whatever",
   });
   expect(stuffed.statusCode).toBe(201);
   expect(stuffed.json().params).toEqual({ target_seconds: 45, music_tracks: [] });
@@ -699,6 +700,14 @@ test("the length a montage may be ordered at is cut from the memory's own materi
     min_seconds: 10,
     max_seconds: 35,
   });
+
+  // Nothing measured at all is a ceiling of nothing — refused as too little
+  // material, by the order and the summary alike, rather than written as 0.
+  const unmeasured = await createMemory(app, organizer.token);
+  await material(unmeasured.id, organizer.user.id, 3, "ready", "video", null);
+  for (const asked of [order, preview]) {
+    expect((await asked(app, organizer.token, unmeasured.id, {})).statusCode).toBe(409);
+  }
 
   // And ten minutes however much material there is (doc-03): fifteen minutes of
   // video still buys a ten-minute ceiling.
