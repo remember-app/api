@@ -67,7 +67,7 @@ async function frame(
   memoryId: string,
   uploadedBy: string,
   fields: {
-    status?: "ready" | "processing" | "pending_upload";
+    status?: "ready" | "processing" | "failed" | "pending_upload";
     captured_at?: string;
     file_name?: string;
     width?: number;
@@ -99,7 +99,7 @@ async function montage(
   memoryId: string,
   orderedBy: string,
   fields: {
-    status?: "ready" | "queued" | "failed";
+    status?: "ready" | "queued" | "processing" | "failed";
     duration_seconds?: number;
     created_at?: string;
   } = {},
@@ -419,6 +419,189 @@ test("a NUL in the file name is cut out and a name of nothing is no name, not a 
       url: `/memories/${memory.id}/media/${(longest.json() as { id: string }).id}`,
     }),
   );
+
+  await app.close();
+});
+
+test("the sheet opens over every frame the gallery shows, finished or not, and counts only this memory's", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const elsewhere = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+
+  // The gallery lists all three, and draws a placeholder for the last two: the
+  // sheet opens over whatever the app is showing, so «only ready» is not a rule
+  // it may have.
+  const shown = {
+    ready: await frame(memory.id, mark.user.id),
+    processing: await frame(memory.id, mark.user.id, { status: "processing" }),
+    failed: await frame(memory.id, mark.user.id, { status: "failed" }),
+  };
+  // The same person's frames in another memory of theirs are not «всего кадров»
+  // in this one: the tally is per memory, as the roster's is.
+  await frame(elsewhere.id, mark.user.id);
+  await frame(elsewhere.id, mark.user.id);
+
+  // Read by the contributor, who is neither the organizer nor a viewer.
+  for (const [status, id] of Object.entries(shown)) {
+    const read = await info(app, mark.token, memory.id, id);
+    expect(read.statusCode, status).toBe(200);
+    const sheet = read.json() as Sheet;
+    expect(sheet.id).toBe(id);
+    expect(sheet.uploaded_by.media_count).toBe(3);
+  }
+
+  await app.close();
+});
+
+test("a frame that stands twice in one video is listed twice, and a finished video with no length is still a line", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const id = await frame(memory.id, organizer.user.id);
+
+  const cut = await montage(memory.id, organizer.user.id, {
+    duration_seconds: 60,
+    created_at: "2026-09-19T12:00:00Z",
+  });
+  // Written out of order: the order the sheet answers in is the video's, not
+  // the worker's order of insert.
+  await stands(cut, id, 40);
+  await stands(cut, id, 5.5);
+  // A finished video the worker never wrote a length for is a line with a null,
+  // not a hole in the answer.
+  const unmeasured = await montage(memory.id, organizer.user.id, {
+    created_at: "2026-09-20T12:00:00Z",
+  });
+  await sql`update montages set duration_seconds = null where id = ${unmeasured}`;
+  await stands(unmeasured, id, 1);
+  // Not finished, however far along: nobody can open these from the sheet.
+  for (const status of ["queued", "processing"] as const) {
+    await stands(await montage(memory.id, organizer.user.id, { status }), id, 2);
+  }
+
+  const read = await info(app, organizer.token, memory.id, id);
+  expect(read.statusCode).toBe(200);
+  expect((read.json() as Sheet).montages).toEqual([
+    { id: unmeasured, duration_seconds: null, start_seconds: 1 },
+    { id: cut, duration_seconds: 60, start_seconds: 5.5 },
+    { id: cut, duration_seconds: 60, start_seconds: 40 },
+  ]);
+
+  await app.close();
+});
+
+test("a frame deleted, or carried out by the person who brought it, leaves the layout of the videos with it and the videos stay", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+
+  const mine = await frame(memory.id, organizer.user.id);
+  const deleted = await frame(memory.id, mark.user.id);
+  const carried = await frame(memory.id, mark.user.id);
+  const video = await montage(memory.id, organizer.user.id);
+  await stands(video, mine, 0);
+  await stands(video, deleted, 3);
+  await stands(video, carried, 6);
+
+  const placed = async () =>
+    (
+      await sql<{ media_id: string }[]>`
+        select media_id from montage_frames where montage_id = ${video} order by start_seconds
+      `
+    ).map((row) => row.media_id);
+  expect(await placed()).toEqual([mine, deleted, carried]);
+
+  // One record, by its owner. A layout row that stayed would point at nothing —
+  // and, with a foreign key and no cascade, would turn this into a 500.
+  const removed = await app.inject(
+    as(mark.token, { method: "DELETE", url: `/memories/${memory.id}/media/${deleted}` }),
+  );
+  expect(removed.statusCode).toBe(200);
+  expect(await placed()).toEqual([mine, carried]);
+
+  // Everything a person brought, when they walk out — the other road material
+  // leaves a memory by.
+  const left = await app.inject(
+    as(mark.token, {
+      method: "DELETE",
+      url: `/memories/${memory.id}/members/${mark.user.id}`,
+    }),
+  );
+  expect(left.statusCode).toBe(200);
+  expect(await placed()).toEqual([mine]);
+
+  // A video already cut is left alone, and what stays in it still says so.
+  const read = await info(app, organizer.token, memory.id, mine);
+  expect((read.json() as Sheet).montages).toEqual([
+    { id: video, duration_seconds: 60, start_seconds: 0 },
+  ]);
+
+  await app.close();
+});
+
+test("the sheet hands out no key of the store and no address, and needs no storage to answer", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const id = await frame(memory.id, mark.user.id, {
+    captured_at: "2026-09-13T21:47:00+03:00",
+    file_name: "IMG_4471.HEIC",
+    width: 4032,
+    height: 3024,
+    camera_model: "iPhone 15 Pro",
+    focal_length_mm: 24,
+    aperture: 1.8,
+    latitude: 55.518,
+    longitude: 37.53,
+  });
+  await stands(await montage(memory.id, organizer.user.id), id, 12);
+
+  // The frame's own keys (original, thumbnail, preview, the multipart upload's
+  // id) and the person's address are all one `select *` away from the answer;
+  // the sheet is exactly the documented fields and nothing beside them.
+  const original = process.env.R2_ENDPOINT;
+  delete process.env.R2_ENDPOINT;
+  try {
+    // «Поэтому 503 у этого маршрута не бывает»: nothing is signed, so a store
+    // that is not configured is not this route's business.
+    const read = await info(app, organizer.token, memory.id, id);
+    expect(read.statusCode).toBe(200);
+    const sheet = read.json() as Sheet;
+    expect(Object.keys(sheet).sort()).toEqual([
+      "aperture",
+      "camera_model",
+      "captured_at",
+      "created_at",
+      "file_name",
+      "focal_length_mm",
+      "height",
+      "id",
+      "latitude",
+      "longitude",
+      "montages",
+      "size_bytes",
+      "uploaded_by",
+      "width",
+    ]);
+    expect(Object.keys(sheet.uploaded_by).sort()).toEqual([
+      "id",
+      "media_count",
+      "name",
+      "username",
+    ]);
+    expect(Object.keys(sheet.montages[0] ?? {}).sort()).toEqual([
+      "duration_seconds",
+      "id",
+      "start_seconds",
+    ]);
+  } finally {
+    if (original === undefined) delete process.env.R2_ENDPOINT;
+    else process.env.R2_ENDPOINT = original;
+  }
 
   await app.close();
 });

@@ -778,3 +778,161 @@ test("the cover goes with the person who brought it, whether they walk out or ar
 
   await app.close();
 });
+
+/**
+ * A frame in exactly the state given. `ready` above ties the status to the
+ * picture — a key means finished, none means not — which is the very pairing
+ * the cover check has to be told apart from, half by half.
+ */
+const frameIn = async (
+  memoryId: string,
+  userId: string,
+  status: "ready" | "processing" | "failed" | "pending_upload",
+  thumbnailKey: string | null,
+) => {
+  const [row] = await sql<{ id: string }[]>`
+    insert into media_items
+      (memory_id, uploaded_by, kind, status, original_key, size_bytes, thumbnail_key)
+    values (${memoryId}, ${userId}, 'photo', ${status}, ${`${titleTag}/original-${randomUUID()}`},
+            4096, ${thumbnailKey})
+    returning id
+  `;
+  if (!row) throw new Error("insert into media_items returned no row");
+  return row.id;
+};
+
+const picture = () => `${titleTag}-${randomUUID()}-picture.jpg`;
+
+test("a cover needs a finished frame and a picture to draw it with, each on its own, and a refused cover writes nothing", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-07-05T12:00:00Z" })
+  ).json();
+
+  // Each is exactly one thing short of a cover. A worker that finished and left
+  // no picture, and frames with a picture that are not finished (a re-run over
+  // an old frame, a failure after the thumbnail was cut, a record still in the
+  // air) — so «ready» and «has a thumbnail» cannot stand in for each other.
+  const shortOfOne: [string, string][] = [
+    ["ready, no picture", await frameIn(memory.id, user.id, "ready", null)],
+    ["failed, with a picture", await frameIn(memory.id, user.id, "failed", picture())],
+    ["processing, with a picture", await frameIn(memory.id, user.id, "processing", picture())],
+    ["pending, with a picture", await frameIn(memory.id, user.id, "pending_upload", picture())],
+  ];
+  for (const [what, id] of shortOfOne) {
+    // The title rides along in the same form. The cover is checked before
+    // anything is written, so it must not land while its neighbour is refused.
+    const refused = await patch(app, token, memory.id, {
+      title: `${titleTag} renamed`,
+      cover_media_id: id,
+    });
+    expect(refused.statusCode, what).toBe(404);
+    expect(refused.body, what).toBe('{"error":"not found"}');
+  }
+  expect((await list(app, token)).json()).toMatchObject([
+    { id: memory.id, title: memory.title, cover_media_id: null },
+  ]);
+
+  // And the one that is both is taken.
+  const finished = await frameIn(memory.id, user.id, "ready", picture());
+  const chosen = await patch(app, token, memory.id, { cover_media_id: finished });
+  expect(chosen.statusCode).toBe(200);
+  expect(chosen.json().cover_media_id).toBe(finished);
+
+  await app.close();
+});
+
+test("an edit that does not name the cover leaves it where it is, and the whole form lands in one request", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-07-06T12:00:00Z" })
+  ).json();
+  const firstKey = picture();
+  const first = await frameIn(memory.id, user.id, "ready", firstKey);
+  const second = await frameIn(memory.id, user.id, "ready", picture());
+
+  expect((await patch(app, token, memory.id, { cover_media_id: first })).statusCode).toBe(200);
+
+  // The form sends what was touched: a new name, or a new day, and the cover
+  // the organizer never went near is still the cover — and still a link.
+  for (const touched of [
+    { title: `${titleTag} renamed` },
+    { event_start: "2026-07-07T10:00:00Z" },
+  ]) {
+    const edited = await patch(app, token, memory.id, touched);
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().cover_media_id).toBe(first);
+    expect(keyOf(edited.json().cover_thumbnail_url)).toBe(firstKey);
+  }
+
+  // Everything at once — title, both ends and a new cover, the id spelt in
+  // capitals as a client may echo it. The end is the very instant of the start,
+  // in another offset: an event of no length is a window (the database's own
+  // check reads «not before»), and one request writes all four.
+  const name = title();
+  const whole = await patch(app, token, memory.id, {
+    title: `  ${name}  `,
+    event_start: "2026-10-01T09:00:00+03:00",
+    event_end: "2026-10-01T06:00:00Z",
+    cover_media_id: second.toUpperCase(),
+  });
+  expect(whole.statusCode).toBe(200);
+  expect(whole.json()).toMatchObject({
+    title: name,
+    event_start: "2026-10-01T06:00:00.000Z",
+    event_end: "2026-10-01T06:00:00.000Z",
+    cover_media_id: second,
+  });
+  expect((await list(app, token)).json()).toEqual([whole.json()]);
+
+  // The end is held to a moment as the start is — a bare date, or no date at
+  // all, is a 400 here and when creating, and never a cast failing in Postgres.
+  expect((await patch(app, token, memory.id, { event_end: "2026-10-05" })).statusCode).toBe(400);
+  expect(
+    (await create(app, token, { title: title(), event_start: start, event_end: "soon" }))
+      .statusCode,
+  ).toBe(400);
+
+  // A title has a ceiling, and it is the one creating holds: 200 stays, 201 not.
+  expect((await patch(app, token, memory.id, { title: "x".repeat(201) })).statusCode).toBe(400);
+  const longest = await patch(app, token, memory.id, {
+    title: `${titleTag} `.padEnd(200, "x"),
+  });
+  expect(longest.statusCode).toBe(200);
+
+  await app.close();
+});
+
+test("with no store configured the card still answers: the cover is chosen, and there is nothing to link", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-07-08T12:00:00Z" })
+  ).json();
+  const finished = await frameIn(memory.id, user.id, "ready", picture());
+
+  const original = process.env.R2_ENDPOINT;
+  delete process.env.R2_ENDPOINT;
+  try {
+    // The main screen has to draw either way — the same rule the tail of frames
+    // keeps, and the cover is a second place the signing could be reached from.
+    const chosen = await patch(app, token, memory.id, { cover_media_id: finished });
+    expect(chosen.statusCode).toBe(200);
+    expect(chosen.json()).toMatchObject({
+      cover_media_id: finished,
+      cover_thumbnail_url: null,
+      recent_thumbnail_urls: [],
+    });
+
+    const listed = await list(app, token);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([chosen.json()]);
+  } finally {
+    if (original === undefined) delete process.env.R2_ENDPOINT;
+    else process.env.R2_ENDPOINT = original;
+  }
+
+  await app.close();
+});

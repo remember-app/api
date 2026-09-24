@@ -797,3 +797,95 @@ test("every new route is behind the session check", async () => {
 
   await app.close();
 });
+
+test("a status is the person's word in that memory alone: no other row moves", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const contributor = await person(app);
+  const first = await createMemory(app, organizer.token);
+  const second = await createMemory(app, organizer.token);
+
+  for (const memory of [first, second]) {
+    expect(
+      (
+        await invite(app, organizer.token, memory.id, {
+          username: contributor.username,
+          role: "contributor",
+        })
+      ).statusCode,
+    ).toBe(200);
+  }
+
+  // «Всё загрузил» in one memory says nothing about the other one the same
+  // person is in — the status is on the membership, not on the human — and
+  // nothing about the organizer beside them.
+  expect((await setStatus(app, contributor.token, first.id, "done")).statusCode).toBe(200);
+  expect(await statusOf(first.id, contributor.id)).toBe("done");
+  expect(await statusOf(second.id, contributor.id)).toBe("not_started");
+  expect(await statusOf(first.id, organizer.id)).toBe("not_started");
+  expect(await statusOf(second.id, organizer.id)).toBe("not_started");
+
+  // The roster of the other memory says the same, in the words the screen reads.
+  const theirs = (await roster(app, organizer.token, second.id)).json() as {
+    id: string;
+    contribution_status: string | null;
+  }[];
+  expect(theirs.find((m) => m.id === contributor.id)?.contribution_status).toBe("not_started");
+
+  await app.close();
+});
+
+test("accepting a link answers with the card of the memory it opens, not the newest one the person holds", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const guest = await person(app);
+  const opened = await createMemory(app, organizer.token);
+
+  // The guest already has a memory of their own, and it is the later event, so
+  // it heads their listing: a card built from «the first of my list» would be
+  // the wrong memory, and the app would open it.
+  const own = await app.inject(
+    as(guest.token, {
+      method: "POST",
+      url: "/memories",
+      payload: { title: title(), event_start: "2026-12-01T12:00:00Z" },
+    }),
+  );
+  expect(own.statusCode).toBe(201);
+  expect(opened.event_start < own.json().event_start).toBe(true);
+
+  const link = (await getLink(app, organizer.token, opened.id)).json();
+  const joined = await accept(app, guest.token, link.token);
+  expect(joined.statusCode).toBe(200);
+  expect(joined.json()).toMatchObject({ id: opened.id, role: "contributor", member_count: 2 });
+
+  await app.close();
+});
+
+test("the roster runs in the order people joined, the organizer first", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const first = await person(app);
+  const second = await person(app);
+  const third = await person(app);
+  const fourth = await person(app);
+  const created = await createMemory(app, organizer.token);
+
+  // One by one, each its own statement: the order on the screen is the order of
+  // the memberships, and ids sorted any other way would shuffle it.
+  const joined = [first, second, third, fourth];
+  for (const who of joined) {
+    const role = who === first ? "viewer" : "contributor";
+    const added = await invite(app, organizer.token, created.id, { username: who.username, role });
+    expect(added.statusCode).toBe(200);
+  }
+
+  const seen = await roster(app, fourth.token, created.id);
+  expect(seen.statusCode).toBe(200);
+  expect(seen.json().map((m: { id: string }) => m.id)).toEqual([
+    organizer.id,
+    ...joined.map((who) => who.id),
+  ]);
+
+  await app.close();
+});
