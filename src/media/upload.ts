@@ -189,7 +189,7 @@ export function uploadRoutes(app: FastifyInstance) {
   /**
    * The caller's own row in this memory. Not theirs, not in this memory, no
    * such row and «not a uuid» are one 404 — the house rule of this route
-   * family (README, «Домашнее правило: 404 один на всех»). Ownership and not
+   * family (docs/auth.md, «Домашнее правило: 404 один на всех»). Ownership and not
    * role: an organizer may delete anyone's media, but only the person who
    * started an upload can finish it.
    */

@@ -252,7 +252,7 @@ export function galleryRoutes(app: FastifyInstance) {
         return reply.code(503).send({ error: "storage not configured" });
       }
       const { mediaId } = request.params;
-      // Not a uuid is «no such record», as everywhere in this family (README,
+      // Not a uuid is «no such record», as everywhere in this family (docs/auth.md,
       // «404 один на всех»), and for the reason the delete route gives: a
       // params schema would answer before the membership check had run.
       if (!uuidPattern.test(mediaId)) return reply.code(404).send(notFound);
@@ -310,7 +310,7 @@ export function galleryRoutes(app: FastifyInstance) {
       const { memory, role } = request.membership;
       const { mediaId } = request.params;
       // «Not a uuid» is «no such record», not a 400 — the house rule of this
-      // route family (README, «404 один на всех»). Not in a params schema for
+      // route family (docs/auth.md, «404 один на всех»). Not in a params schema for
       // the reason the member route gives: schema validation runs before the
       // preHandlers and would answer 400 from outside the memory.
       if (!uuidPattern.test(mediaId)) return reply.code(404).send(notFound);

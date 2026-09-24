@@ -210,7 +210,7 @@ test("the gallery is open to every member and closed to everyone else", async ()
   expect((await opened.arrayBuffer()).byteLength).toBe(4096);
 
   // Somebody else's memory, one that never existed and an id that is not a
-  // uuid: byte for byte the same answer (README, «404 один на всех»).
+  // uuid: byte for byte the same answer (docs/auth.md, «404 один на всех»).
   for (const id of [memory.id, randomUUID(), "not-a-uuid"]) {
     const answer = await gallery(app, stranger.token, id);
     expect(answer.statusCode).toBe(404);

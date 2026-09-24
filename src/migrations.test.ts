@@ -6,7 +6,7 @@ import { sql } from "./db.ts";
 
 /**
  * Migrations 100 (frame info) and 110 (memory cover): the three promises the
- * README makes of every migration and that no route can show — a replay is
+ * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
  * same schema and the same behaviour as the first run.

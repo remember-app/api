@@ -76,7 +76,7 @@ async function member(app: App, memoryId: string, role: MemberRole, by: string) 
 /**
  * Material in the memory, written where the upload would have left it. Videos
  * of two minutes, because the length a montage may be ordered at is cut from
- * the material (`montages.ts`): three photos are worth six seconds, and the
+ * the material (`material.ts`): three photos are worth six seconds, and the
  * order below asks for the default minute.
  */
 async function material(memoryId: string, uploadedBy: string, count: number) {
@@ -152,7 +152,7 @@ test("the organizer brings their own track, and the montage order names it by ke
     expect(refused.json()).toEqual({ error: "forbidden" });
   }
   // Somebody else's memory, one that never existed and an id that is not a
-  // uuid: byte for byte the same answer (README, «404 один на всех»).
+  // uuid: byte for byte the same answer (docs/auth.md, «404 один на всех»).
   for (const id of [memory.id, randomUUID(), "not-a-uuid"]) {
     const answer = await intent(app, stranger.token, id, 4096);
     expect(answer.statusCode).toBe(404);
