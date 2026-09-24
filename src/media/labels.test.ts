@@ -16,8 +16,9 @@ import type { MemberRole } from "../memories/plugin.ts";
  * Дальше идут маршруты записи, и там всё делается ими же — иначе проверялась бы
  * не запись, а фикстура.
  *
- * Хранилище для этих проверок не нужно: ссылки галереи подписываются локально,
- * и никто их здесь не открывает.
+ * Байтов из хранилища никто не читает: ссылки галереи подписываются локально.
+ * Но настроенным оно быть обязано (`R2_*`): без него галерея отвечает `503`, и
+ * всё, что здесь смотрит на неё, падает не из-за лейблов.
  */
 
 const email = () => testEmail("task187");
@@ -257,6 +258,7 @@ test("галерея: у кадра свои лейблы, чужой личны
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   const anna = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
 
   const early = await frame(memory.id, anna.user.id, "2026-09-02T19:00:00+03:00");
   const late = await frame(memory.id, organizer.user.id, "2026-09-02T20:00:00+03:00");
@@ -270,6 +272,11 @@ test("галерея: у кадра свои лейблы, чужой личны
   await put(funny, early, memory.id, anna.user.id);
   await put(favourites, early, memory.id, organizer.user.id);
   await put(best, late, memory.id, organizer.user.id);
+  // Личный лейбл участницы — организатор и зритель не видят его ни в какой
+  // роли: приватность не держится на звании.
+  const secret = await label(memory.id, anna.user.id, "Секрет", false, 8);
+  await put(secret, early, memory.id, anna.user.id);
+  await put(secret, bare, memory.id, anna.user.id);
 
   const owners = await gallery(app, organizer.token, memory.id);
   expect(owners.statusCode).toBe(200);
@@ -283,12 +290,23 @@ test("галерея: у кадра свои лейблы, чужой личны
   // Кадр, не лежащий нигде, — пустой массив, а не null.
   expect(third.label_ids).toEqual([]);
 
-  // Анна на тот же кадр: только общие. Личного лейбла организатора нет ни в
-  // массиве, ни где-либо ещё в ответе.
+  // Анна на тот же кадр: общие и свой личный. Личного лейбла организатора нет ни
+  // в массиве, ни где-либо ещё в ответе.
   const hers = await gallery(app, anna.token, memory.id);
   expect(hers.json().map((item: { id: string }) => item.id)).toEqual([early, late, bare]);
-  expect(hers.json()[0].label_ids).toEqual([best, funny]);
+  expect(hers.json()[0].label_ids).toEqual([best, funny, secret]);
+  expect(hers.json()[2].label_ids).toEqual([secret]);
   expect(hers.body).not.toContain(favourites);
+
+  // Зритель: те же общие, и ни одного личного — ни организатора, ни Анны.
+  const seen = await gallery(app, viewer.token, memory.id);
+  expect(seen.json().map((item: { id: string; label_ids: string[] }) => item.label_ids)).toEqual([
+    [best, funny],
+    [best],
+    [],
+  ]);
+  for (const body of [owners.body, seen.body]) expect(body).not.toContain(secret);
+  expect(seen.body).not.toContain(favourites);
 
   await app.close();
 });
@@ -513,6 +531,7 @@ test("переименовать, перекрасить, удалить — и 
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
   const elsewhere = await createMemory(app, organizer.token);
+  const stranger = await signIn(app, email());
   const early = await frame(memory.id, organizer.user.id, "2026-09-02T19:00:00+03:00");
   const late = await frame(memory.id, organizer.user.id, "2026-09-02T20:00:00+03:00");
 
@@ -565,6 +584,30 @@ test("переименовать, перекрасить, удалить — и 
     }
   }
 
+  // Не участник воспоминания не пишет в лейблы вовсе — и общий лейбл ему такой
+  // же «нет такого», как воспоминание; без токена — `401`. Ничего не меняется.
+  for (const answer of [
+    await newLabel(app, stranger.token, memory.id, { title: "Влез", color: 1, shared: false }),
+    await editLabel(app, stranger.token, memory.id, best, { title: "Влез" }),
+    await fill(app, stranger.token, memory.id, best, [early]),
+    await take(app, stranger.token, memory.id, best, [early]),
+    await dropLabel(app, stranger.token, memory.id, best),
+  ]) {
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+  expect(
+    (
+      await app.inject({
+        method: "DELETE",
+        url: `/memories/${memory.id}/labels/${best}`,
+      })
+    ).statusCode,
+  ).toBe(401);
+  expect((await labels(app, organizer.token, memory.id)).json()).toEqual([
+    { ...card(best, "Смешное", 7, true), media_count: 2 },
+  ]);
+
   const dropped = await dropLabel(app, organizer.token, memory.id, best);
   expect(dropped.statusCode).toBe(200);
   expect(dropped.json()).toEqual({ ok: true });
@@ -578,6 +621,116 @@ test("переименовать, перекрасить, удалить — и 
   expect((await dropLabel(app, organizer.token, memory.id, best)).statusCode).toBe(404);
 
   await app.close();
+});
+
+test("кадр в трёх лейблах: удалили лейбл — кадр и соседние лейблы целы; удалили кадр — он ушёл из всех", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const anna = await member(app, memory.id, "contributor", organizer.user.id);
+
+  const shared = await frame(memory.id, anna.user.id, "2026-09-02T19:00:00+03:00");
+  const other = await frame(memory.id, organizer.user.id, "2026-09-02T20:00:00+03:00");
+  const [best, funny, favourites] = await Promise.all([
+    newLabel(app, organizer.token, memory.id, { title: "Лучшее", color: 1, shared: true }),
+    newLabel(app, anna.token, memory.id, { title: "Смешное", color: 4, shared: true }),
+    newLabel(app, organizer.token, memory.id, { title: "Любимые", color: 6, shared: false }),
+  ]).then((created) => created.map((answer) => answer.json().id as string));
+  if (!best || !funny || !favourites) throw new Error("labels were not created");
+
+  // Один кадр — в трёх коробках, одним запросом на каждую; второй — только в
+  // первой. Счётчик после каждого действия — тот, что лежит на самом деле.
+  expect(
+    (await fill(app, organizer.token, memory.id, best, [shared, other])).json().media_count,
+  ).toBe(2);
+  expect((await fill(app, anna.token, memory.id, funny, [shared])).json().media_count).toBe(1);
+  expect(
+    (await fill(app, organizer.token, memory.id, favourites, [shared])).json().media_count,
+  ).toBe(1);
+  expect(await shelf(app, organizer.token, memory.id)).toEqual([
+    [shared, [best, funny, favourites]],
+    [other, [best]],
+  ]);
+
+  // Удалили одну из трёх — кадр по-прежнему один в галерее, лежит в двух
+  // оставшихся, а те не потеряли ни строки.
+  expect((await dropLabel(app, anna.token, memory.id, funny)).statusCode).toBe(200);
+  expect(await shelf(app, organizer.token, memory.id)).toEqual([
+    [shared, [best, favourites]],
+    [other, [best]],
+  ]);
+  const counts = async () =>
+    (await labels(app, organizer.token, memory.id))
+      .json()
+      .map((item: { id: string; media_count: number }) => [item.id, item.media_count]);
+  expect(await counts()).toEqual([
+    [best, 2],
+    [favourites, 1],
+  ]);
+
+  // Удалили сам кадр — он пропал из обоих лейблов и из галереи, лейблы стоят.
+  const deleted = await app.inject(
+    as(organizer.token, { method: "DELETE", url: `/memories/${memory.id}/media/${shared}` }),
+  );
+  expect(deleted.statusCode).toBe(200);
+  expect(await shelf(app, organizer.token, memory.id)).toEqual([[other, [best]]]);
+  expect(await counts()).toEqual([
+    [best, 1],
+    [favourites, 0],
+  ]);
+
+  await app.close();
+});
+
+test("пачка на пределе воспоминания: ровно предел — кладётся, на один больше — отказ целиком", async () => {
+  const original = process.env.MEMORY_MAX_FILES;
+  // Предел читается при сборке приложения — схема запроса компилируется один раз.
+  process.env.MEMORY_MAX_FILES = "3";
+  try {
+    const { app } = buildTestApp();
+    const organizer = await signIn(app, email());
+    const memory = await createMemory(app, organizer.token);
+    const ids = [];
+    for (const hour of [19, 20, 21, 22]) {
+      ids.push(await frame(memory.id, organizer.user.id, `2026-09-02T${hour}:00:00+03:00`));
+    }
+    const [a, b, c, d] = ids as [string, string, string, string];
+
+    const best = (
+      await newLabel(app, organizer.token, memory.id, { title: "Лучшее", color: 1, shared: true })
+    ).json().id;
+
+    // Четыре кадра в одной пачке — больше, чем воспоминание вмещает файлов:
+    // отказ, и ни один не лёг, ни при заведении лейбла, ни при пополнении.
+    expect((await fill(app, organizer.token, memory.id, best, [a, b, c, d])).statusCode).toBe(400);
+    const refused = await newLabel(app, organizer.token, memory.id, {
+      title: "Не выйдет",
+      color: 2,
+      shared: true,
+      media_ids: [a, b, c, d],
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(await links(best)).toBe(0);
+    expect(await stored(memory.id)).toEqual([best]);
+
+    // Ровно три — ложатся все, одним запросом.
+    const full = await fill(app, organizer.token, memory.id, best, [a, b, c]);
+    expect(full.statusCode).toBe(200);
+    expect(full.json().media_count).toBe(3);
+    const created = await newLabel(app, organizer.token, memory.id, {
+      title: "Ещё",
+      color: 2,
+      shared: false,
+      media_ids: [b, c, d],
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().media_count).toBe(3);
+
+    await app.close();
+  } finally {
+    if (original === undefined) delete process.env.MEMORY_MAX_FILES;
+    else process.env.MEMORY_MAX_FILES = original;
+  }
 });
 
 test("права на общем лейбле: правит, кладёт и убирает любой участник, не только создатель", async () => {
