@@ -52,6 +52,7 @@ src/montages/templates.ts шесть готовых роликов — тот ж
 src/montages/music.ts     полка из пяти треков и свой трек организатора
 scripts/migrate.ts    запуск postgrator и таблица jobs из montage
 migrations/           .sql-миграции
+Dockerfile            боевой образ; .gitlab-ci.yml собирает его в реестр на пуш в main
 docs/                 как поднять, что обещает каждый маршрут и как это проверяется
 ```
 
