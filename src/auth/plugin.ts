@@ -189,11 +189,11 @@ export function authPlugin(app: FastifyInstance) {
       try {
         await sendLoginCode(email, code, request.body.language);
       } catch (error) {
-        // The provider's own words go to the log and no further. 502 and not
+        // The mail server's own words go to the log and no further. 502 and not
         // 500: nothing here failed, the thing behind us did — and it is not
         // 4xx either, because the address was never the problem. The code
         // stays minted and simply expires; a retry mints another.
-        request.log.warn({ err: error, email }, "login code not sent");
+        request.log.error({ err: error, email }, "login code not sent");
         return reply.code(502).send({ error: "mail delivery failed" });
       }
       // The code itself is never logged: it is a bearer credential for the

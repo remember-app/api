@@ -22,7 +22,7 @@ src/server.ts         точка входа: проверить базу, слу
 src/db.ts             клиент Postgres из DATABASE_URL
 src/auth/session.ts   выпуск, проверка и отзыв сессий
 src/auth/email.ts     вход по коду на email: выпуск кода, попытки, проверка
-src/auth/mail.ts      отправка письма с кодом (Resend, обычный HTTP)
+src/auth/mail.ts      отправка письма с кодом по SMTP (nodemailer)
 src/auth/providers.ts проверка id-токенов Apple и Google (jose, JWKS)
 src/auth/social.ts    маршруты входа через Apple и Google
 src/auth/plugin.ts    декоратор app.authenticate и маршруты входа

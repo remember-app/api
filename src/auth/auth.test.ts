@@ -1,8 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, createServer } from "node:net";
 import type { JWTPayload } from "jose";
+import { simpleParser } from "mailparser";
+import {
+  SMTPServer,
+  type SMTPServerDataStream,
+  type SMTPServerOptions,
+  type SMTPServerSession,
+} from "smtp-server";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { sql } from "../db.ts";
 import { claimsFrom, type Provider, type ProviderClaims, verifier } from "./providers.ts";
@@ -18,29 +24,91 @@ const testEmail = () => sharedTestEmail("task05");
 const testSub = () => `task07-${randomUUID()}`;
 
 /**
- * Resend, stood in for. `/auth/email/start` really posts the letter now, so
- * these tests give it somewhere to post to — a host of their own, aimed at
- * through `RESEND_API_URL`, so that nothing here needs mail keys or a way out
- * to the network. The code comes back out of what was posted, because that is
- * the only place it exists: the log no longer carries it.
+ * The mailbox, stood in for by a real mail server of this file's own: the
+ * letter goes to it over SMTP — STARTTLS, AUTH and all, as it goes to the real
+ * one — so that nothing here needs a password or a way out to the network.
+ * What arrives is read back the way a mail client reads it, and the code comes
+ * out of that, because the letter is the only place it exists: the log does
+ * not carry it.
  */
-const letters: { to: string[]; subject: string; text: string }[] = [];
-const mailServer = createServer((request, response) => {
-  const chunks: Buffer[] = [];
-  request.on("data", (chunk: Buffer) => chunks.push(chunk));
-  request.on("end", () => {
-    letters.push(JSON.parse(Buffer.concat(chunks).toString()));
-    response.writeHead(200, { "content-type": "application/json" }).end('{"id":"stub"}');
+const smtpUser = "remember@example.com";
+const smtpPassword = `smtp-${randomUUID()}`;
+
+const letters: {
+  to: string[];
+  from: string;
+  subject: string;
+  text: string;
+  user: unknown;
+  secure: boolean;
+}[] = [];
+
+async function record(stream: SMTPServerDataStream, session: SMTPServerSession) {
+  const mail = await simpleParser(stream);
+  letters.push({
+    to: session.envelope.rcptTo.map((rcpt) => rcpt.address),
+    from: mail.from?.text ?? "",
+    subject: mail.subject ?? "",
+    text: mail.text ?? "",
+    user: session.user,
+    secure: session.secure,
   });
-});
+}
+
+/**
+ * STARTTLS on offer, AUTH only once encrypted, one account — smtp-server's
+ * defaults, which are also what the real mailbox does.
+ */
+const smtpServer = (options: SMTPServerOptions = {}) =>
+  new SMTPServer({
+    onAuth({ username, password }, _session, callback) {
+      if (username === smtpUser && password === smtpPassword) callback(null, { user: username });
+      else callback(new Error("Invalid username or password"));
+    },
+    onData(stream, session, callback) {
+      record(stream, session).then(() => callback(), callback);
+    },
+    ...options,
+  });
+
+const listen = (server: { listen(port: number, host: string, done: () => void): unknown }) =>
+  new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+const portOf = (server: SMTPServer) => String((server.server.address() as AddressInfo).port);
+
+/** Every setting the letter goes by. */
+const mailEnv = [
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_SECURE",
+  "SMTP_USER",
+  "SMTP_PASSWORD",
+  "MAIL_FROM",
+];
+
+/** Aims the letter at a test server — all of it, so nothing from a local `.env` leaks in. */
+function aimMail(port: string, secure = false) {
+  Object.assign(process.env, {
+    SMTP_HOST: "127.0.0.1",
+    SMTP_PORT: port,
+    SMTP_SECURE: String(secure),
+    SMTP_USER: smtpUser,
+    SMTP_PASSWORD: smtpPassword,
+    MAIL_FROM: "Remember <no-reply@example.com>",
+  });
+}
+
+const smtp = smtpServer();
 
 beforeAll(async () => {
-  await new Promise<void>((resolve) => {
-    mailServer.listen(0, "127.0.0.1", resolve);
-  });
-  process.env.RESEND_API_URL = `http://127.0.0.1:${(mailServer.address() as AddressInfo).port}`;
-  process.env.RESEND_API_KEY = "test-key";
-  process.env.MAIL_FROM = "Remember <no-reply@example.com>";
+  // The test server's certificate is its own and signed by nobody, so this
+  // process alone stops asking who signed it. The service never sets this:
+  // it keeps Node's default, which checks.
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  await listen(smtp);
+  aimMail(portOf(smtp));
 });
 
 type App = ReturnType<typeof buildTestApp>["app"];
@@ -66,8 +134,13 @@ function letterCode() {
 const wrongCode = (code: string, step: number) =>
   String((Number(code) + step) % 1_000_000).padStart(6, "0");
 
+const close = (server: { close(done: () => void): unknown }) =>
+  new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
+
 afterAll(async () => {
-  mailServer.close();
+  await close(smtp);
   await cleanupTestUsers("task05");
   await sql`
     delete from users
@@ -80,6 +153,24 @@ afterAll(async () => {
 function setEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
+}
+
+/** The env the dev door is decided by, saved and put back around each test. */
+const doorEnv = [...mailEnv, "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS"];
+const saveEnv = () => doorEnv.map((name) => process.env[name]);
+function restoreEnv(saved: (string | undefined)[]) {
+  for (const [i, name] of doorEnv.entries()) setEnv(name, saved[i]);
+}
+
+/**
+ * The one line a letter that did not go leaves behind, as pino wrote it.
+ * Pinned on the line that is written, so a log that stopped being captured
+ * cannot pass the «nothing secret in it» checks by being empty.
+ */
+function failureLine(lines: string[]) {
+  const line = lines.find((l) => l.includes("login code not sent"));
+  expect(line).toBeDefined();
+  return JSON.parse(line ?? "{}") as { level: number; err: { message: string; code?: string } };
 }
 
 test("migration 002 applies to a clean schema and is idempotent", async () => {
@@ -223,6 +314,10 @@ test("the whole sign-in: start -> code in the letter -> verify -> session -> GET
   expect(start.json()).toEqual({ ok: true });
 
   const code = letterCode();
+  // To the person, from our mailbox, and handed over the way the real mailbox
+  // takes it: encrypted, and signed in as the configured account.
+  expect(letters.at(-1)).toMatchObject({ to: [email], secure: true, user: smtpUser });
+  expect(letters.at(-1)?.from).toContain("no-reply@example.com");
   // Only the salted scrypt hash is in the table — the digits themselves appear
   // in no column of it, so a dump of this table is not a dump of live sign-ins.
   const [stored] = await sql<{ row: Record<string, unknown> }[]>`
@@ -320,31 +415,60 @@ test("the letter goes out in the language the request asked for", async () => {
   }
 });
 
-// The provider refusing the letter is not the caller's fault and not a code
-// problem either — `sendLoginCode` throws, and the route has to turn that into
-// an answer that says so without repeating the provider's own words, which
-// could carry our API key or another caller's address.
-test("the provider's refusal is 502, carries none of its own words, and the code is minted all the same", async () => {
-  const brokenServer = createServer((_request, response) => {
-    response
-      .writeHead(500, { "content-type": "text/plain" })
-      .end("resend-secret-detail-do-not-leak");
-  });
-  await new Promise<void>((resolve) => brokenServer.listen(0, "127.0.0.1", resolve));
-  const previousUrl = process.env.RESEND_API_URL;
-  process.env.RESEND_API_URL = `http://127.0.0.1:${(brokenServer.address() as AddressInfo).port}`;
+test("the letter goes over a connection encrypted from the first byte too (port 465)", async () => {
+  const implicit = smtpServer({ secure: true });
+  await listen(implicit);
+  const previous = saveEnv();
+  aimMail(portOf(implicit), true);
   const { app } = buildTestApp();
+  try {
+    const email = testEmail();
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    expect(letters.at(-1)).toMatchObject({ to: [email], secure: true, user: smtpUser });
+    letterCode();
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+    await close(implicit);
+  }
+});
+
+// The mail server refusing the letter is not the caller's fault and not a code
+// problem either — `sendLoginCode` throws, and the route has to turn that into
+// an answer that says so without repeating the server's own words, which
+// could carry our mailbox or another caller's address.
+test("the mail server's refusal is 502, logged as an error without the code, and the code is minted all the same", async () => {
+  const refusing = smtpServer({
+    onData(stream, session, callback) {
+      record(stream, session).then(
+        () =>
+          callback(Object.assign(new Error("refused-by-the-test-server"), { responseCode: 550 })),
+        callback,
+      );
+    },
+  });
+  await listen(refusing);
+  const previous = saveEnv();
+  aimMail(portOf(refusing));
+  const { app, lines } = buildTestApp();
   try {
     const email = testEmail();
     const response = await startLogin(app, { email });
     expect(response.statusCode).toBe(502);
     expect(response.json()).toEqual({ error: "mail delivery failed" });
-    expect(response.body).not.toContain("resend-secret-detail-do-not-leak");
+    expect(response.body).not.toContain("refused-by-the-test-server");
+
+    // The cause is in the log, at error level, and the code the refused letter
+    // carried is not — nor the password it was handed over with.
+    const logged = failureLine(lines);
+    expect(logged.level).toBe(50);
+    expect(logged.err.message).toContain("550 refused-by-the-test-server");
+    expect(lines.join("\n")).not.toContain(letterCode());
+    expect(lines.join("\n")).not.toContain(smtpPassword);
 
     // Minted, not lost: the comment on the route promises a retry mints
     // another rather than the first attempt's code going nowhere twice. What
-    // matters from outside is that the row exists to expire on its own — not
-    // its digits, which this test has no way to read.
+    // matters from outside is that the row exists to expire on its own.
     const [row] = await sql<{ user_id: string }[]>`
       select c.user_id from email_login_codes c
       join auth_identities i on i.user_id = c.user_id
@@ -352,18 +476,123 @@ test("the provider's refusal is 502, carries none of its own words, and the code
     `;
     expect(row).toBeDefined();
   } finally {
-    setEnv("RESEND_API_URL", previousUrl);
+    restoreEnv(previous);
     await app.close();
-    brokenServer.close();
+    await close(refusing);
   }
 });
 
-/** The env the dev door is decided by, saved and put back around each test. */
-const doorEnv = ["RESEND_API_KEY", "MAIL_FROM", "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS"];
-const saveEnv = () => doorEnv.map((name) => process.env[name]);
-function restoreEnv(saved: (string | undefined)[]) {
-  for (const [i, name] of doorEnv.entries()) setEnv(name, saved[i]);
-}
+// The failure that has the password in hand: a login the server turns down.
+// Nothing of it may reach the log — not as typed, and not as AUTH carries it
+// on the wire, base64 on its own (LOGIN) or together with the user (PLAIN).
+test("a password the server turns down is 502 and appears in no form in the log", async () => {
+  const previous = saveEnv();
+  const wrong = `wrong-${randomUUID()}`;
+  setEnv("SMTP_PASSWORD", wrong);
+  const { app, lines } = buildTestApp();
+  const posted = letters.length;
+  try {
+    const response = await startLogin(app, { email: testEmail() });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({ error: "mail delivery failed" });
+    expect(letters).toHaveLength(posted);
+
+    const logged = failureLine(lines);
+    expect(logged.level).toBe(50);
+    expect(logged.err.code).toBe("EAUTH");
+    const log = lines.join("\n");
+    for (const form of [
+      wrong,
+      Buffer.from(wrong).toString("base64"),
+      Buffer.from(`\0${smtpUser}\0${wrong}`).toString("base64"),
+    ]) {
+      expect(log).not.toContain(form);
+    }
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+  }
+});
+
+// A server with no STARTTLS — or somebody in the middle striking it out — that
+// would gladly take a login in the clear.
+test("a server that offers no encryption is never handed the password", async () => {
+  let asked = false;
+  const plain = smtpServer({
+    disabledCommands: ["STARTTLS"],
+    allowInsecureAuth: true,
+    onAuth(_auth, _session, callback) {
+      asked = true;
+      callback(new Error("should never be reached"));
+    },
+  });
+  await listen(plain);
+  const previous = saveEnv();
+  aimMail(portOf(plain));
+  const { app, lines } = buildTestApp();
+  const posted = letters.length;
+  try {
+    expect((await startLogin(app, { email: testEmail() })).statusCode).toBe(502);
+    expect(asked).toBe(false);
+    expect(letters).toHaveLength(posted);
+    expect(failureLine(lines).level).toBe(50);
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+    await close(plain);
+  }
+});
+
+// A server that takes the connection and then says nothing is the hang that
+// matters: without a bound the request would wait for as long as the socket
+// lives. It is let go after the five-second silence `sendLoginCode` allows.
+test("a mail server that never answers costs one bounded wait, then 502", {
+  timeout: 15_000,
+}, async () => {
+  const silent = createServer();
+  await listen(silent);
+  const previous = saveEnv();
+  aimMail(String((silent.address() as AddressInfo).port));
+  const { app, lines } = buildTestApp();
+  try {
+    const started = Date.now();
+    const response = await startLogin(app, { email: testEmail() });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({ error: "mail delivery failed" });
+    expect(Date.now() - started).toBeLessThan(10_000);
+
+    const logged = failureLine(lines);
+    expect(logged.level).toBe(50);
+    expect(logged.err.code).toBe("ETIMEDOUT");
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+    await close(silent);
+  }
+});
+
+// Half a mailbox is no mailbox: each of the four settings without a default
+// is enough on its own to close the route, blank the same as absent.
+test("any one required mail setting missing is the same 503 as none at all", async () => {
+  const previous = saveEnv();
+  const { app } = buildTestApp();
+  try {
+    for (const name of ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "MAIL_FROM"]) {
+      for (const value of [undefined, " "]) {
+        restoreEnv(previous);
+        setEnv(name, value);
+        const email = testEmail();
+        const response = await startLogin(app, { email });
+        expect(response.statusCode, `${name}=${value}`).toBe(503);
+        expect(response.json()).toEqual({ error: "mail not configured" });
+        expect(await sql`select 1 from users where email = ${email}`).toHaveLength(0);
+      }
+    }
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+  }
+});
 
 /** An address on the one domain the door looks at, tagged like all the others. */
 const doorEmail = () => testEmail().replace("@example.com", "@test.test");
@@ -376,8 +605,7 @@ const doorEmail = () => testEmail().replace("@example.com", "@test.test");
 // the body that would betray the lock is the one with six digits in it.
 test("the lock: in production an unconfigured mailbox is still 503, never a code", async () => {
   const previous = saveEnv();
-  setEnv("RESEND_API_KEY", undefined);
-  setEnv("MAIL_FROM", undefined);
+  for (const name of mailEnv) setEnv(name, undefined);
   // On, deliberately: production is not a place where the switch gets a
   // hearing. Somebody will one day set it on a staging box that is really the
   // production one, and that must change nothing here.
@@ -451,8 +679,7 @@ test("the lock holds with mail configured too: production still sends the letter
 // then only test.test goes through.
 test("the dev door: only test.test, only with the switch on, and never on absence", async () => {
   const previous = saveEnv();
-  setEnv("RESEND_API_KEY", undefined);
-  setEnv("MAIL_FROM", undefined);
+  for (const name of mailEnv) setEnv(name, undefined);
   // The documented local default: .env.example ships with NODE_ENV commented
   // out, so this is the state a developer's machine is actually in.
   setEnv("NODE_ENV", undefined);
@@ -505,8 +732,7 @@ test("the dev door: only test.test, only with the switch on, and never on absenc
 
     // The keys make no difference to the door — it is the switch and the
     // domain that decide. A letter to test.test has nowhere to arrive.
-    setEnv("RESEND_API_KEY", "test-key");
-    setEnv("MAIL_FROM", "Remember <no-reply@example.com>");
+    aimMail(portOf(smtp));
     const withKeys = await startLogin(app, { email: doorEmail() });
     expect(withKeys.statusCode).toBe(200);
     expect((withKeys.json() as { code: string }).code).toMatch(/^\d{6}$/);
