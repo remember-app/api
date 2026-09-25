@@ -76,10 +76,13 @@ export async function sendLoginCode(
 ): Promise<void> {
   const { subject, text } = letter[language](code, emailLoginTtlMinutes());
   const secure = flag("SMTP_SECURE");
+  const port = positive("SMTP_PORT", secure ? 465 : 587);
   const transport = createTransport({
     host: env("SMTP_HOST"),
-    port: positive("SMTP_PORT", secure ? 465 : 587),
-    secure,
+    port,
+    // 465 is encrypted from the first byte whatever SMTP_SECURE says: spoken to
+    // in the clear it never greets, and every letter dies on a bare timeout.
+    secure: secure || port === 465,
     // Encrypted or not sent: on 587 the upgrade is the server's offer, and a
     // server that does not make it — or somebody in the middle striking it
     // out — would otherwise get the password in the clear.
