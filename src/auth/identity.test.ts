@@ -47,6 +47,15 @@ const setUsername = (app: App, token: string, name: string) =>
 const setLanguage = (app: App, token: string, language: unknown) =>
   app.inject(as(token, { method: "POST", url: "/me/language", payload: { language } }));
 
+const setDatesBetweenDays = (app: App, token: string, value: unknown) =>
+  app.inject(
+    as(token, {
+      method: "POST",
+      url: "/me/dates-between-days",
+      payload: { dates_between_days: value },
+    }),
+  );
+
 const lookup = (app: App, token: string, name: string) =>
   app.inject(as(token, { method: "GET", url: `/users?username=${encodeURIComponent(name)}` }));
 
@@ -338,6 +347,74 @@ test("there is no third language: anything else is refused before the database",
   await app.close();
 });
 
+test("«dates between days» is the account's: off at first, switched both ways, kept, nobody else's", async () => {
+  const { app } = buildTestApp();
+  const address = email();
+  const a = await signIn(app, address);
+  const b = await signIn(app, email());
+
+  // Off for a new account, and a real `false` rather than a missing field: the
+  // app has no third «not set» to make sense of.
+  expect(a.user.dates_between_days).toBe(false);
+
+  const on = await setDatesBetweenDays(app, a.token, true);
+  expect(on.statusCode).toBe(200);
+  // Exactly the body of GET /me, as POST /me/language is.
+  expect(on.json()).toEqual({ ...a.user, dates_between_days: true });
+  expect((await me(app, a.token)).json()).toEqual(on.json());
+
+  // A new sign-in is a new session and a new token; the choice is on neither,
+  // it is on the account, so it is already there.
+  const again = await signIn(app, address);
+  expect(again.user).toEqual(on.json());
+  // One per account: B is where B was.
+  expect((await me(app, b.token)).json()).toEqual(b.user);
+
+  // Back again from the other token, seen from the first — and saying the
+  // same thing twice is not an error.
+  expect((await setDatesBetweenDays(app, again.token, false)).json()).toEqual(a.user);
+  expect((await me(app, a.token)).json()).toEqual(a.user);
+  expect((await setDatesBetweenDays(app, a.token, false)).statusCode).toBe(200);
+
+  await app.close();
+});
+
+test("«dates between days» takes a JSON boolean and nothing that merely looks like one", async () => {
+  const { app } = buildTestApp();
+  const { token } = await signIn(app, email());
+
+  const bad = [
+    // Each of these Fastify's ajv would coerce into a boolean if the schema
+    // declared the type — which is why it does not (see identity.ts).
+    "true",
+    "false",
+    1,
+    0,
+    null,
+    [true],
+    // And the plainly wrong.
+    "",
+    "yes",
+    {},
+  ];
+  for (const candidate of bad) {
+    const res = await setDatesBetweenDays(app, token, candidate);
+    expect([candidate, res.statusCode]).toEqual([candidate, 400]);
+  }
+  // A body without the field, and the field under the name the app might
+  // guess instead.
+  for (const payload of [undefined, { datesBetweenDays: true }]) {
+    const res = await app.inject(
+      as(token, { method: "POST", url: "/me/dates-between-days", payload }),
+    );
+    expect([payload, res.statusCode]).toEqual([payload, 400]);
+  }
+  // None of that touched the row.
+  expect((await me(app, token)).json()).toMatchObject({ dates_between_days: false });
+
+  await app.close();
+});
+
 test("GET /users finds a nick whatever its case, and 404s an unknown one", async () => {
   const { app } = buildTestApp();
   const a = await registered(app);
@@ -490,6 +567,7 @@ test("every route added here sits behind the session check", async () => {
     { method: "POST", url: "/me/username", payload: { username: username() } },
     { method: "GET", url: `/me/username/available?username=${username()}` },
     { method: "POST", url: "/me/language", payload: { language: "en" } },
+    { method: "POST", url: "/me/dates-between-days", payload: { dates_between_days: true } },
     { method: "GET", url: `/users?username=${username()}` },
     { method: "GET", url: "/auth/sessions" },
     { method: "POST", url: `/auth/sessions/${randomUUID()}/revoke` },

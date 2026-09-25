@@ -17,15 +17,20 @@ export type AuthUser = {
   name: string | null;
   email: string | null;
   language: Language;
+  /** «Даты между днями» in the frame feed — one switch for the whole account, not per memory. */
+  dates_between_days: boolean;
 };
 
 /**
  * The columns of `AuthUser`, read off `users` under the alias `u`. Every
  * statement that hands a profile back selects exactly this, so the profile a
  * sign-in answers with, the one `GET /me` shows and the one a `/me/*` change
- * returns cannot drift apart: a field is added here and nowhere else.
+ * returns cannot drift apart: a field is added here and to the type above,
+ * nowhere else.
  */
-export const profileColumns = sql`u.id, u.username, u.name, u.email, u.language`;
+export const profileColumns = sql`
+  u.id, u.username, u.name, u.email, u.language, u.dates_between_days
+`;
 
 /**
  * Only the hash is stored: a dump of the table gets nobody into a session.

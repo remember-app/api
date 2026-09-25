@@ -26,7 +26,7 @@ src/auth/mail.ts      отправка письма с кодом (Resend, об�
 src/auth/providers.ts проверка id-токенов Apple и Google (jose, JWKS)
 src/auth/social.ts    маршруты входа через Apple и Google
 src/auth/plugin.ts    декоратор app.authenticate и маршруты входа
-src/auth/identity.ts  соглашение, ник, поиск по нику, список и отзыв сессий
+src/auth/identity.ts  соглашение, ник, язык, «даты между днями», поиск по нику, сессии
 src/auth/config.ts    сроки и лимиты из окружения, с проверкой значений
 src/auth/testing.ts   общая оснастка тестов (приложение с логом, вход, уборка)
 src/contacts/contacts.ts  свой список контактов: сохранить по нику, список, удалить
@@ -62,7 +62,9 @@ docs/                 как поднять, что обещает каждый 
 
 Контракты маршрутов — по файлу на семью:
 
-- [docs/auth.md](docs/auth.md) — вход, профиль, ник, контакты, сессии и проверки прав.
+- [docs/auth.md](docs/auth.md) — вход, профиль и его настройки (язык, «даты между днями» —
+  `dates_between_days`, меняется `POST /me/dates-between-days`), ник, контакты, сессии и проверки
+  прав.
 - [docs/memories.md](docs/memories.md) — воспоминания, участники, приглашения, статус вклада.
 - [docs/media.md](docs/media.md) — загрузка, галерея, сведения о кадре, скачивание, лейблы.
 - [docs/montages.md](docs/montages.md) — ролики: шаблоны, заказ, итог, список, повтор.

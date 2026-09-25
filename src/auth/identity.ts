@@ -48,6 +48,19 @@ const languageChoice = {
 } as const;
 
 /**
+ * `enum` and deliberately no `type`: Fastify's ajv coerces a value to the type
+ * a schema declares, so `type: "boolean"` would take `"true"`, `1`, `null` or
+ * `[true]` as a choice. With no type to coerce to, JSON `true` and `false` are
+ * the only bodies that pass.
+ */
+const datesBetweenDaysChoice = {
+  type: "object",
+  required: ["dates_between_days"],
+  additionalProperties: false,
+  properties: { dates_between_days: { enum: [true, false] } },
+} as const;
+
+/**
  * Only "was the parameter given at all" — what may be *asked for* is settled
  * in the handler against the very rule that governs what may be *held*, so
  * that a string nobody could ever register answers 404 rather than 400.
@@ -100,10 +113,10 @@ export async function findByUsername(username: string): Promise<PublicUser | und
 }
 
 /**
- * Managing one's own identity: the username, the language one reads in,
- * finding somebody by their username, and the sessions one is signed in
- * through. Mounted from `buildApp` after `authPlugin`, which is what puts
- * `app.authenticate` on the instance.
+ * Managing one's own identity: the username, the language one reads in, how
+ * the frame feed marks its days, finding somebody by their username, and the
+ * sessions one is signed in through. Mounted from `buildApp` after
+ * `authPlugin`, which is what puts `app.authenticate` on the instance.
  */
 export function identityRoutes(app: FastifyInstance) {
   // Accepting the user agreement — the one thing that has to happen before a
@@ -202,6 +215,23 @@ export function identityRoutes(app: FastifyInstance) {
     async (request) => {
       const [user] = await sql<AuthUser[]>`
         update users u set language = ${request.body.language}
+        where id = ${request.user.id}
+        returning ${profileColumns}
+      `;
+      if (!user) throw new Error("update users returned no row");
+      return user;
+    },
+  );
+
+  // «Даты между днями» — how the frame feed marks where one day ends. A setting
+  // of the account rather than of a feed: one switch for every memory the
+  // person opens, and it follows them to another phone.
+  app.post<{ Body: { dates_between_days: boolean } }>(
+    "/me/dates-between-days",
+    { preHandler: app.authenticate, schema: { body: datesBetweenDaysChoice } },
+    async (request) => {
+      const [user] = await sql<AuthUser[]>`
+        update users u set dates_between_days = ${request.body.dates_between_days}
         where id = ${request.user.id}
         returning ${profileColumns}
       `;
