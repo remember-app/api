@@ -1,0 +1,10 @@
+# Allow-list: anything new in the repo (an .env.*, a dump) stays out of the image by default.
+*
+!package.json
+!package-lock.json
+!src
+!scripts
+!migrations
+src/**/*.test.ts
+src/**/testing.ts
+src/**/golden
