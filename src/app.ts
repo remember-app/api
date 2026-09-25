@@ -16,6 +16,7 @@ import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
 import { montageReadyRoutes } from "./montages/ready.ts";
 import { montageTemplateRoutes } from "./montages/templates.ts";
+import { privacyRoutes } from "./privacy/privacy.ts";
 
 /**
  * The HTTP app, with no listener attached — so tests can build it and call
@@ -31,6 +32,8 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // (it re-appends the charset whichever way the header is set), so clients
   // must match the content-type by prefix, not by equality.
   app.get("/health", () => ({ status: "ok" }));
+
+  privacyRoutes(app);
 
   // Fastify's default handler copies `code` and `message` onto the body, so an
   // unhandled database failure would answer a stranger with its SQLSTATE and

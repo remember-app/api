@@ -50,6 +50,7 @@ src/montages/ready.ts     стук воркера о готовом ролике
 src/montages/journal.ts   журнал сборки: чтение порциями, смотрящие, шкала этапов
 src/montages/templates.ts шесть готовых роликов — тот же заказ, заполненный заранее
 src/montages/music.ts     полка из пяти треков и свой трек организатора
+src/privacy/privacy.ts    GET /privacy — публичная страница политики конфиденциальности, текст в этом же файле
 scripts/migrate.ts    запуск postgrator и таблица jobs из montage
 scripts/storage-check.ts  живой контроль хранилища: все обращения api на бакете для проверок
 migrations/           .sql-миграции
