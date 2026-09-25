@@ -17,6 +17,11 @@ const email = () => testEmail("task06");
 const username = () => `u${randomUUID().replaceAll("-", "").slice(0, 12)}i`;
 
 afterAll(async () => {
+  // Memories first: `memories.organizer_id` has no ON DELETE, so an organizer
+  // cannot leave while their memory stands.
+  await sql`
+    delete from memories where organizer_id in (select id from users where email like 'task06-test-%')
+  `;
   await cleanupTestUsers("task06");
   await sql.end();
 });
@@ -409,8 +414,180 @@ test("«dates between days» takes a JSON boolean and nothing that merely looks 
     );
     expect([payload, res.statusCode]).toEqual([payload, 400]);
   }
+  // A JSON body that is not an object at all — a bare boolean, a string, a
+  // list — sent as the app would send it, with the header and the text.
+  for (const raw of ["true", "false", '"true"', "[true]", "1", "{", "not json"]) {
+    const res = await app.inject({
+      method: "POST",
+      url: "/me/dates-between-days",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: raw,
+    });
+    expect([raw, res.statusCode]).toEqual([raw, 400]);
+  }
+  // And the same true, form-encoded or as plain text, is not JSON: refused
+  // (a 400 or a 415, whichever the framework's parsers give) and never read as
+  // a boolean.
+  for (const [type, raw] of [
+    ["application/x-www-form-urlencoded", "dates_between_days=true"],
+    ["text/plain", "true"],
+  ] as const) {
+    const res = await app.inject({
+      method: "POST",
+      url: "/me/dates-between-days",
+      headers: { authorization: `Bearer ${token}`, "content-type": type },
+      payload: raw,
+    });
+    expect([type, [400, 415].includes(res.statusCode)]).toEqual([type, true]);
+  }
   // None of that touched the row.
   expect((await me(app, token)).json()).toMatchObject({ dates_between_days: false });
+
+  await app.close();
+});
+
+test("«dates between days» is one switch per person: for every memory, beside every other setting, through every token, and nobody's to read", async () => {
+  const { app } = buildTestApp();
+  const address = email();
+  const a = await registered(app, address);
+  const b = await signIn(app, email());
+  const memoryOf = async (token: string) => {
+    const made = await app.inject(
+      as(token, {
+        method: "POST",
+        url: "/memories",
+        payload: { title: "task06 dates", event_start: "2026-09-02T18:00:00+03:00" },
+      }),
+    );
+    expect(made.statusCode).toBe(201);
+    return (made.json() as { id: string }).id;
+  };
+  const first = await memoryOf(a.token);
+  const second = await memoryOf(a.token);
+  await sql`
+    insert into memory_members (memory_id, user_id, role, invited_by)
+    values (${first}, ${b.user.id}, 'contributor', ${a.user.id}),
+           (${second}, ${b.user.id}, 'viewer', ${a.user.id})
+  `;
+
+  // Switched on by the one who owns two memories: it is on for the person, not
+  // for the memory they happen to have opened, and the people sharing those
+  // memories are where they were. A memory made afterwards, and somebody
+  // joining it, do not move it either way.
+  const on = await setDatesBetweenDays(app, a.token, true);
+  expect(on.statusCode).toBe(200);
+  const listed = async (token: string) =>
+    (
+      (await app.inject(as(token, { method: "GET", url: "/memories" }))).json() as {
+        id: string;
+      }[]
+    ).map((card) => card.id);
+  expect((await listed(a.token)).sort()).toEqual([first, second].sort());
+  expect((await listed(b.token)).sort()).toEqual([first, second].sort());
+  expect((await me(app, a.token)).json()).toMatchObject({ dates_between_days: true });
+  expect((await me(app, b.token)).json()).toMatchObject({ dates_between_days: false });
+  const third = await memoryOf(a.token);
+  await sql`
+    insert into memory_members (memory_id, user_id, role, invited_by)
+    values (${third}, ${b.user.id}, 'contributor', ${a.user.id})
+  `;
+  expect((await me(app, a.token)).json()).toMatchObject({ dates_between_days: true });
+  expect((await me(app, b.token)).json()).toMatchObject({ dates_between_days: false });
+
+  // B's own choice is B's own, and A's stays.
+  expect((await setDatesBetweenDays(app, b.token, true)).json()).toEqual({
+    ...b.user,
+    dates_between_days: true,
+  });
+  expect((await setDatesBetweenDays(app, a.token, false)).json()).toEqual(a.user);
+  expect((await me(app, b.token)).json()).toMatchObject({ dates_between_days: true });
+  await setDatesBetweenDays(app, a.token, true);
+
+  // Changing the switch touches nothing else on the account, and changing
+  // anything else leaves the switch where it was.
+  const nick = username();
+  expect((await setUsername(app, a.token, nick)).json()).toMatchObject({
+    dates_between_days: true,
+  });
+  expect((await setLanguage(app, a.token, "en")).json()).toMatchObject({
+    dates_between_days: true,
+  });
+  const off = await setDatesBetweenDays(app, a.token, false);
+  expect(off.json()).toEqual({
+    ...a.user,
+    username: nick,
+    language: "en",
+    dates_between_days: false,
+  });
+  await setDatesBetweenDays(app, a.token, true);
+  expect((await setLanguage(app, a.token, "ru")).json()).toMatchObject({
+    username: nick,
+    dates_between_days: true,
+  });
+
+  // Other settings riding along in the same body are not applied: the route
+  // changes the switch, and only the switch.
+  const rider = await app.inject(
+    as(a.token, {
+      method: "POST",
+      url: "/me/dates-between-days",
+      payload: { dates_between_days: false, language: "en", username: username() },
+    }),
+  );
+  expect(rider.statusCode).toBe(200);
+  expect(rider.json()).toMatchObject({ username: nick, language: "ru", dates_between_days: false });
+  await setDatesBetweenDays(app, a.token, true);
+
+  // Nobody reads it off somebody else: finding A by nick says who they are and
+  // nothing about how they view their feed.
+  const found = await lookup(app, b.token, nick);
+  expect(found.statusCode).toBe(200);
+  expect(Object.keys(found.json()).sort()).toEqual(["id", "name", "username"]);
+
+  // It outlives the token it was set through: after that one is logged out it
+  // is dead for this route — and moves nothing — while a fresh sign-in finds
+  // the switch where it was left.
+  const phone = await signIn(app, address);
+  expect(phone.user.dates_between_days).toBe(true);
+  expect(
+    (await app.inject(as(phone.token, { method: "POST", url: "/auth/logout" }))).statusCode,
+  ).toBe(200);
+  expect((await setDatesBetweenDays(app, phone.token, false)).statusCode).toBe(401);
+  expect((await me(app, a.token)).json()).toMatchObject({ dates_between_days: true });
+  expect((await signIn(app, address)).user.dates_between_days).toBe(true);
+
+  await app.close();
+});
+
+test("«dates between days» switched from two phones at the same moment ends on one value, the same on both", async () => {
+  const { app } = buildTestApp();
+  const address = email();
+  const phone = await signIn(app, address);
+  const laptop = await signIn(app, address);
+
+  // Twenty taps racing from two tokens of one account: each answers with the
+  // value it was told to set, none fails, and afterwards there is a single
+  // value that both tokens — and a new sign-in — agree on.
+  const values = Array.from({ length: 20 }, (_, n) => n % 3 !== 0);
+  const answers = await Promise.all(
+    values.map((value, n) => setDatesBetweenDays(app, n % 2 ? phone.token : laptop.token, value)),
+  );
+  for (const [n, res] of answers.entries()) {
+    expect([n, res.statusCode]).toEqual([n, 200]);
+    expect(res.json().dates_between_days).toBe(values[n]);
+  }
+  const [seenByPhone, seenByLaptop] = [
+    (await me(app, phone.token)).json().dates_between_days,
+    (await me(app, laptop.token)).json().dates_between_days,
+  ];
+  expect(typeof seenByPhone).toBe("boolean");
+  expect(seenByPhone).toBe(seenByLaptop);
+  expect((await signIn(app, address)).user.dates_between_days).toBe(seenByPhone);
+
+  // And the switch is not stuck after the race.
+  expect((await setDatesBetweenDays(app, phone.token, !seenByPhone)).json()).toMatchObject({
+    dates_between_days: !seenByPhone,
+  });
 
   await app.close();
 });

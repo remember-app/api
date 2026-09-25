@@ -234,6 +234,13 @@ test("история — из названия, дат и числа тех, ч�
   expect(english.find((one) => one.id === "parents")?.music_wishes).toEqual({
     warm: expect.stringMatching(/beat/),
   });
+  // Two tracks, two wishes, each in the language of the one who asked — and
+  // the same keys as the Russian, so the app reads one shape in both.
+  const dopamine = english.find((one) => one.id === "dopamine");
+  expect(Object.keys(dopamine?.music_wishes ?? {}).sort()).toEqual(["bright", "road"]);
+  expect(dopamine?.music_wishes.bright).not.toMatch(/[а-я]/i);
+  expect(dopamine?.music_wishes.road).not.toMatch(/[а-я]/i);
+  expect(english.find((one) => one.id === "quick")?.music_wishes).toEqual({});
 
   // Итог считает по тому, что осталось: вычеркнув единственный кадр участника,
   // организатор заказывает ролик из кадров одного человека.
