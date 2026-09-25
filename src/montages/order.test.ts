@@ -809,10 +809,13 @@ test("a wish about the music is kept with the track it is written to, and only a
     });
   }
 
-  // Longer than a wish is refused by the schema, the field named in the answer.
-  const long = await asked({ music_tracks: ["calm"], music_wishes: { calm: "я".repeat(501) } });
-  expect(long.statusCode).toBe(400);
-  expect(long.json().message).toContain("music_wishes");
+  // Longer than a wish, or not text at all, is refused by the schema, the field
+  // named in the answer — past it, the cleaning takes every wish for a string.
+  for (const wish of ["я".repeat(501), { text: "тихо" }]) {
+    const refused = await asked({ music_tracks: ["calm"], music_wishes: { calm: wish } });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().message).toContain("music_wishes");
+  }
 
   // None of those refusals wrote a montage.
   expect((await montageRows(memory.id)).length).toBe(before);
