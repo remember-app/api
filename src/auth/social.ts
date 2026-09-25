@@ -66,6 +66,14 @@ async function findOrCreateUser(provider: Provider, claims: ProviderClaims): Pro
  * Mounted from `buildApp` beside `identityRoutes`.
  */
 export function socialRoutes(app: FastifyInstance) {
+  // What the sign-in screen may draw, asked before anything is tapped: «on» is
+  // the very check the 501 below makes, so the screen never offers a door that
+  // answers it. Presence only — the ids themselves stay on the server.
+  app.get("/auth/methods", (_request, reply) => {
+    reply.header("cache-control", "public, max-age=300");
+    return { email: true, apple: !!audienceOf("apple"), google: !!audienceOf("google") };
+  });
+
   for (const provider of ["apple", "google"] as const) {
     app.post<{ Body: { idToken: string } }>(
       `/auth/${provider}`,

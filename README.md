@@ -24,7 +24,7 @@ src/auth/session.ts   выпуск, проверка и отзыв сессий
 src/auth/email.ts     вход по коду на email: выпуск кода, попытки, проверка
 src/auth/mail.ts      отправка письма с кодом по SMTP (nodemailer)
 src/auth/providers.ts проверка id-токенов Apple и Google (jose, JWKS)
-src/auth/social.ts    маршруты входа через Apple и Google
+src/auth/social.ts    маршруты входа через Apple и Google и список включённых способов входа
 src/auth/plugin.ts    декоратор app.authenticate и маршруты входа
 src/auth/identity.ts  соглашение, ник, язык, «даты между днями», поиск по нику, сессии
 src/auth/config.ts    сроки и лимиты из окружения, с проверкой значений
