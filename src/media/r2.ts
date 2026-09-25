@@ -1,14 +1,20 @@
 import { AwsClient } from "aws4fetch";
 
 /**
- * The object store: Cloudflare R2 in production, MinIO from `docker-compose`
- * locally. One code path for both — R2 speaks S3, and both address a bucket by
- * path (`<endpoint>/<bucket>/<key>`) rather than by hostname.
+ * The object store: Google Cloud Storage through its S3-compatible XML API in
+ * production, MinIO from `docker-compose` locally, Cloudflare R2 before that —
+ * whence the name, kept with the `R2_*` variables the stands already read. One
+ * code path for all three: every request is in the form all of them accept, and
+ * all of them address a bucket by path (`<endpoint>/<bucket>/<key>`). What was
+ * checked against Google and how it is held in place: docs/media.md,
+ * «Хранилище: Google Cloud Storage», and `r2.test.ts`.
  *
  * `aws4fetch` and not `@aws-sdk/client-s3`: the whole of what is needed here is
  * SigV4 and four requests, which that is 80 KB and no transitive dependencies
- * for. The XML is read with a regex for the same reason — one tag out of one
- * response is not a parser.
+ * for. It is also why no checksum headers go out — the SDK adds
+ * `x-amz-checksum-*` by default, and Google answers those with
+ * `SignatureDoesNotMatch`. The XML is read with a regex for the same reason —
+ * one tag out of one response is not a parser.
  */
 
 const env = (name: string) => process.env[name]?.trim() || undefined;
@@ -26,7 +32,7 @@ export const storageConfigured = () =>
   Boolean(endpoint() && env("R2_BUCKET") && env("R2_ACCESS_KEY_ID") && env("R2_SECRET_ACCESS_KEY"));
 
 /**
- * R2 ignores the region and wants the literal `auto`; MinIO signs with
+ * R2 wants the literal `auto`, Google takes any value at all, MinIO signs with
  * `us-east-1` unless told otherwise. It is a knob because those disagree.
  */
 const client = () =>
@@ -43,9 +49,11 @@ const objectUrl = (key: string) => `${endpoint()}/${env("R2_BUCKET")}/${key}`;
 export async function createUpload(key: string): Promise<string> {
   const response = await client().fetch(`${objectUrl(key)}?uploads`, { method: "POST" });
   const body = await response.text();
-  if (!response.ok) throw new Error(`R2 refused a multipart upload: ${response.status} ${body}`);
+  if (!response.ok) {
+    throw new Error(`storage refused a multipart upload: ${response.status} ${body}`);
+  }
   const uploadId = body.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
-  if (!uploadId) throw new Error(`R2 started an upload without an id: ${body}`);
+  if (!uploadId) throw new Error(`storage started an upload without an id: ${body}`);
   return uploadId;
 }
 
@@ -94,6 +102,9 @@ export async function completeUpload(key: string, uploadId: string, parts: Uploa
     `${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`,
     {
       method: "POST",
+      // Said outright: a string body goes out as `text/plain` otherwise, and
+      // Google's reference says this request's body type is `application/xml`.
+      headers: { "content-type": "application/xml" },
       body: `<CompleteMultipartUpload>${xml}</CompleteMultipartUpload>`,
     },
   );
@@ -102,15 +113,15 @@ export async function completeUpload(key: string, uploadId: string, parts: Uploa
   // connection warm while it assembles, so the status is written before the
   // outcome is known.
   if (!response.ok || body.includes("<Error")) {
-    throw new Error(`R2 refused to complete the upload: ${response.status} ${body}`);
+    throw new Error(`storage refused to complete the upload: ${response.status} ${body}`);
   }
 }
 
-/** What R2 actually holds, in bytes — or null if there is no such object. */
+/** What the store actually holds, in bytes — or null if there is no such object. */
 export async function headSize(key: string): Promise<number | null> {
   const response = await client().fetch(objectUrl(key), { method: "HEAD" });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`R2 refused a HEAD: ${response.status}`);
+  if (!response.ok) throw new Error(`storage refused a HEAD: ${response.status}`);
   const length = Number(response.headers.get("content-length"));
   return Number.isFinite(length) ? length : null;
 }
@@ -162,7 +173,8 @@ const AT_ONCE = 32;
  *
  * A 404 is never a failure: a key that is not there — a record deleted before
  * the worker made its preview — and an upload already released or completed
- * after all are both the outcome the caller asked for.
+ * after all are both the outcome the caller asked for. It is also what Google
+ * answers for a missing key, where S3 and MinIO answer 204.
  *
  * In slices and not in one `Promise.all`: a memory holds up to a thousand files
  * (`memoryMaxFiles`) with three keys each, beside its videos and its music, and
@@ -182,7 +194,7 @@ async function deleteAll(what: string, urls: string[]): Promise<void> {
   }
   if (refused.length > 0) {
     throw new Error(
-      `R2 refused ${refused.length} of ${urls.length} ${what}: ${refused.join(", ")}`,
+      `storage refused ${refused.length} of ${urls.length} ${what}: ${refused.join(", ")}`,
     );
   }
 }
