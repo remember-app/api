@@ -11,6 +11,7 @@ import {
 } from "smtp-server";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { sql } from "../db.ts";
+import { generateCode } from "./email.ts";
 import { claimsFrom, type Provider, type ProviderClaims, verifier } from "./providers.ts";
 import { hashToken, revokeByToken } from "./session.ts";
 import { buildTestApp, cleanupTestUsers, testEmail as sharedTestEmail } from "./testing.ts";
@@ -155,8 +156,8 @@ function setEnv(name: string, value: string | undefined) {
   else process.env[name] = value;
 }
 
-/** The env the dev door is decided by, saved and put back around each test. */
-const doorEnv = [...mailEnv, "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS"];
+/** The env both doors are decided by, saved and put back around each test. */
+const doorEnv = [...mailEnv, "NODE_ENV", "EMAIL_LOGIN_DEV_BYPASS", "REVIEW_LOGIN"];
 const saveEnv = () => doorEnv.map((name) => process.env[name]);
 function restoreEnv(saved: (string | undefined)[]) {
   for (const [i, name] of doorEnv.entries()) setEnv(name, saved[i]);
@@ -749,6 +750,203 @@ test("the dev door: only test.test, only with the switch on, and never on absenc
   } finally {
     restoreEnv(previous);
     await app.close();
+  }
+});
+
+/**
+ * The review door's setting, made up per run: an address of this file's own
+ * and a code nobody chose. The real pair lives in the deployment's secrets and
+ * nowhere near this repository.
+ */
+function openReviewDoor() {
+  const email = testEmail();
+  const code = generateCode();
+  setEnv("REVIEW_LOGIN", `${email}:${code}`);
+  return { email, code };
+}
+
+// Apple's reviewer cannot read our mail, so one address signs in on a fixed
+// code — in production, which is the whole point, and through nothing but the
+// setting: the development lock's two switches are not asked. Its answer is
+// the ordinary one, since a door that answered differently would announce
+// itself to whoever tried the address.
+test("the review door: its one address signs in on the fixed code, in production, with no letter", async () => {
+  const previous = saveEnv();
+  const { email, code } = openReviewDoor();
+  const { app, lines } = buildTestApp();
+  const posted = letters.length;
+  const signIn = async () => {
+    const start = await startLogin(app, { email });
+    expect(start.statusCode).toBe(200);
+    expect(start.body).toBe('{"ok":true}');
+    const verified = await verifyCode(app, email, code);
+    expect(verified.statusCode).toBe(200);
+    return verified.json() as { token: string; user: { email: string } };
+  };
+  try {
+    setEnv("EMAIL_LOGIN_DEV_BYPASS", undefined);
+    setEnv("NODE_ENV", "production");
+    const { token, user } = await signIn();
+    expect(user.email).toBe(email);
+    // An ordinary session, as good as any other.
+    const me = await app.inject({
+      method: "GET",
+      url: "/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(me.statusCode).toBe(200);
+
+    // The development switch on changes nothing: no code in the answer.
+    setEnv("EMAIL_LOGIN_DEV_BYPASS", "1");
+    setEnv("NODE_ENV", undefined);
+    await signIn();
+
+    // Nor do the mail keys: the door sends nothing, so it needs nothing to
+    // send with.
+    setEnv("NODE_ENV", "production");
+    for (const name of mailEnv) setEnv(name, undefined);
+    await signIn();
+
+    expect(letters).toHaveLength(posted);
+    // The use is on record — a warning, once per code issued — and the
+    // record carries neither half of the key.
+    const used = lines.filter((l) => l.includes("review login code issued"));
+    expect(used).toHaveLength(3);
+    expect(used.every((l) => (JSON.parse(l) as { level: number }).level === 40)).toBe(true);
+    expect(lines.join("\n")).not.toContain(email);
+    expect(lines.join("\n")).not.toContain(code);
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+  }
+});
+
+// The test that goes red the day the door opens wider. Every near miss is
+// somebody else's sign-in: a letter with a random code of its own, and the
+// fixed code worth nothing. The account behind another case is the reviewer's
+// own, and even there the fixed code does not open it — the live code is the
+// random one that went by letter.
+test("the review door opens for its exact spelling alone: near misses get a letter and the fixed code is refused", async () => {
+  const previous = saveEnv();
+  const { email, code } = openReviewDoor();
+  const { app } = buildTestApp();
+  try {
+    const [local, domain] = email.split("@");
+    for (const other of [
+      email.replace("task05", "Task05"),
+      `${local}+review@${domain}`,
+      `${local}0@${domain}`,
+      `${local}@example.org`,
+    ]) {
+      const posted = letters.length;
+      const start = await startLogin(app, { email: other });
+      expect(start.statusCode, other).toBe(200);
+      expect(start.json()).toEqual({ ok: true });
+      expect(letters, other).toHaveLength(posted + 1);
+      expect(letters.at(-1)?.to).toEqual([other.toLowerCase()]);
+      expect((await verifyCode(app, other, code)).statusCode, other).toBe(401);
+    }
+
+    // Stray spaces never reach the door: the address is not an address.
+    expect((await startLogin(app, { email: ` ${email} ` })).statusCode).toBe(400);
+
+    // Not a vacuous pass: the exact spelling does open, and nothing but its
+    // one code gets through it.
+    const posted = letters.length;
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    expect(letters).toHaveLength(posted);
+    expect((await verifyCode(app, email, wrongCode(code, 1))).statusCode).toBe(401);
+    expect((await verifyCode(app, email, code)).statusCode).toBe(200);
+  } finally {
+    restoreEnv(previous);
+    await app.close();
+  }
+});
+
+// A code that never changes is a code a guesser can walk through in order, so
+// the door gets not one try more than anyone: the attempts on each code, the
+// requests per mailbox, and a code that is spent once it has worked.
+test("the review door spends the same limits as everyone: attempts per code, requests per mailbox, one use", async () => {
+  const previous = saveEnv();
+  const previousAttempts = process.env.EMAIL_LOGIN_MAX_ATTEMPTS;
+  const previousRate = process.env.EMAIL_LOGIN_RATE_MAX;
+  process.env.EMAIL_LOGIN_MAX_ATTEMPTS = "3";
+  process.env.EMAIL_LOGIN_RATE_MAX = "2";
+  const { email, code } = openReviewDoor();
+  const { app } = buildTestApp();
+  try {
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    for (const step of [1, 2, 3]) {
+      expect((await verifyCode(app, email, wrongCode(code, step))).statusCode).toBe(401);
+    }
+    // Past the attempts the fixed code is dead as well, until asked for again.
+    expect((await verifyCode(app, email, code)).statusCode).toBe(401);
+
+    expect((await startLogin(app, { email })).statusCode).toBe(200);
+    expect((await verifyCode(app, email, code)).statusCode).toBe(200);
+    expect((await verifyCode(app, email, code)).statusCode).toBe(401);
+
+    const limited = await startLogin(app, { email });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: "too many requests" });
+  } finally {
+    restoreEnv(previous);
+    setEnv("EMAIL_LOGIN_MAX_ATTEMPTS", previousAttempts);
+    setEnv("EMAIL_LOGIN_RATE_MAX", previousRate);
+    await app.close();
+  }
+});
+
+// Blank is absent, as for every setting: no door. Anything else is somebody
+// trying to open it, so getting it wrong — half of it, the wrong shape — is a
+// server that does not start, not a door that quietly stays shut. And the
+// error that says so carries neither half of what it refused.
+test("the review setting: blank is no door, and a malformed one stops the app building without printing itself", async () => {
+  const previous = saveEnv();
+  const email = testEmail();
+  const code = generateCode();
+  try {
+    for (const value of [undefined, "", "   "]) {
+      setEnv("REVIEW_LOGIN", value);
+      const { app } = buildTestApp();
+      const posted = letters.length;
+      const start = await startLogin(app, { email });
+      expect(start.statusCode).toBe(200);
+      expect(letters).toHaveLength(posted + 1);
+      expect((await verifyCode(app, email, code)).statusCode).toBe(401);
+      await app.close();
+    }
+
+    const [local, domain] = email.split("@");
+    for (const value of [
+      email,
+      `${email}:`,
+      `:${code}`,
+      code,
+      `${email}:${code.slice(1)}`,
+      `${email}:${code}0`,
+      `${email}:${code.slice(1)}x`,
+      `${email} :${code}`,
+      `${email}: ${code}`,
+      `${local}:${code}`,
+      `${local?.toUpperCase()}@${domain}:${code}`,
+      `${email}:${code}:${code}`,
+    ]) {
+      setEnv("REVIEW_LOGIN", value);
+      let error: unknown;
+      try {
+        buildTestApp();
+      } catch (e) {
+        error = e;
+      }
+      expect(error, value).toBeInstanceOf(Error);
+      const { message } = error as Error;
+      expect(message).toContain("REVIEW_LOGIN");
+      expect(message).not.toContain(local);
+      expect(message).not.toMatch(/\d{6}/);
+    }
+  } finally {
+    restoreEnv(previous);
   }
 });
 

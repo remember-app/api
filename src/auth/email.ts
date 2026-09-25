@@ -41,11 +41,14 @@ const derive = (code: string, salt: Buffer) =>
  * Finds or creates the user behind an address and mints their sign-in code.
  * Returns the raw code; only its salted hash reaches the database.
  *
+ * The code is a fresh random one for everybody but the review door, which
+ * brings its fixed one (see `reviewLogin`) and is otherwise filed like any
+ * other: the same one row, expiry and attempts.
+ *
  * Accounts are never merged on a matching email: the first sighting of a
  * (provider, provider account id) pair creates a user, and only that.
  */
-export async function startEmailLogin(email: string): Promise<string> {
-  const code = generateCode();
+export async function startEmailLogin(email: string, code = generateCode()): Promise<string> {
   const salt = randomBytes(16);
   // Derived before the transaction is opened: scrypt is deliberately slow, and
   // the advisory lock below is held against everyone else asking for this same

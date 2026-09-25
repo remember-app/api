@@ -1,5 +1,12 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
-import { devEmailBypass, env, rateMaxPerEmail, rateMaxPerIp, rateWindowMs } from "./config.ts";
+import {
+  devEmailBypass,
+  env,
+  rateMaxPerEmail,
+  rateMaxPerIp,
+  rateWindowMs,
+  reviewLogin,
+} from "./config.ts";
 import { normalizeEmail, startEmailLogin, verifyEmailLoginCode } from "./email.ts";
 import { mailConfigured, sendLoginCode } from "./mail.ts";
 import { type AuthUser, bearerToken, issue, type Language, verify } from "./session.ts";
@@ -113,6 +120,10 @@ export function authPlugin(app: FastifyInstance) {
     return `${local.replaceAll(".", "")}@gmail.com`;
   };
 
+  // Read here and not per request: a malformed value has to stop the server
+  // starting, not surface on the reviewer's first sign-in.
+  const review = reviewLogin();
+
   app.decorate("authenticate", async (request, reply) => {
     const token = bearerToken(request.headers.authorization);
     const user = token ? await verify(token) : null;
@@ -130,7 +141,7 @@ export function authPlugin(app: FastifyInstance) {
     { schema: { body: emailBody } },
     async (request, reply) => {
       const email = normalizeEmail(request.body.email);
-      // The one way in that does not need a mail provider — a build in
+      // The development way in that does not need a mail provider — a build in
       // somebody's hands has to have one — and it is deliberately narrow: the
       // switch explicitly on, the address on test.test, and not production.
       // Any of the three missing and the request takes the ordinary path: a
@@ -165,11 +176,18 @@ export function authPlugin(app: FastifyInstance) {
         devEmailBypass() &&
         email.endsWith("@test.test") &&
         !env("NODE_ENV")?.toLowerCase().startsWith("prod");
-      // With no mail keys the letter cannot go at all, and without the bypass
-      // there is nothing else to answer with — so the request ends here,
-      // before the limiter and before the user is made, so nothing is written
-      // down and nobody's budget is spent on being told so.
-      if (!mailConfigured() && !bypass) {
+      // The review door (see `reviewLogin`), apart from the lock above and
+      // blind to both of its switches. Matched on the address exactly as it
+      // came, not as `normalizeEmail` folds it: another case, a `+tag` or a
+      // neighbour is somebody else and takes the ordinary path. Past this line
+      // it is an ordinary sign-in whose code happens to be fixed — the same
+      // limiter, expiry and attempts, the same answer — only no letter.
+      const reviewer = review !== undefined && request.body.email === review.email;
+      // With no mail keys the letter cannot go at all, and without one of the
+      // two doors there is nothing else to answer with — so the request ends
+      // here, before the limiter and before the user is made, so nothing is
+      // written down and nobody's budget is spent on being told so.
+      if (!mailConfigured() && !bypass && !reviewer) {
         return reply.code(503).send({ error: "mail not configured" });
       }
       const buckets: [string, number][] = [
@@ -179,7 +197,13 @@ export function authPlugin(app: FastifyInstance) {
       if (rateLimited(buckets)) {
         return reply.code(429).send({ error: "too many requests" });
       }
-      const code = await startEmailLogin(email);
+      const code = await startEmailLogin(email, reviewer ? review.code : undefined);
+      if (reviewer) {
+        // Neither the address nor the code: the line says the door was used,
+        // and the request id pino puts on it says by which request.
+        request.log.warn("review login code issued");
+        return { ok: true };
+      }
       // The development door decided above: the same code the letter would
       // have carried is handed straight back to whoever asked. Mail keys make
       // no difference here — a letter to test.test has nowhere to be

@@ -64,13 +64,14 @@ export const appleClientId = () => env("APPLE_CLIENT_ID");
 export const googleClientId = () => env("GOOGLE_CLIENT_ID");
 
 /**
- * The one switch that lets a sign-in skip the letter, and the whole of that
- * permission: unset, there is no way past the mail provider at all — whatever
- * `NODE_ENV` says, and whether or not the mail keys are there. What it opens
- * is deliberately narrow and is decided in `/auth/email/start` (see
- * src/auth/plugin.ts): with it on, only addresses on test.test — a domain RFC
- * 2606 reserves forever, so it can never be anybody's mail server — and never
- * in production.
+ * The switch that lets a development sign-in skip the letter, and the whole of
+ * that permission: unset, there is no development way past the mail provider
+ * at all — whatever `NODE_ENV` says, and whether or not the mail keys are
+ * there. What it opens is deliberately narrow and is decided in
+ * `/auth/email/start` (see src/auth/plugin.ts): with it on, only addresses on
+ * test.test — a domain RFC 2606 reserves forever, so it can never be anybody's
+ * mail server — and never in production. The one other way past the letter is
+ * `reviewLogin` below, and it is not this lock's business.
  *
  * The only reader here for which presence is not enough. Every other setting
  * fails shut when its value is unreadable; this one *opens*, so an
@@ -78,3 +79,30 @@ export const googleClientId = () => env("GOOGLE_CLIENT_ID");
  * person saying no, and presence alone would hear it as yes.
  */
 export const devEmailBypass = () => flag("EMAIL_LOGIN_DEV_BYPASS");
+
+/**
+ * The review door: one address that signs in on a fixed code instead of a
+ * letter, production included. Apple's reviewer of the TestFlight build needs
+ * a working sign-in and cannot read our mail — a deliberate exception to «no
+ * way past the mail in production», and a narrow one: one address, and
+ * nothing else about the sign-in differs (see `/auth/email/start`).
+ *
+ * `address:code`, read once when the app is built. Blank is absent and means
+ * no door, as for every setting here; anything else that is not a lowercase
+ * address and six digits throws, so a half-set or mistyped value stops the
+ * server instead of quietly leaving the reviewer locked out. Lowercase because
+ * that is the form the account is filed under (`normalizeEmail`), so the one
+ * spelling the door opens for is the account's own. The message names the
+ * setting and never its value: the value is a key to an account.
+ */
+export function reviewLogin() {
+  const value = env("REVIEW_LOGIN");
+  if (!value) return undefined;
+  const [, email, code] = /^([^\s@:]+@[^\s@:]+):(\d{6})$/.exec(value) ?? [];
+  if (!email || !code || email !== email.toLowerCase()) {
+    throw new Error(
+      "REVIEW_LOGIN is not a lowercase address, a colon and six digits — see docs/auth.md",
+    );
+  }
+  return { email, code };
+}
