@@ -4,8 +4,8 @@ services:
   # stand and left running. `make db` connects to it and creates the
   # `remember` database if missing; nothing here starts or stops it.
 
-  # Local stand-in for Cloudflare R2 — the same S3 API, so the API talks to
-  # both through one code path. The bucket is made by creating its directory
+  # Local stand-in for Google Cloud Storage — the same S3 API as its XML API,
+  # so the API talks to both through one code path. The bucket is made by creating its directory
   # before the server starts: MinIO takes a directory under its data root for a
   # bucket, which is a line here instead of a second container running `mc`.
   minio:
