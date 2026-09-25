@@ -1,39 +1,29 @@
-import { emailLoginTtlMinutes, env } from "./config.ts";
+import { createTransport } from "nodemailer";
+import { emailLoginTtlMinutes, env, flag, positive } from "./config.ts";
 import type { Language } from "./session.ts";
 
 /**
- * The one letter this product sends: the sign-in code. Resend, over its plain
- * HTTP API — a POST with a Bearer token and a JSON body, which is the whole of
- * the protocol, so there is no SDK here for the same reason `src/media/r2.ts`
- * has no AWS one. (SES was the alternative and was turned down: it wants a
- * SigV4 signature on every call, and out of its sandbox only on request — both
- * are a lot of machinery for a pilot of twenty people.)
+ * The one letter this product sends: the sign-in code, over plain SMTP to
+ * whatever mailbox the environment names. nodemailer and not a client of our
+ * own: STARTTLS and AUTH are a conversation, not one request, and it speaks
+ * them with no dependencies of its own.
  */
 
 /**
- * Where the letter goes. Overridable only so tests can aim it at a host of
- * their own instead of the real API — the same knob, for the same reason, as
- * `EXPO_PUSH_URL` in `src/memories/push.ts`.
- *
- * Through `env` and not `process.env` directly, which is not a tidiness point:
- * `??` alone lets `RESEND_API_URL=` — present and empty, which `.env.example`
- * invites by listing the key — through as `""`, and `fetch("")` throws before
- * a request is made. Every sign-in would then answer 502 with `mailConfigured()`
- * still saying everything is fine. Blank is unset here, as everywhere else.
+ * How long the mail server may stay silent — resolving, connecting, greeting,
+ * or mid-conversation — before the person waiting is told it failed.
  */
-const resendUrl = "https://api.resend.com/emails";
-const endpoint = () => env("RESEND_API_URL") ?? resendUrl;
-
-/** How long a send may hang before the person waiting is told it failed. */
 const timeoutMs = 5_000;
 
 /**
- * Nothing is sent until both are set, and a blank value is the same
+ * Nothing is sent until all four are set, and a blank value is the same
  * misconfiguration as a missing one — exactly the call `storageConfigured()`
- * makes. Without them the service still boots and `/auth/email/start` says so
+ * makes. The port and the kind of encryption have defaults; these do not.
+ * Without them the service still boots and `/auth/email/start` says so
  * plainly, rather than answering as though the caller were at fault.
  */
-export const mailConfigured = () => Boolean(env("RESEND_API_KEY") && env("MAIL_FROM"));
+export const mailConfigured = () =>
+  Boolean(env("SMTP_HOST") && env("SMTP_USER") && env("SMTP_PASSWORD") && env("MAIL_FROM"));
 
 type Letter = { subject: string; text: string };
 
@@ -66,15 +56,18 @@ const letter: Record<Language, (code: string, minutes: number) => Letter> = {
 
 /**
  * Sends the code, or throws. Throwing is the point: the caller must be able to
- * tell «the letter did not go» from «it went», and neither the provider's
- * status nor its body may reach the person who asked — that text carries our
- * own address and API errors, and the answer must be the same for every
- * address anyway.
+ * tell «the letter did not go» from «it went», and none of the mail server's
+ * own words may reach the person who asked — they carry our own mailbox and
+ * its errors, and the answer must be the same for every address anyway.
  *
  * The language comes from whoever asked for the code and nowhere else: this is
  * pre-authentication, so there is no session and, for an address seen for the
  * first time, no user row to hold a preference either. Russian by default —
  * that is what every caller got before the field existed.
+ *
+ * The transport is made per letter, not once: the settings are read when the
+ * letter goes, like every other setting here, and a transport that is not
+ * pooled opens a connection per letter anyway.
  */
 export async function sendLoginCode(
   email: string,
@@ -82,23 +75,24 @@ export async function sendLoginCode(
   language: Language = "ru",
 ): Promise<void> {
   const { subject, text } = letter[language](code, emailLoginTtlMinutes());
-  const response = await fetch(endpoint(), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env("RESEND_API_KEY")}`,
-      "content-type": "application/json",
-    },
-    // Plain text, no HTML part: the whole letter is six digits and a sentence
-    // around them, and an HTML twin would be a second copy of that text to keep
-    // in step for no gain. It also reads the same everywhere, which matters for
-    // the one line anybody actually copies out of it.
-    body: JSON.stringify({ from: env("MAIL_FROM"), to: [email], subject, text }),
-    signal: AbortSignal.timeout(timeoutMs),
+  const secure = flag("SMTP_SECURE");
+  const transport = createTransport({
+    host: env("SMTP_HOST"),
+    port: positive("SMTP_PORT", secure ? 465 : 587),
+    secure,
+    // Encrypted or not sent: on 587 the upgrade is the server's offer, and a
+    // server that does not make it — or somebody in the middle striking it
+    // out — would otherwise get the password in the clear.
+    requireTLS: true,
+    auth: { user: env("SMTP_USER"), pass: env("SMTP_PASSWORD") },
+    dnsTimeout: timeoutMs,
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
   });
-  if (!response.ok) {
-    // Read as text, not JSON: an error page or a proxy's answer is not JSON,
-    // and this must not throw something else on its way to the log.
-    const body = (await response.text()).slice(0, 500);
-    throw new Error(`Resend refused the letter: ${response.status} ${body}`);
-  }
+  // Plain text, no HTML part: the whole letter is six digits and a sentence
+  // around them, and an HTML twin would be a second copy of that text to keep
+  // in step for no gain. It also reads the same everywhere, which matters for
+  // the one line anybody actually copies out of it.
+  await transport.sendMail({ from: env("MAIL_FROM"), to: email, subject, text });
 }

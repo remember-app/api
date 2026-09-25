@@ -143,7 +143,7 @@ test("a memory with more devices than Expo takes at once is told in slices", asy
   }));
   await sql`insert into push_tokens ${sql(devices, "token", "user_id")}`;
 
-  // Expo, stood in for, the way auth.test.ts stands in for Resend: a host of
+  // Expo, stood in for, the way auth.test.ts stands in for the mailbox: a host of
   // its own, so nothing here needs a way out to the internet. It counts how
   // many messages each request carried.
   const batches: number[] = [];
