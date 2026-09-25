@@ -252,7 +252,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // is dropped before it is weighed — «очистил поле» is «не сказал».
   const wishes = Object.fromEntries(
     Object.entries(body?.music_wishes ?? {})
-      .map(([name, wish]) => [storable(name), storable(wish).trim()])
+      .map(([name, wish]) => [storable(name), storable(wish).trim()] as const)
       .filter(([, wish]) => wish),
   );
   const played = new Set(tracks);
