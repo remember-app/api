@@ -79,15 +79,20 @@ export async function checkStorage(prefix: string, say: (line: string) => void):
     });
 
     const strayId = await step("start an upload to abandon", () => start(abandoned));
-    // The answer resuming hangs on: the phone asks the api for fresh links when
-    // a part is refused as expired (mobile `src/lib/upload/send.ts`). S3 and
-    // MinIO say 403; Google, on its own signature, says `400 ExpiredToken`.
-    const expired = storageDriver() === "google" ? 400 : 403;
-    await step(`an expired part link answers ${expired}`, async () => {
+    // The answer resuming hangs on, held to the very test the phone makes
+    // before it asks the api for fresh links (mobile `src/lib/upload/send.ts`):
+    // S3 and MinIO say 403; Google, on its own signature, 400 with
+    // `ExpiredToken` in the body — any other 400 the phone takes for a failure.
+    const google = storageDriver() === "google";
+    await step(`an expired part link answers ${google ? "400 ExpiredToken" : "403"}`, async () => {
       const [link] = await partUrls(abandoned, strayId, 1, 1);
       await sleep(3000);
       const got = await send(link, last);
-      assert.equal(got.status, expired, `answered ${got.status}: ${await got.text()}`);
+      const body = await got.text();
+      const expired = google
+        ? got.status === 400 && body.includes("<Code>ExpiredToken</Code>")
+        : got.status === 403;
+      assert.ok(expired, `answered ${got.status}: ${body}`);
     });
     await step("abort it", () => abortUploads([{ key: abandoned, uploadId: strayId }]));
     await step("the aborted upload takes no more parts", async () => {
