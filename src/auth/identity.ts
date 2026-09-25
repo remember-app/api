@@ -5,6 +5,7 @@ import {
   bearerToken,
   hashToken,
   type Language,
+  profileColumns,
   revoke,
   revokeByToken,
 } from "./session.ts";
@@ -149,10 +150,10 @@ export function identityRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const [user] = await sql<AuthUser[]>`
-          update users set username = ${request.body.username}
+          update users u set username = ${request.body.username}
           where id = ${request.user.id}
             and (username is not null or consent_accepted_at is not null)
-          returning id, username, name, email, language
+          returning ${profileColumns}
         `;
         // No row means the gate held: the caller has no username yet and has
         // not accepted. The other way to match nothing — the row gone between
@@ -200,9 +201,9 @@ export function identityRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate, schema: { body: languageChoice } },
     async (request) => {
       const [user] = await sql<AuthUser[]>`
-        update users set language = ${request.body.language}
+        update users u set language = ${request.body.language}
         where id = ${request.user.id}
-        returning id, username, name, email, language
+        returning ${profileColumns}
       `;
       if (!user) throw new Error("update users returned no row");
       return user;

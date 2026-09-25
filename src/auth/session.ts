@@ -20,6 +20,14 @@ export type AuthUser = {
 };
 
 /**
+ * The columns of `AuthUser`, read off `users` under the alias `u`. Every
+ * statement that hands a profile back selects exactly this, so the profile a
+ * sign-in answers with, the one `GET /me` shows and the one a `/me/*` change
+ * returns cannot drift apart: a field is added here and nowhere else.
+ */
+export const profileColumns = sql`u.id, u.username, u.name, u.email, u.language`;
+
+/**
  * Only the hash is stored: a dump of the table gets nobody into a session.
  * The token is 32 random bytes, so there is nothing to guess and a bare
  * SHA-256 is enough — no salt, no KDF.
@@ -55,7 +63,7 @@ export async function issue(userId: string): Promise<string> {
 /** A live session yields its user; expired, revoked or unknown yields null. */
 export async function verify(token: string): Promise<AuthUser | null> {
   const [user] = await sql<AuthUser[]>`
-    select u.id, u.username, u.name, u.email, u.language
+    select ${profileColumns}
     from sessions s
     join users u on u.id = s.user_id
     where s.token_hash = ${hashToken(token)}

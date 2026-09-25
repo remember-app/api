@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
 import { audienceOf, type Provider, type ProviderClaims, verifier } from "./providers.ts";
-import { type AuthUser, issue } from "./session.ts";
+import { type AuthUser, issue, profileColumns } from "./session.ts";
 
 /**
  * Spelled out rather than a named format: ajv's loose formats accept strings
@@ -31,7 +31,7 @@ async function findOrCreateUser(provider: Provider, claims: ProviderClaims): Pro
     // auth_identities primary key.
     await tx`select pg_advisory_xact_lock(hashtext(${`${provider}:${claims.sub}`}))`;
     const [found] = await tx<AuthUser[]>`
-      select u.id, u.username, u.name, u.email, u.language
+      select ${profileColumns}
       from auth_identities i join users u on u.id = i.user_id
       where i.provider = ${provider} and i.provider_account_id = ${claims.sub}
     `;
@@ -45,8 +45,8 @@ async function findOrCreateUser(provider: Provider, claims: ProviderClaims): Pro
     // relay, and a provider that never verified it would otherwise hand over
     // whichever account claimed that address first.
     const [user] = await tx<AuthUser[]>`
-      insert into users (name, email) values (${claims.name}, ${claims.email})
-      returning id, username, name, email, language
+      insert into users as u (name, email) values (${claims.name}, ${claims.email})
+      returning ${profileColumns}
     `;
     if (!user) throw new Error("insert into users returned no row");
     await tx`
