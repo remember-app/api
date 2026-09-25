@@ -29,16 +29,22 @@ export type Montage = {
      * by the field being there.
      */
     music_tracks?: string[];
-    /** «Как использовать треки», in the organizer's own words (doc-03). */
-    music_note?: string;
+    /**
+     * What the organizer wished of each track, in their own words (doc-03):
+     * keyed by the track as `music_tracks` names it, so the worker hands every
+     * wish on with its own track. Written only when there is a wish to write.
+     */
+    music_wishes?: Record<string, string>;
     /**
      * Old rows only — the one track an order used to name, before
-     * `music_tracks`. Nothing writes these any more and no order may ask for
+     * `music_tracks`, and the one wish for the whole order, before
+     * `music_wishes`. Nothing writes these any more and no order may ask for
      * them; they are read because the videos ordered with them are still in
      * the list, and repeating a failed one replays its own `params`.
      */
     music_track_id?: string;
     music_track_key?: string;
+    music_note?: string;
     orientation?: (typeof orientations)[number];
   };
   error_text: string | null;

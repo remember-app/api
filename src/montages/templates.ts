@@ -23,15 +23,20 @@ import { checkOrder } from "./order.ts";
 /** Название воспоминания, даты и число тех, кто нёс кадры, — для заготовки. */
 type Facts = { title: string; dates: string; people: string };
 
+type Track = (typeof musicTracks)[number];
+
 type Template = {
   id: string;
   /** Длина из макета; на деле зажимается по материалу воспоминания. */
   seconds: number;
   orientation: "landscape" | "portrait";
-  tracks: (typeof musicTracks)[number][];
+  tracks: Track[];
   story: Record<Language, (facts: Facts) => string>;
-  /** «Как использовать треки» — только там, где это что-то добавляет. */
-  note?: Record<Language, string>;
+  /**
+   * Пожелание к треку — у того трека шаблона, о котором оно, и только там,
+   * где оно что-то добавляет.
+   */
+  wishes?: Record<Language, Partial<Record<Track, string>>>;
 };
 
 /**
@@ -139,9 +144,9 @@ const templates: Template[] = [
         "people being with each other: hugs, talking, everyone round one table. Start quiet, " +
         "save the warmest thing for the end. No hard cuts, no flicker, nothing loud.",
     },
-    note: {
-      ru: "Склейки под музыку, но мягкие — в такт, а не в удар.",
-      en: "Cut with the music, but gently — on the beat, not on the hit.",
+    wishes: {
+      ru: { warm: "Склейки под музыку, но мягкие — в такт, а не в удар." },
+      en: { warm: "Cut with the music, but gently — on the beat, not on the hit." },
     },
   },
   {
@@ -161,11 +166,17 @@ const templates: Template[] = [
         "— jumps, shouting, splashes, light. Cut everything calm out completely. " +
         "By the end it should feel like all of it happened in a minute.",
     },
-    note: {
-      ru: "Два трека подряд: первый разгоняет, со второго — самая гуща. Склейки строго в бит.",
-      en:
-        "Two tracks in a row: the first builds it up, the second is where it goes wild. " +
-        "Cut strictly on the beat.",
+    // Два трека, и у каждого своя роль: первый разгоняет, со второго — самая
+    // гуща. Поэтому пожелание у каждого своё, а общее у них — склейки в бит.
+    wishes: {
+      ru: {
+        bright: "Этот разгоняет. Склейки строго в бит.",
+        road: "С этого — самая гуща. Склейки строго в бит.",
+      },
+      en: {
+        bright: "This one builds it up. Cut strictly on the beat.",
+        road: "This one is where it goes wild. Cut strictly on the beat.",
+      },
     },
   },
 ];
@@ -231,7 +242,7 @@ export function montageTemplateRoutes(app: FastifyInstance) {
         dates: spellDates(language, memory.event_start, memory.event_end),
         people: spellPeople(language, people),
       };
-      return templates.map(({ id, seconds, orientation, tracks, story, note }) => ({
+      return templates.map(({ id, seconds, orientation, tracks, story, wishes }) => ({
         id,
         story_text: story[language](facts),
         // Длина шаблона в пределах этого воспоминания: три минуты при пределе в
@@ -240,7 +251,9 @@ export function montageTemplateRoutes(app: FastifyInstance) {
         target_seconds: Math.min(Math.max(seconds, min_seconds), max_seconds),
         orientation,
         music_tracks: [...tracks],
-        music_note: note?.[language] ?? null,
+        // Поле есть всегда, `{}` там, где сказать нечего, — чтобы приложению не
+        // гадать, отдали его или забыли.
+        music_wishes: { ...wishes?.[language] },
       }));
     },
   );

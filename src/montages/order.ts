@@ -26,11 +26,12 @@ import { orientations } from "./row.ts";
 const maxStoryChars = 2000;
 
 /**
- * How long the note about the music may be. A guard of `story_text`'s kind and
- * for its reason: «как использовать треки» goes to a neural network inside the
- * prompt, and it is a sentence or two, not a pasted document.
+ * How long a wish about one track may be. A guard of `story_text`'s kind and
+ * for its reason: the wish goes to a neural network inside the prompt, beside
+ * the track it is about, and it is a line under that track, not a pasted
+ * document.
  */
-const maxNoteChars = 500;
+const maxWishChars = 500;
 
 /**
  * How many tracks one video may be cut to. No rule says a number, and a list
@@ -100,7 +101,13 @@ export const orderBodySchema = () => {
         uniqueItems: true,
         maxItems: maxTracks,
       },
-      music_note: { type: "string", maxLength: maxNoteChars },
+      // A wish per track, keyed by the track as `music_tracks` names it. Which
+      // keys belong to this order is `checkOrder`'s question: it needs the
+      // tracks cleaned first.
+      music_wishes: {
+        type: "object",
+        additionalProperties: { type: "string", maxLength: maxWishChars },
+      },
       orientation: { type: "string", enum: [...orientations] },
       // The one-track fields `music_tracks` replaced. Refused rather than
       // stripped like an invented field: a client still naming its track this
@@ -118,7 +125,7 @@ export type OrderBody = {
   include_media_ids?: string[];
   exclude_media_ids?: string[];
   music_tracks?: string[];
-  music_note?: string;
+  music_wishes?: Record<string, string>;
   orientation?: (typeof orientations)[number];
 } | null;
 
@@ -236,13 +243,25 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
     }
   }
 
-  // «Как использовать треки» is about tracks: with none named there is nothing
-  // for it to be about, and the worker would have a wish it cannot honour.
-  // Refused by name rather than dropped, which is this service's rule about a
-  // field it will not act on.
-  const note = storable(body?.music_note ?? "").trim();
-  if (note && tracks.length === 0) {
-    return { code: 400, body: { error: "music_note needs music_tracks" } };
+  // A wish is written to one track and goes to the worker with it, so it has
+  // to name a track this order plays: any other — and with no tracks, every
+  // one — is a wish the worker cannot honour, refused with each such key named
+  // rather than dropped. Key and text are cleaned the way the tracks are, so a
+  // key matches its track after cleaning just as the track itself does; a wish
+  // the cleaning empties, or that came empty, says nothing about anything and
+  // is dropped before it is weighed — «очистил поле» is «не сказал».
+  const wishes = Object.fromEntries(
+    Object.entries(body?.music_wishes ?? {})
+      .map(([name, wish]) => [storable(name), storable(wish).trim()])
+      .filter(([, wish]) => wish),
+  );
+  const played = new Set(tracks);
+  const astray = Object.keys(wishes).filter((name) => !played.has(name));
+  if (astray.length > 0) {
+    return {
+      code: 400,
+      body: { error: "music wish for a track not in music_tracks", music_wishes: astray },
+    };
   }
 
   // Not said is the default, squeezed into this memory's band — which is where
@@ -263,7 +282,8 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // that says nothing is a key not worth writing. The tracks are the one
   // exception and are always written, empty list and all: the worker tells
   // «без музыки» from an order made before this field existed — where it played
-  // `warm` by default — by nothing but the field being there.
+  // `warm` by default — by nothing but the field being there. The wishes are
+  // not an exception: no wish written is «ничего не пожелали».
   const story = storable(body?.story_text ?? "").trim();
   return {
     params: {
@@ -272,7 +292,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
       ...(include.length > 0 ? { include_media_ids: include } : {}),
       ...(exclude.length > 0 ? { exclude_media_ids: exclude } : {}),
       music_tracks: tracks,
-      ...(note ? { music_note: note } : {}),
+      ...(Object.keys(wishes).length > 0 ? { music_wishes: wishes } : {}),
       ...(body?.orientation ? { orientation: body.orientation } : {}),
     },
     left,
