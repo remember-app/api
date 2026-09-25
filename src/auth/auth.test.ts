@@ -264,6 +264,7 @@ test("the whole sign-in: start -> code in the letter -> verify -> session -> GET
     name: null,
     email,
     language: "ru",
+    dates_between_days: false,
   });
 
   const me = await app.inject({
@@ -1024,6 +1025,7 @@ test("a verified id token makes the user, the identity and a session", async () 
       name: given.name,
       email: given.email,
       language: "ru",
+      dates_between_days: false,
     });
     expect(seen).toEqual([["google", "the-id-token"]]);
 
@@ -1070,6 +1072,7 @@ test("the same provider account is the same user, and a token that carries no pr
       name: null,
       email: null,
       language: "ru",
+      dates_between_days: false,
     });
 
     const identities = await sql`

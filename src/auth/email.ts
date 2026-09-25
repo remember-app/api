@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
 import { sql } from "../db.ts";
 import { emailLoginMaxAttempts, emailLoginTtlMinutes } from "./config.ts";
-import type { AuthUser } from "./session.ts";
+import { type AuthUser, profileColumns } from "./session.ts";
 
 /** The address doubles as the `email` provider's account id, so case is folded once, here. */
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
@@ -150,7 +150,7 @@ export async function verifyEmailLoginCode(email: string, code: string): Promise
       where user_id = ${attempt.user_id} and code_hash = ${attempt.code_hash}
       returning user_id
     )
-    select u.id, u.username, u.name, u.email, u.language
+    select ${profileColumns}
     from users u join consumed c on c.user_id = u.id
   `;
   return user ?? null;

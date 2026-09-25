@@ -17,7 +17,20 @@ export type AuthUser = {
   name: string | null;
   email: string | null;
   language: Language;
+  /** «Даты между днями» in the frame feed — one switch for the whole account, not per memory. */
+  dates_between_days: boolean;
 };
+
+/**
+ * The columns of `AuthUser`, read off `users` under the alias `u`. Every
+ * statement that hands a profile back selects exactly this, so the profile a
+ * sign-in answers with, the one `GET /me` shows and the one a `/me/*` change
+ * returns cannot drift apart: a field is added here and to the type above,
+ * nowhere else.
+ */
+export const profileColumns = sql`
+  u.id, u.username, u.name, u.email, u.language, u.dates_between_days
+`;
 
 /**
  * Only the hash is stored: a dump of the table gets nobody into a session.
@@ -55,7 +68,7 @@ export async function issue(userId: string): Promise<string> {
 /** A live session yields its user; expired, revoked or unknown yields null. */
 export async function verify(token: string): Promise<AuthUser | null> {
   const [user] = await sql<AuthUser[]>`
-    select u.id, u.username, u.name, u.email, u.language
+    select ${profileColumns}
     from sessions s
     join users u on u.id = s.user_id
     where s.token_hash = ${hashToken(token)}

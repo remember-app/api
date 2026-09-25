@@ -5,6 +5,7 @@ import {
   bearerToken,
   hashToken,
   type Language,
+  profileColumns,
   revoke,
   revokeByToken,
 } from "./session.ts";
@@ -44,6 +45,19 @@ const languageChoice = {
   required: ["language"],
   additionalProperties: false,
   properties: { language: { type: "string", enum: ["ru", "en"] } },
+} as const;
+
+/**
+ * `enum` and deliberately no `type`: Fastify's ajv coerces a value to the type
+ * a schema declares, so `type: "boolean"` would take `"true"`, `1`, `null` or
+ * `[true]` as a choice. With no type to coerce to, JSON `true` and `false` are
+ * the only bodies that pass.
+ */
+const datesBetweenDaysChoice = {
+  type: "object",
+  required: ["dates_between_days"],
+  additionalProperties: false,
+  properties: { dates_between_days: { enum: [true, false] } },
 } as const;
 
 /**
@@ -99,10 +113,10 @@ export async function findByUsername(username: string): Promise<PublicUser | und
 }
 
 /**
- * Managing one's own identity: the username, the language one reads in,
- * finding somebody by their username, and the sessions one is signed in
- * through. Mounted from `buildApp` after `authPlugin`, which is what puts
- * `app.authenticate` on the instance.
+ * Managing one's own identity: the username, the language one reads in, how
+ * the frame feed marks its days, finding somebody by their username, and the
+ * sessions one is signed in through. Mounted from `buildApp` after
+ * `authPlugin`, which is what puts `app.authenticate` on the instance.
  */
 export function identityRoutes(app: FastifyInstance) {
   // Accepting the user agreement — the one thing that has to happen before a
@@ -149,10 +163,10 @@ export function identityRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const [user] = await sql<AuthUser[]>`
-          update users set username = ${request.body.username}
+          update users u set username = ${request.body.username}
           where id = ${request.user.id}
             and (username is not null or consent_accepted_at is not null)
-          returning id, username, name, email, language
+          returning ${profileColumns}
         `;
         // No row means the gate held: the caller has no username yet and has
         // not accepted. The other way to match nothing — the row gone between
@@ -200,9 +214,26 @@ export function identityRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate, schema: { body: languageChoice } },
     async (request) => {
       const [user] = await sql<AuthUser[]>`
-        update users set language = ${request.body.language}
+        update users u set language = ${request.body.language}
         where id = ${request.user.id}
-        returning id, username, name, email, language
+        returning ${profileColumns}
+      `;
+      if (!user) throw new Error("update users returned no row");
+      return user;
+    },
+  );
+
+  // «Даты между днями» — how the frame feed marks where one day ends. A setting
+  // of the account rather than of a feed: one switch for every memory the
+  // person opens, and it follows them to another phone.
+  app.post<{ Body: { dates_between_days: boolean } }>(
+    "/me/dates-between-days",
+    { preHandler: app.authenticate, schema: { body: datesBetweenDaysChoice } },
+    async (request) => {
+      const [user] = await sql<AuthUser[]>`
+        update users u set dates_between_days = ${request.body.dates_between_days}
+        where id = ${request.user.id}
+        returning ${profileColumns}
       `;
       if (!user) throw new Error("update users returned no row");
       return user;
