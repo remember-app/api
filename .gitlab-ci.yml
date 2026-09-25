@@ -35,15 +35,14 @@ dev_deploy:
     name: dev
     url: https://dev-api-remember.noxlabs.xyz
     deployment_tier: development
-  variables:
-    INFRA_REPO: ssh://git@git.dapp-devs.com:2222/nox-labs/infra/stage/nox-infra-dev.git
   script:
+    # В скрипте, а не в variables: одноимённая переменная проекта, группы или инстанса GitLab
+    # сильнее variables, и проверки «ровно этот файл» ниже сторожили бы тот, что назвала она.
+    - INFRA_REPO=ssh://git@git.dapp-devs.com:2222/nox-labs/infra/stage/nox-infra-dev.git
+    - VALUES=ioc-helm/nox/remember/api/values-dev.yaml
     - git clone "$INFRA_REPO" infra
     - cd infra
     - |
-      # Путь — в скрипте, а не в variables: одноимённая переменная CI проекта, группы или
-      # всего GitLab старше variables джобы и увела бы правку и проверку ниже в чужой чарт.
-      VALUES=ioc-helm/nox/remember/api/values-dev.yaml
       export IMAGE_REPOSITORY="$CI_REGISTRY_IMAGE" IMAGE_TAG="$CI_COMMIT_SHA"
       # Правит sed, а не yq -i, как у qe-life: yq образа выкатки (4.44) выбрасывает пустые строки
       # по всему файлу. yq только сверяет.
