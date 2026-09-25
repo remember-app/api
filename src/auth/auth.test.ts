@@ -514,32 +514,41 @@ test("a password the server turns down is 502 and appears in no form in the log"
   }
 });
 
-// A server with no STARTTLS — or somebody in the middle striking it out — that
-// would gladly take a login in the clear.
-test("a server that offers no encryption is never handed the password", async () => {
-  let asked = false;
-  const plain = smtpServer({
-    disabledCommands: ["STARTTLS"],
-    allowInsecureAuth: true,
-    onAuth(_auth, _session, callback) {
-      asked = true;
-      callback(new Error("should never be reached"));
-    },
-  });
-  await listen(plain);
-  const previous = saveEnv();
-  aimMail(portOf(plain));
-  const { app, lines } = buildTestApp();
-  const posted = letters.length;
-  try {
-    expect((await startLogin(app, { email: testEmail() })).statusCode).toBe(502);
-    expect(asked).toBe(false);
-    expect(letters).toHaveLength(posted);
-    expect(failureLine(lines).level).toBe(50);
-  } finally {
-    restoreEnv(previous);
-    await app.close();
-    await close(plain);
+test("the password goes only over encryption, to a server whose certificate checks out", async () => {
+  const servers: { options: SMTPServerOptions; verify: boolean }[] = [
+    // No STARTTLS — or somebody in the middle striking it out — and a server
+    // that would gladly take a login in the clear.
+    { options: { disabledCommands: ["STARTTLS"], allowInsecureAuth: true }, verify: false },
+    // Encryption on offer under a certificate nobody vouches for, with the
+    // check this file switches off for its other tests switched back on.
+    { options: {}, verify: true },
+  ];
+  for (const { options, verify } of servers) {
+    let asked = false;
+    const refused = smtpServer({
+      ...options,
+      onAuth(_auth, _session, callback) {
+        asked = true;
+        callback(new Error("should never be reached"));
+      },
+    });
+    await listen(refused);
+    const previous = saveEnv();
+    aimMail(portOf(refused));
+    if (verify) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    const { app, lines } = buildTestApp();
+    const posted = letters.length;
+    try {
+      expect((await startLogin(app, { email: testEmail() })).statusCode).toBe(502);
+      expect(asked).toBe(false);
+      expect(letters).toHaveLength(posted);
+      expect(failureLine(lines).level).toBe(50);
+    } finally {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      restoreEnv(previous);
+      await app.close();
+      await close(refused);
+    }
   }
 });
 
