@@ -13,6 +13,12 @@ Apple и Google проверяются через `jose` (`src/auth/providers.ts
 ключи провайдера с их ротацией, `jwtVerify` сверяет подпись, `iss`, `aud` и `exp`. Руками из
 токена берётся только `sub` — им и связывают, — плюс `name` и `email`, если они там есть.
 
+## `GET /auth/methods`
+
+Без авторизации, без базы, кэш на 5 минут: `200 {"email":true,"apple":<bool>,"google":<bool>}` —
+провайдер `true`, только если задан его client id (`APPLE_CLIENT_ID` / `GOOGLE_CLIENT_ID`), то есть
+ровно когда его `POST /auth/<провайдер>` не отвечает `501`; сами id в ответ не попадают.
+
 ## `POST /auth/email/start`
 
 Без авторизации. Тело — `{"email": "...", "language": "ru"}`, где `language` необязателен. Заводит
