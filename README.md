@@ -38,7 +38,8 @@ src/media/upload.ts   приём загрузки: заявка, повторн�
 src/media/gallery.ts  галерея, удаление медиа и общий каскад (счётчики, jobs, ключи R2)
 src/media/frame.ts    сведения об одном кадре: кто принёс, файл, камера, место, ролики
 src/media/labels.ts   лейблы воспоминания: список, запись, правило видимости и правило прав
-src/media/r2.ts       S3-совместимое хранилище (Google Cloud Storage, MinIO): multipart и подписанные ссылки
+src/media/r2.ts       хранилище: multipart и подписанные ссылки; драйвер s3 (MinIO, S3-совместимые) по умолчанию
+src/media/gcs.ts      драйвер google: Google Cloud Storage по JSON-ключу служебной учётки, под префиксом
 src/media/config.ts   лимиты и сроки ссылок из окружения
 src/montages/montages.ts  четыре маршрута ролика: заказ, итог, список, повтор
 src/montages/order.ts     что клиент может попросить и потянет ли это воспоминание

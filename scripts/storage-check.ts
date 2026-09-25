@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { env } from "../src/auth/config.ts";
 import { downloadTtlSeconds, partBytes, uploadTtlSeconds } from "../src/media/config.ts";
 import {
   abortUploads,
@@ -11,11 +12,12 @@ import {
   downloadUrl,
   headSize,
   partUrls,
+  storageDriver,
 } from "../src/media/r2.ts";
 
 /**
  * Every call the api makes to the object store, in the order a file lives
- * through them, against whatever bucket `R2_*` names — and all of it under
+ * through them, against whatever store the settings name — and all of it under
  * `prefix`, which is left empty again whether the run holds or not.
  *
  * Run by hand against Google (`npm run storage:check`, docs/running.md), and by
@@ -77,13 +79,15 @@ export async function checkStorage(prefix: string, say: (line: string) => void):
     });
 
     const strayId = await step("start an upload to abandon", () => start(abandoned));
-    // The phone asks the api for fresh links on a 403 and on nothing else
-    // (mobile `src/lib/upload/send.ts`), so this is the answer resuming hangs on.
-    await step("an expired part link answers 403", async () => {
+    // The answer resuming hangs on: the phone asks the api for fresh links when
+    // a part is refused as expired (mobile `src/lib/upload/send.ts`). S3 and
+    // MinIO say 403; Google, on its own signature, says `400 ExpiredToken`.
+    const expired = storageDriver() === "google" ? 400 : 403;
+    await step(`an expired part link answers ${expired}`, async () => {
       const [link] = await partUrls(abandoned, strayId, 1, 1);
       await sleep(3000);
       const got = await send(link, last);
-      assert.equal(got.status, 403, `answered ${got.status}: ${await got.text()}`);
+      assert.equal(got.status, expired, `answered ${got.status}: ${await got.text()}`);
     });
     await step("abort it", () => abortUploads([{ key: abandoned, uploadId: strayId }]));
     await step("the aborted upload takes no more parts", async () => {
@@ -124,40 +128,75 @@ async function put(link: string | undefined, bytes: Buffer): Promise<string> {
   return etag;
 }
 
-// The live run. Its own variables and not `R2_*`: those name the bucket the
-// product lives in, and this writes only to one kept for checks.
+// The live run. Its own variables and not the product's: those name where the
+// product lives, and this writes only where checks are kept.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const setting = (name: string) => process.env[`STORAGE_CHECK_${name}`]?.trim() || undefined;
-  const withoutSlash = (url: string | undefined) => url?.trim().replace(/\/+$/, "");
-  const endpoint = withoutSlash(setting("ENDPOINT"));
-  const bucket = setting("BUCKET");
-  const accessKeyId = setting("ACCESS_KEY_ID");
-  const secret = setting("SECRET_ACCESS_KEY");
-
-  if (!endpoint || !bucket || !accessKeyId || !secret) {
-    console.error(
-      "error: set STORAGE_CHECK_ENDPOINT, STORAGE_CHECK_BUCKET, STORAGE_CHECK_ACCESS_KEY_ID " +
-        "and STORAGE_CHECK_SECRET_ACCESS_KEY (docs/running.md, «Живой контроль хранилища»)",
-    );
+  const setting = (name: string) => env(`STORAGE_CHECK_${name}`);
+  const withoutSlash = (path: string | undefined) => path?.trim().replace(/\/+$/, "");
+  function stop(message: string): never {
+    console.error(`error: ${message} (docs/running.md, «Живой контроль хранилища»)`);
     process.exit(1);
   }
-  if (
-    endpoint === withoutSlash(process.env.R2_ENDPOINT) &&
-    bucket === process.env.R2_BUCKET?.trim()
-  ) {
-    console.error(`error: ${endpoint}/${bucket} is the bucket R2_* names — the product's own`);
-    process.exit(1);
+  const run = randomUUID();
+  // Where the objects land: `<prefix of the checks>/<id of the run>/`, on either driver.
+  let where: string;
+  let prefix: string;
+
+  if (setting("DRIVER")?.toLowerCase() === "google") {
+    const bucket = setting("BUCKET");
+    const checks = withoutSlash(setting("PREFIX"));
+    const credentials = setting("CREDENTIALS");
+    if (!bucket || !checks || !credentials) {
+      stop("set STORAGE_CHECK_BUCKET, STORAGE_CHECK_PREFIX and STORAGE_CHECK_CREDENTIALS");
+    }
+    // The bucket is shared, the product's own objects included: the checks'
+    // prefix stays clear of the one the product runs on.
+    const product = withoutSlash(env("GOOGLE_STORAGE_PREFIX"));
+    const within = (inner: string, outer: string) => `${inner}/`.startsWith(`${outer}/`);
+    if (
+      product &&
+      bucket === env("GOOGLE_STORAGE_BUCKET") &&
+      (within(checks, product) || within(product, checks))
+    ) {
+      stop(`${bucket}/${checks}/ overlaps ${product}/, the prefix GOOGLE_STORAGE_PREFIX names`);
+    }
+    // The driver's prefix is the checks' own, so the run stays under it by the
+    // same single rule that keeps the product under its prefix.
+    Object.assign(process.env, {
+      STORAGE_DRIVER: "google",
+      GOOGLE_STORAGE_BUCKET: bucket,
+      GOOGLE_STORAGE_PREFIX: checks,
+      GOOGLE_STORAGE_CREDENTIALS: credentials,
+    });
+    prefix = run;
+    where = `gs://${bucket}/${checks}/${run}/`;
+  } else {
+    const endpoint = withoutSlash(setting("ENDPOINT"));
+    const bucket = setting("BUCKET");
+    const accessKeyId = setting("ACCESS_KEY_ID");
+    const secret = setting("SECRET_ACCESS_KEY");
+    if (!endpoint || !bucket || !accessKeyId || !secret) {
+      stop(
+        "set STORAGE_CHECK_ENDPOINT, STORAGE_CHECK_BUCKET, STORAGE_CHECK_ACCESS_KEY_ID " +
+          "and STORAGE_CHECK_SECRET_ACCESS_KEY",
+      );
+    }
+    if (endpoint === withoutSlash(env("R2_ENDPOINT")) && bucket === env("R2_BUCKET")) {
+      stop(`${endpoint}/${bucket} is the bucket R2_* names — the product's own`);
+    }
+    Object.assign(process.env, {
+      STORAGE_DRIVER: "s3",
+      R2_ENDPOINT: endpoint,
+      R2_BUCKET: bucket,
+      R2_ACCESS_KEY_ID: accessKeyId,
+      R2_SECRET_ACCESS_KEY: secret,
+      R2_REGION: setting("REGION") ?? "auto",
+    });
+    prefix = `${setting("PREFIX") ?? "storage-check"}/${run}`;
+    where = `${endpoint}/${bucket}/${prefix}/`;
   }
 
-  Object.assign(process.env, {
-    R2_ENDPOINT: endpoint,
-    R2_BUCKET: bucket,
-    R2_ACCESS_KEY_ID: accessKeyId,
-    R2_SECRET_ACCESS_KEY: secret,
-    R2_REGION: setting("REGION") ?? "auto",
-  });
-  const prefix = `${setting("PREFIX") ?? "storage-check"}/${randomUUID()}`;
-  console.log(`info: checking ${endpoint}/${bucket}/${prefix}/`);
+  console.log(`info: checking ${where}`);
   try {
     await checkStorage(prefix, console.log);
     console.log("info: every call held");

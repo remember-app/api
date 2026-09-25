@@ -1,13 +1,22 @@
 import { AwsClient } from "aws4fetch";
+import { env } from "../auth/config.ts";
+import { googleStore } from "./gcs.ts";
 
 /**
- * The object store: Google Cloud Storage through its S3-compatible XML API in
- * production, MinIO from `docker-compose` locally, Cloudflare R2 before that —
- * whence the name, kept with the `R2_*` variables the stands already read. One
- * code path for all three: every request is in the form all of them accept, and
- * all of them address a bucket by path (`<endpoint>/<bucket>/<key>`). What was
- * checked against Google and how it is held in place: docs/media.md,
- * «Хранилище: Google Cloud Storage», and `r2.test.ts`.
+ * The object store, behind one of two drivers that `STORAGE_DRIVER` picks:
+ *
+ * - `s3`, the default — anything that speaks S3 with an HMAC key: MinIO from
+ *   `docker-compose` locally, Cloudflare R2 before that — whence the name, kept
+ *   with the `R2_*` variables the stands already read — and Google's
+ *   S3-compatible XML API given an HMAC key. Every bucket is addressed by path
+ *   (`<endpoint>/<bucket>/<key>`).
+ * - `google` — Google Cloud Storage on a service account's JSON key, with no
+ *   HMAC key at all (`gcs.ts`).
+ *
+ * The phone sees no difference: the same presigned part links, the same etags,
+ * the same «загружено». What was checked against Google and how it is held in
+ * place: docs/media.md, «Хранилище: Google Cloud Storage», `r2.test.ts` and
+ * `gcs.test.ts`.
  *
  * `aws4fetch` and not `@aws-sdk/client-s3`: the whole of what is needed here is
  * SigV4 and four requests, which that is 80 KB and no transitive dependencies
@@ -17,37 +26,86 @@ import { AwsClient } from "aws4fetch";
  * one tag out of one response is not a parser.
  */
 
-const env = (name: string) => process.env[name]?.trim() || undefined;
+/** What each driver does its own way; every operation below is written once on top of it. */
+export type Store = {
+  /** A request of the api's own, on the api's credentials. `query` goes out as written. */
+  call(method: string, key: string, query?: string, init?: RequestInit): Promise<Response>;
+  /** A link that whoever holds it may use, with no credentials, for `ttl` seconds. */
+  link(
+    method: "GET" | "PUT",
+    key: string,
+    ttl: number,
+    query?: Record<string, string>,
+  ): Promise<string>;
+};
+
+/** `s3` unless said otherwise; anything but the two is a typo, and a typo stops the server. */
+export function storageDriver(): "s3" | "google" {
+  const name = env("STORAGE_DRIVER")?.toLowerCase() ?? "s3";
+  if (name === "s3" || name === "google") return name;
+  throw new Error(`STORAGE_DRIVER is "${name}", and it can only be s3 or google`);
+}
 
 /** Trailing slashes trimmed: `…:9000/` + `/bucket` is a path with an empty segment. */
 const endpoint = () => env("R2_ENDPOINT")?.replace(/\/+$/, "");
 
 /**
- * Nothing is presigned or uploaded until all four are set. A blank endpoint or
- * key is the same misconfiguration as a missing one, so the routes say so
- * plainly instead of answering as though the caller's request were at fault —
- * the same call `/auth/apple` makes when its client id is absent.
+ * Whether there is a store to sign for. On `s3`, nothing is presigned or
+ * uploaded until all four `R2_*` are set: a blank one is the same
+ * misconfiguration as a missing one, so the routes say so plainly instead of
+ * answering as though the caller's request were at fault — the same call
+ * `/auth/apple` makes when its client id is absent.
+ *
+ * On `google` it is never a quiet «no»: a key, bucket or prefix that is missing
+ * or broken throws, and `server.ts` asks once before it listens — so a server
+ * with a bad key does not start, rather than answer 503 to every upload.
  */
-export const storageConfigured = () =>
-  Boolean(endpoint() && env("R2_BUCKET") && env("R2_ACCESS_KEY_ID") && env("R2_SECRET_ACCESS_KEY"));
+export function storageConfigured(): boolean {
+  if (storageDriver() === "s3") {
+    return Boolean(
+      endpoint() && env("R2_BUCKET") && env("R2_ACCESS_KEY_ID") && env("R2_SECRET_ACCESS_KEY"),
+    );
+  }
+  googleStore();
+  return true;
+}
+
+const store = (): Store => (storageDriver() === "google" ? googleStore() : s3Store());
 
 /**
- * R2 wants the literal `auto`, Google takes any value at all, MinIO signs with
- * `us-east-1` unless told otherwise. It is a knob because those disagree.
+ * R2 wants the literal `auto` for a region, Google takes any value at all,
+ * MinIO signs with `us-east-1` unless told otherwise. It is a knob because
+ * those disagree.
  */
-const client = () =>
-  new AwsClient({
+function s3Store(): Store {
+  const aws = new AwsClient({
     accessKeyId: env("R2_ACCESS_KEY_ID") ?? "",
     secretAccessKey: env("R2_SECRET_ACCESS_KEY") ?? "",
     service: "s3",
     region: env("R2_REGION") ?? "auto",
   });
-
-const objectUrl = (key: string) => `${endpoint()}/${env("R2_BUCKET")}/${key}`;
+  const url = (key: string, query = "") =>
+    `${endpoint()}/${env("R2_BUCKET")}/${key}${query && `?${query}`}`;
+  return {
+    call: (method, key, query, init) => aws.fetch(url(key, query), { ...init, method }),
+    link: async (method, key, ttl, query = {}) => {
+      const params = Object.entries(query).map(
+        ([name, value]) => `${name}=${encodeURIComponent(value)}`,
+      );
+      // signQuery puts the signature in the query string, which is what makes
+      // the link usable by a phone that holds no credentials.
+      const signed = await aws.sign(url(key, [...params, `X-Amz-Expires=${ttl}`].join("&")), {
+        method,
+        aws: { signQuery: true },
+      });
+      return signed.url;
+    },
+  };
+}
 
 /** Starts a multipart upload and answers with its id. */
 export async function createUpload(key: string): Promise<string> {
-  const response = await client().fetch(`${objectUrl(key)}?uploads`, { method: "POST" });
+  const response = await store().call("POST", key, "uploads");
   const body = await response.text();
   if (!response.ok) {
     throw new Error(`storage refused a multipart upload: ${response.status} ${body}`);
@@ -68,21 +126,15 @@ export function partUrls(
   count: number,
   ttlSeconds: number,
 ): Promise<string[]> {
-  const aws = client();
+  const signer = store();
   return Promise.all(
-    Array.from({ length: count }, async (_, index) => {
-      const url = `${objectUrl(key)}?partNumber=${index + 1}&uploadId=${encodeURIComponent(
-        uploadId,
-      )}&X-Amz-Expires=${ttlSeconds}`;
-      // signQuery puts the signature in the query string, which is what makes
-      // the link usable by a phone that holds no credentials.
-      const signed = await aws.sign(url, { method: "PUT", aws: { signQuery: true } });
-      return signed.url;
-    }),
+    Array.from({ length: count }, (_, index) =>
+      signer.link("PUT", key, ttlSeconds, { partNumber: String(index + 1), uploadId }),
+    ),
   );
 }
 
-/** The parts as the client reports them back: the number it sent and R2's receipt. */
+/** The parts as the client reports them back: the number it sent and the store's receipt. */
 export type UploadedPart = { part_number: number; etag: string };
 
 /**
@@ -98,16 +150,12 @@ export async function completeUpload(key: string, uploadId: string, parts: Uploa
         `<ETag>"${part.etag.replaceAll('"', "")}"</ETag></Part>`,
     )
     .join("");
-  const response = await client().fetch(
-    `${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`,
-    {
-      method: "POST",
-      // Said outright: a string body goes out as `text/plain` otherwise, and
-      // Google's reference says this request's body type is `application/xml`.
-      headers: { "content-type": "application/xml" },
-      body: `<CompleteMultipartUpload>${xml}</CompleteMultipartUpload>`,
-    },
-  );
+  const response = await store().call("POST", key, `uploadId=${encodeURIComponent(uploadId)}`, {
+    // Said outright: a string body goes out as `text/plain` otherwise, and
+    // Google's reference says this request's body type is `application/xml`.
+    headers: { "content-type": "application/xml" },
+    body: `<CompleteMultipartUpload>${xml}</CompleteMultipartUpload>`,
+  });
   const body = await response.text();
   // S3 may answer 200 and then put the failure in the body — it keeps the
   // connection warm while it assembles, so the status is written before the
@@ -119,7 +167,7 @@ export async function completeUpload(key: string, uploadId: string, parts: Uploa
 
 /** What the store actually holds, in bytes — or null if there is no such object. */
 export async function headSize(key: string): Promise<number | null> {
-  const response = await client().fetch(objectUrl(key), { method: "HEAD" });
+  const response = await store().call("HEAD", key);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`storage refused a HEAD: ${response.status}`);
   const length = Number(response.headers.get("content-length"));
@@ -131,13 +179,8 @@ export async function headSize(key: string): Promise<number | null> {
  * Whoever holds the link needs no credentials and the API is not on the path
  * the bytes take, exactly as with the upload links above.
  */
-export async function downloadUrl(key: string, ttlSeconds: number): Promise<string> {
-  const signed = await client().sign(`${objectUrl(key)}?X-Amz-Expires=${ttlSeconds}`, {
-    method: "GET",
-    aws: { signQuery: true },
-  });
-  return signed.url;
-}
+export const downloadUrl = (key: string, ttlSeconds: number): Promise<string> =>
+  store().link("GET", key, ttlSeconds);
 
 /**
  * Releases uploads that will never be finished. A plain `DELETE` on the key
@@ -150,9 +193,7 @@ export async function downloadUrl(key: string, ttlSeconds: number): Promise<stri
 export const abortUploads = (uploads: { key: string; uploadId: string }[]) =>
   deleteAll(
     "aborts",
-    uploads.map(
-      ({ key, uploadId }) => `${objectUrl(key)}?uploadId=${encodeURIComponent(uploadId)}`,
-    ),
+    uploads.map(({ key, uploadId }) => [key, `uploadId=${encodeURIComponent(uploadId)}`]),
   );
 
 /**
@@ -163,13 +204,17 @@ export const abortUploads = (uploads: { key: string; uploadId: string }[]) =>
  * save round trips nobody is counting. Swap it in if the slices below stop
  * being enough.
  */
-export const deleteObjects = (keys: string[]) => deleteAll("deletes", keys.map(objectUrl));
+export const deleteObjects = (keys: string[]) =>
+  deleteAll(
+    "deletes",
+    keys.map((key) => [key, ""]),
+  );
 
 /** How many of those requests are in the air at once — see `deleteAll`. */
 const AT_ONCE = 32;
 
 /**
- * A `DELETE` on every one of them, and one account of what the bucket refused.
+ * A `DELETE` on every `[key, query]`, and one account of what the bucket refused.
  *
  * A 404 is never a failure: a key that is not there — a record deleted before
  * the worker made its preview — and an upload already released or completed
@@ -181,12 +226,12 @@ const AT_ONCE = 32;
  * deleting it whole would otherwise open a socket for every one of them in the
  * same breath.
  */
-async function deleteAll(what: string, urls: string[]): Promise<void> {
-  const aws = client();
+async function deleteAll(what: string, targets: [key: string, query: string][]): Promise<void> {
+  const deleter = store();
   const refused: number[] = [];
-  for (let from = 0; from < urls.length; from += AT_ONCE) {
+  for (let from = 0; from < targets.length; from += AT_ONCE) {
     const answers = await Promise.all(
-      urls.slice(from, from + AT_ONCE).map((url) => aws.fetch(url, { method: "DELETE" })),
+      targets.slice(from, from + AT_ONCE).map(([key, query]) => deleter.call("DELETE", key, query)),
     );
     refused.push(
       ...answers.filter((one) => !one.ok && one.status !== 404).map((one) => one.status),
@@ -194,7 +239,7 @@ async function deleteAll(what: string, urls: string[]): Promise<void> {
   }
   if (refused.length > 0) {
     throw new Error(
-      `storage refused ${refused.length} of ${urls.length} ${what}: ${refused.join(", ")}`,
+      `storage refused ${refused.length} of ${targets.length} ${what}: ${refused.join(", ")}`,
     );
   }
 }

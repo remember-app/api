@@ -365,7 +365,8 @@ export async function cards(userId: string, memoryId?: string) {
     order by m.event_start desc, m.created_at desc
   `;
 
-  // Signing is a local HMAC and not a request, so four per memory costs
+  // Signing is local and not a request — an HMAC on the s3 driver, an RSA
+  // signature off the event loop on google — so four per memory cost next to
   // nothing here. An unconfigured bucket is an empty tail rather than the
   // gallery's 503: there the links are the whole answer, here they are one
   // field of the main screen, which has to draw either way.
