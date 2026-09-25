@@ -57,6 +57,9 @@ export const rateMaxPerIp = () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50);
  */
 export const env = (name: string) => process.env[name]?.trim() || undefined;
 
+/** An on/off switch: `1` or `true`, in any case, is on; anything else — absence included — is off. */
+export const flag = (name: string) => ["1", "true"].includes(env(name)?.toLowerCase() ?? "");
+
 export const appleClientId = () => env("APPLE_CLIENT_ID");
 export const googleClientId = () => env("GOOGLE_CLIENT_ID");
 
@@ -74,5 +77,4 @@ export const googleClientId = () => env("GOOGLE_CLIENT_ID");
  * unrecognised value has to leave it closed — `EMAIL_LOGIN_DEV_BYPASS=0` is a
  * person saying no, and presence alone would hear it as yes.
  */
-export const devEmailBypass = () =>
-  ["1", "true"].includes(env("EMAIL_LOGIN_DEV_BYPASS")?.toLowerCase() ?? "");
+export const devEmailBypass = () => flag("EMAIL_LOGIN_DEV_BYPASS");
