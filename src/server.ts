@@ -1,5 +1,11 @@
 import { buildApp } from "./app.ts";
 import { sql } from "./db.ts";
+import { storageConfigured } from "./media/r2.ts";
+
+// A storage driver misspelt, or a google key, bucket or prefix missing or
+// broken, stops the server here with the reason — rather than letting it
+// answer 503 to every upload.
+storageConfigured();
 
 const app = buildApp();
 
