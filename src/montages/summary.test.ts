@@ -126,15 +126,15 @@ test("the summary counts what would go in and refuses whatever the order refuses
   // no summary. Both asked with the same body, and both answers compared, so
   // the two cannot drift apart: a frame in both lists, a frame that is not
   // here, one still being probed, a length outside the band, a track off no
-  // shelf, a wish about music with no music, a shape that is not a shape, and
-  // an order left with two frames out of five.
+  // shelf, a wish to a track the order does not play, a shape that is not a
+  // shape, and an order left with two frames out of five.
   for (const payload of [
     { include_media_ids: [photo], exclude_media_ids: [photo] },
     { include_media_ids: [randomUUID()] },
     { target_seconds: 9 },
     { target_seconds: 126 },
     { music_tracks: ["epic"] },
-    { music_note: "погромче к финалу" },
+    { music_wishes: { calm: "погромче к финалу" } },
     { orientation: "square" },
     { exclude_media_ids: [clip, clipToo, photo] },
   ]) {

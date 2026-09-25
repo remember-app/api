@@ -218,14 +218,15 @@ test("the order carries the story, the frames picked by hand and the music as a 
   const unfinished = await track(memory.id, organizer.user.id, "pending_upload");
 
   // Everything doc-03 lets an organizer say about a video, said at once. The
-  // story is trimmed — a text field comes off a phone with whatever whitespace
-  // the keyboard left — and every other value goes through untouched.
+  // story and the wish are trimmed — a text field comes off a phone with
+  // whatever whitespace the keyboard left — and every other value goes through
+  // untouched.
   const asked = await order(app, organizer.token, memory.id, {
     story_text: "  Как мы ехали на дачу  ",
     include_media_ids: [first, second],
     exclude_media_ids: [third],
     music_tracks: [ours, "calm"],
-    music_note: "  Свой трек первым, дальше спокойное  ",
+    music_wishes: { [ours]: "  Под самое начало  " },
     orientation: "portrait",
   });
   expect(asked.statusCode).toBe(201);
@@ -235,7 +236,7 @@ test("the order carries the story, the frames picked by hand and the music as a 
     include_media_ids: [first, second],
     exclude_media_ids: [third],
     music_tracks: [ours, "calm"],
-    music_note: "Свой трек первым, дальше спокойное",
+    music_wishes: { [ours]: "Под самое начало" },
     orientation: "portrait",
   };
   expect(asked.json().params).toEqual(wanted);
@@ -294,21 +295,17 @@ test("the order carries the story, the frames picked by hand and the music as a 
   // Empty, the field left out, and a wish that is nothing but spaces: the same
   // «без музыки», and the empty list is written down in all three (the worker
   // tells it from an order made before the field existed by nothing else).
-  for (const payload of [{}, { music_tracks: [] }, { music_tracks: [], music_note: "   " }]) {
+  for (const payload of [
+    {},
+    { music_tracks: [] },
+    { music_tracks: [], music_wishes: { calm: "   " } },
+  ]) {
     const silent = await order(app, organizer.token, memory.id, payload);
     expect(silent.statusCode).toBe(201);
     expect(silent.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
   }
 
   const before = (await montageRows(memory.id)).length;
-
-  // A wish about the music with no music to wish about: refused by name rather
-  // than written into a row the worker cannot honour.
-  const orphanNote = await order(app, organizer.token, memory.id, {
-    music_note: "погромче к финалу",
-  });
-  expect(orphanNote.statusCode).toBe(400);
-  expect(orphanNote.json()).toEqual({ error: "music_note needs music_tracks" });
 
   // A frame in both lists is «обязательно и ни в коем случае».
   const contradiction = await order(app, organizer.token, memory.id, {
@@ -363,15 +360,14 @@ test("the order carries the story, the frames picked by hand and the music as a 
   }
 
   // Refused by the schema, before a row exists: a story longer than anyone
-  // writes, an id that is not one, the same id twice, the same track twice, a
-  // wall of tracks and a note longer than a wish.
+  // writes, an id that is not one, the same id twice, the same track twice and
+  // a wall of tracks.
   for (const payload of [
     { story_text: "я".repeat(2001) },
     { include_media_ids: ["not-a-uuid"] },
     { exclude_media_ids: [first, first] },
     { music_tracks: ["calm", "calm"] },
     { music_tracks: Array.from({ length: 51 }, () => randomUUID()) },
-    { music_tracks: ["calm"], music_note: "я".repeat(501) },
   ]) {
     expect((await order(app, organizer.token, memory.id, payload)).statusCode).toBe(400);
   }
@@ -421,14 +417,15 @@ test("the order carries the story, the frames picked by hand and the music as a 
   // once cleaned, and the lookup is done on the cleaned string — so this must
   // not write the dirty original into `params` and hand `jsonb` the exact byte
   // it was just proven to refuse. It must resolve to the track it was cleaned
-  // into, and the note beside it is cleaned like the story.
+  // into, and the wish keyed by the same dirty name is cleaned with it — key
+  // like the track, text like the story — and still lands on that track.
   const dirty = await order(app, organizer.token, memory.id, {
     music_tracks: [`${ours}\ud800`],
-    music_note: `гром${nul}че`,
+    music_wishes: { [`${ours}\ud800`]: `гром${nul}че` },
   });
   expect(dirty.statusCode).toBe(201);
   expect(dirty.json().params.music_tracks).toEqual([ours]);
-  expect(dirty.json().params.music_note).toBe("громче");
+  expect(dirty.json().params.music_wishes).toEqual({ [ours]: "громче" });
 
   await app.close();
 });
@@ -690,9 +687,9 @@ test("the music is a list of any tracks, the organizer's and the shelf's, and bo
   // Two of their own and two off the shelf, interleaved: written down in the
   // order they were named, not grouped by where they come from.
   const mixed = [own2, "road", own1, "bright"];
-  const interleaved = await asked({ music_tracks: mixed, music_note: "по кругу" });
+  const interleaved = await asked({ music_tracks: mixed });
   expect(interleaved.statusCode).toBe(201);
-  expect(interleaved.json().params).toMatchObject({ music_tracks: mixed, music_note: "по кругу" });
+  expect(interleaved.json().params).toMatchObject({ music_tracks: mixed });
 
   // As many as an order may carry, all their own.
   const many = Array.from({ length: 50 }, () => `music/${randomUUID()}`);
@@ -727,32 +724,103 @@ test("the music is a list of any tracks, the organizer's and the shelf's, and bo
     [{ music_tracks: [own1, own1] }, "music_tracks"],
     [{ music_track_id: "calm" }, "music_track_id"],
     [{ music_track_key: own1 }, "music_track_key"],
-    [{ music_tracks: ["calm"], music_note: "я".repeat(501) }, "music_note"],
   ] as const) {
     const refused = await asked(payload);
     expect(refused.statusCode).toBe(400);
     expect(refused.json().message).toContain(field);
   }
 
-  // A wish about music needs music, and a list that only *looks* filled — an
-  // empty name — has none: it is the same «без музыки» when alone and gives the
-  // wish nothing to be about.
-  const orphan = { error: "music_note needs music_tracks" };
-  for (const payload of [
-    { music_note: "погромче" },
-    { music_tracks: [""], music_note: "погромче" },
-  ]) {
-    const refused = await asked(payload);
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json()).toEqual(orphan);
-  }
+  // A list that only *looks* filled — an empty name — is the same «без музыки».
   const blank = await asked({ music_tracks: [""] });
   expect(blank.statusCode).toBe(201);
   expect(blank.json().params.music_tracks).toEqual([]);
-  // The longest wish there is.
-  const longest = await asked({ music_tracks: ["calm"], music_note: "я".repeat(500) });
+
+  await app.close();
+});
+
+test("a wish about the music is kept with the track it is written to, and only a track of this order", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+  const own = await track(memory.id, organizer.user.id);
+  const asked = async (payload: object) => alike(app, token, memory.id, payload);
+
+  // A wish per track, their own and the shelf's alike, each trimmed and each
+  // under the track it was written to — the worker hands it on with that
+  // track. A track nobody wished anything of has no key, and neither has one
+  // whose wish is nothing but spaces: «очистил поле» is «не сказал».
+  const tracks = [own, "calm", "road"];
+  const wished = await asked({
+    music_tracks: tracks,
+    music_wishes: { [own]: "  Под самое начало  ", calm: "Тихо, под титры", road: "   " },
+  });
+  expect(wished.statusCode).toBe(201);
+  const wanted = {
+    target_seconds: 60,
+    music_tracks: tracks,
+    music_wishes: { [own]: "Под самое начало", calm: "Тихо, под титры" },
+  };
+  expect(wished.json().params).toEqual(wanted);
+  // And the same when the app reads the list — the worker takes it from there.
+  const listed = (await list(app, token, memory.id)).json() as { id: string; params: object }[];
+  expect(listed.find((item) => item.id === wished.json().id)?.params).toEqual(wanted);
+
+  // No wish at all, an empty one and one emptied by the trim: `music_wishes` is
+  // not written — the tracks are, as ever.
+  for (const music_wishes of [undefined, {}, { calm: "" }, { calm: "   " }]) {
+    const quiet = await asked({ music_tracks: ["calm"], music_wishes });
+    expect(quiet.statusCode).toBe(201);
+    expect(quiet.json().params).toEqual({ target_seconds: 60, music_tracks: ["calm"] });
+  }
+
+  // The one wish for the whole order is not a field any more. Sent by a client
+  // that still speaks it, it is dropped the way any unknown field is — never
+  // written, never refused — with the music or without.
+  for (const payload of [
+    { music_tracks: ["calm"], music_note: "погромче к финалу" },
+    { music_note: "погромче к финалу" },
+  ]) {
+    const old = await asked(payload);
+    expect(old.statusCode).toBe(201);
+    expect(old.json().params).not.toHaveProperty("music_note");
+    expect(old.json().params).not.toHaveProperty("music_wishes");
+  }
+
+  const before = (await montageRows(memory.id)).length;
+
+  // A wish to a track this order does not play is one the worker cannot
+  // honour: refused, every such key named, however many good ones stand beside
+  // it. With no tracks — or a list that only looks filled — every wish is one.
+  for (const [payload, music_wishes] of [
+    [{ music_wishes: { calm: "погромче" } }, ["calm"]],
+    [{ music_tracks: [""], music_wishes: { "": "погромче" } }, [""]],
+    [
+      { music_tracks: ["calm"], music_wishes: { calm: "тихо", road: "громче", [own]: "первым" } },
+      ["road", own],
+    ],
+  ] as const) {
+    const refused = await asked(payload);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual({
+      error: "music wish for a track not in music_tracks",
+      music_wishes,
+    });
+  }
+
+  // Longer than a wish is refused by the schema, the field named in the answer.
+  const long = await asked({ music_tracks: ["calm"], music_wishes: { calm: "я".repeat(501) } });
+  expect(long.statusCode).toBe(400);
+  expect(long.json().message).toContain("music_wishes");
+
+  // None of those refusals wrote a montage.
+  expect((await montageRows(memory.id)).length).toBe(before);
+
+  // The longest wish there is goes in whole.
+  const longest = await asked({ music_tracks: ["calm"], music_wishes: { calm: "я".repeat(500) } });
   expect(longest.statusCode).toBe(201);
-  expect(longest.json().params.music_note).toHaveLength(500);
+  expect(longest.json().params.music_wishes.calm).toHaveLength(500);
 
   await app.close();
 });

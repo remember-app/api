@@ -40,7 +40,7 @@ type Template = {
   target_seconds: number;
   orientation: string;
   music_tracks: string[];
-  music_note: string | null;
+  music_wishes: Record<string, string>;
 };
 
 const as = (token: string, options: InjectOptions) => ({
@@ -133,14 +133,22 @@ test("шесть шаблонов в порядке макета, каждый �
     },
   ]);
 
-  // Пожелание к трекам — только там, где оно что-то говорит; у остальных поле
-  // есть и пустое, чтобы приложению не гадать, отдали его или забыли.
+  // Пожелание — у того трека шаблона, о котором оно, и только там, где оно
+  // что-то говорит; у остальных поле есть и пустое, чтобы приложению не
+  // гадать, отдали его или забыли.
   for (const template of templates) {
     expect(template.story_text.length).toBeGreaterThan(0);
-    expect(template.music_note === null || template.music_note.length > 0).toBe(true);
+    for (const [track, wish] of Object.entries(template.music_wishes)) {
+      expect(template.music_tracks, template.id).toContain(track);
+      expect(wish.length, `${template.id} ${track}`).toBeGreaterThan(0);
+    }
   }
-  expect(templates.find((one) => one.id === "dopamine")?.music_note).toMatch(/трека/);
-  expect(templates.find((one) => one.id === "quick")?.music_note).toBeNull();
+  const wishes = Object.fromEntries(templates.map((one) => [one.id, one.music_wishes]));
+  expect(wishes.quick).toEqual({});
+  expect(Object.keys(wishes.parents ?? {})).toEqual(["warm"]);
+  expect(wishes.parents?.warm).toMatch(/в такт/);
+  expect(wishes.dopamine?.bright).toMatch(/разгоняет/);
+  expect(wishes.dopamine?.road).toMatch(/гуща/);
 });
 
 test("длина шаблона не выходит за предел воспоминания", async () => {
@@ -223,7 +231,9 @@ test("история — из названия, дат и числа тех, ч�
     // Написано руками с нуля, а не тем же текстом на другой раскладке.
     expect(template.story_text).not.toBe(russian[index]?.story_text);
   }
-  expect(english.find((one) => one.id === "parents")?.music_note).toMatch(/beat/);
+  expect(english.find((one) => one.id === "parents")?.music_wishes).toEqual({
+    warm: expect.stringMatching(/beat/),
+  });
 
   // Итог считает по тому, что осталось: вычеркнув единственный кадр участника,
   // организатор заказывает ролик из кадров одного человека.
@@ -397,15 +407,16 @@ test("каждый шаблон принимается заказом как е�
       expect(templates).toHaveLength(6);
       const { people } = (await preview(app, organizer.token, memory.id)).json();
 
-      for (const { id, music_note, ...body } of templates) {
+      // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
+      for (const { id, ...payload } of templates) {
         const where = `${language} ${name} ${id}`;
-        expect(body.target_seconds, where).toBe(Math.min(ceiling, drawn[id] ?? 0));
-        expect(body.story_text, where).toContain(`${language === "ru" ? "от" : "from"} ${people} `);
-        // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
-        const payload = { ...body, ...(music_note === null ? {} : { music_note }) };
+        expect(payload.target_seconds, where).toBe(Math.min(ceiling, drawn[id] ?? 0));
+        expect(payload.story_text, where).toContain(
+          `${language === "ru" ? "от" : "from"} ${people} `,
+        );
         const summary = await preview(app, organizer.token, memory.id, payload);
         expect(summary.statusCode, `${where}: ${summary.body}`).toBe(200);
-        expect(summary.json().target_seconds, where).toBe(body.target_seconds);
+        expect(summary.json().target_seconds, where).toBe(payload.target_seconds);
         const ordered = await app.inject(
           as(organizer.token, {
             method: "POST",
@@ -414,12 +425,12 @@ test("каждый шаблон принимается заказом как е�
           }),
         );
         expect(ordered.statusCode, `${where}: ${ordered.body}`).toBe(201);
-        expect(ordered.json().params).toMatchObject({
-          target_seconds: body.target_seconds,
-          story_text: body.story_text,
-          orientation: body.orientation,
-          music_tracks: body.music_tracks,
-          ...(music_note === null ? {} : { music_note }),
+        // Пустой объект пожеланий — это «ничего не пожелали», и в строку он не
+        // пишется; непустой ложится как есть, у тех же треков.
+        const { music_wishes, ...rest } = payload;
+        expect(ordered.json().params, where).toEqual({
+          ...rest,
+          ...(Object.keys(music_wishes).length > 0 ? { music_wishes } : {}),
         });
       }
     }

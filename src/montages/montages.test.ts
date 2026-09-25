@@ -383,7 +383,7 @@ test("repeating a montage that fell starts its journal from a clean sheet", asyn
   await app.close();
 });
 
-test("a montage ordered before the music became a list is still listed and can still be repeated", async () => {
+test("a montage ordered before the music became a list, or before its wishes went per track, is still listed and can still be repeated", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
@@ -391,9 +391,10 @@ test("a montage ordered before the music became a list is still listed and can s
   const ownKey = await track(memory.id, organizer.user.id);
 
   // As the api wrote them before `music_tracks`: one track by id or by key, no
-  // list and no note. Nothing writes these any more, and no order may ask for
-  // them — but the videos ordered with them are still on the shelf.
-  const placeOld = async (params: Record<string, string | number>, status: string) => {
+  // list and no note — and before `music_wishes`: the list, with one note for
+  // the whole order beside it. Nothing writes these any more, and no order may
+  // ask for them — but the videos ordered with them are still on the shelf.
+  const placeOld = async (params: Record<string, string | number | string[]>, status: string) => {
     const [row] = await sql<{ id: string }[]>`
       insert into montages (memory_id, ordered_by, params, status, error_text)
       values (
@@ -406,10 +407,14 @@ test("a montage ordered before the music became a list is still listed and can s
   };
   const byId = { target_seconds: 60, music_track_id: "warm" };
   const byKey = { target_seconds: 90, music_track_key: ownKey, orientation: "portrait" };
+  const noted = { target_seconds: 60, music_tracks: [ownKey, "calm"], music_note: "по кругу" };
   const oldFailedById = await placeOld(byId, "failed");
   const oldFailedByKey = await placeOld(byKey, "failed");
+  const oldFailedNoted = await placeOld(noted, "failed");
   const oldReady = await placeOld(byId, "processing");
   await assembled(oldReady);
+  const oldReadyNoted = await placeOld(noted, "processing");
+  await assembled(oldReadyNoted);
 
   const paramsOf = async () =>
     new Map(
@@ -420,7 +425,9 @@ test("a montage ordered before the music became a list is still listed and can s
   let listed = await paramsOf();
   expect(listed.get(oldFailedById)).toEqual(byId);
   expect(listed.get(oldFailedByKey)).toEqual(byKey);
+  expect(listed.get(oldFailedNoted)).toEqual(noted);
   expect(listed.get(oldReady)).toEqual(byId);
+  expect(listed.get(oldReadyNoted)).toEqual(noted);
 
   // The material is gone since — an order for this memory now is a refusal, and
   // repeating a video that fell is not an order: it goes back to the worker as
@@ -428,7 +435,7 @@ test("a montage ordered before the music became a list is still listed and can s
   await sql`delete from media_items where memory_id = ${memory.id}`;
   expect((await order(app, organizer.token, memory.id, {})).statusCode).toBe(409);
 
-  for (const id of [oldFailedById, oldFailedByKey]) {
+  for (const id of [oldFailedById, oldFailedByKey, oldFailedNoted]) {
     const again = await retry(app, organizer.token, memory.id, id);
     expect(again.statusCode).toBe(200);
     expect(again.json()).toMatchObject({ id, status: "queued", error_text: null });
@@ -437,6 +444,7 @@ test("a montage ordered before the music became a list is still listed and can s
   listed = await paramsOf();
   expect(listed.get(oldFailedById)).toEqual(byId);
   expect(listed.get(oldFailedByKey)).toEqual(byKey);
+  expect(listed.get(oldFailedNoted)).toEqual(noted);
   // Nobody ordered anything: the counters stay where they were.
   expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
 
