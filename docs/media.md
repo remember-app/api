@@ -586,8 +586,8 @@ POST /memories/:memoryId/labels/:labelId/media
 - **Просроченная и чужая ссылка.** Google на свою V4-ссылку отвечает: просрочена — `400
   ExpiredToken`, **не** `403`; подпись не та — `403 SignatureDoesNotMatch` (вживую, TASK-328). S3
   и MinIO на просроченную отвечают `403`. Телефон просит новые ссылки на оба ответа — `403` и `400`
-  с `ExpiredToken` в теле (`src/lib/upload/send.ts` в mobile). Живой контроль ждёт `400` у Google
-  и `403` у S3.
+  с `ExpiredToken` в теле (`src/lib/upload/send.ts` в mobile). Живой контроль ждёт ровно того же:
+  `400` с `ExpiredToken` у Google и `403` у S3.
 
 Как это держится:
 
