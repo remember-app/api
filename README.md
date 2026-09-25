@@ -53,7 +53,7 @@ src/montages/music.ts     полка из пяти треков и свой тр
 scripts/migrate.ts    запуск postgrator и таблица jobs из montage
 scripts/storage-check.ts  живой контроль хранилища: все обращения api на бакете для проверок
 migrations/           .sql-миграции
-Dockerfile            боевой образ; .gitlab-ci.yml собирает его в реестр на пуш в main
+Dockerfile            боевой образ; .gitlab-ci.yml на пуш в dev собирает его и выкатывает на dev
 docs/                 как поднять, что обещает каждый маршрут и как это проверяется
 ```
 

@@ -342,8 +342,9 @@ migrations/001.undo.init.sql   # откатить
 
 ## Боевой образ
 
-`Dockerfile` в корне. CI (`.gitlab-ci.yml`) собирает его на каждый пуш в `main` и кладёт в
-`git.dapp-devs.com:5050/nox-labs/nox/remember/api:<полный SHA коммита>`. Выкатки в CI нет.
+`Dockerfile` в корне. CI (`.gitlab-ci.yml`) собирает его на каждый пуш в `dev`, кладёт в
+`git.dapp-devs.com:5050/nox-labs/nox/remember/api:<полный SHA коммита>` и выкатывает на
+dev-контур — см. «Выкатка на dev» ниже. `main` к CI не привязана.
 
 ```bash
 docker build -t remember-api .
@@ -378,3 +379,41 @@ docker run --rm -p 3000:3000 -e DATABASE_URL=… remember-api
   нужно до того, как сервер примет первую загрузку или заказ ролика.
 - **Остановка**: процесс под `tini` и завершается по SIGTERM сразу. Начатые запросы при этом
   обрываются — дожидаться их сервер пока не умеет.
+
+### Выкатка на dev
+
+На каждый пуш в `dev`:
+
+1. `dev_build` собирает образ и кладёт его в реестр с тегом по полному SHA коммита.
+2. `dev_deploy` клонирует репозиторий инфраструктуры `nox-infra-dev`, пишет `image.repository` и
+   `image.tag` в `ioc-helm/nox/remember/api/values-dev.yaml`, коммитит
+   `deploy remember-api dev <короткий SHA>` и пушит в его `main` (до 5 попыток, если там успели
+   запушить другие).
+3. ArgoCD (приложение `dev-remember-api`) синкает сам: сначала миграции хуком, потом новый под.
+
+`dev_deploy` падает и ничего не пушит, если изменён не только этот файл, или в нём не только
+строки образа, или у других полей поменялись значения. Тот же тег уже в чарте — джоба проходит
+без коммита. Ключ SSH для записи в `nox-infra-dev` — переменная CI `SSH_PRIVATE_KEY`, заведённая
+на весь GitLab, не в этом проекте.
+
+**Первый запуск упадёт на `dev_deploy`**, пока чарт сервера не слит в `main` `nox-infra-dev`:
+файла `values-dev.yaml` там ещё нет (`sed: … No such file or directory`). Это ожидаемо, образ при
+этом собран. После слияния чарта — перезапустить джобу или запушить в `dev` снова.
+
+**Как понять, что выкатка прошла.** Зелёный пайплайн значит только, что тег записан в чарт;
+разворачивает ArgoCD, обычно за пару минут.
+
+- `curl https://dev-api-remember.noxlabs.xyz/health` → `{"status":"ok"}`. 404 — Ingress ещё не
+  создан, 503 — готового пода нет. `ok` отвечает и старый под, поэтому версию смотреть в Prometheus.
+- Prometheus https://prometheus.noxlabs.xyz (вход не нужен). Какой образ у пода сервера — в метке
+  `image` должен стоять новый SHA:
+  `kube_pod_container_info{exported_namespace="default", exported_pod=~"dev-remember-api-.*", container="api"}`.
+  Готовность, причины падений, упавшие миграции и логи в Loki — запросы в README чарта
+  (`ioc-helm/nox/remember/README.md` в `nox-infra-dev`, раздел «Как наблюдать выкатку без доступа
+  к кластеру»).
+
+**Как откатить.** Вернуть прежний тег в `image.tag` файла `ioc-helm/nox/remember/api/values-dev.yaml`
+в `main` `nox-infra-dev` — проще всего `git revert` коммита `deploy remember-api dev <SHA>`.
+ArgoCD синкнет сам. Прежние SHA — в истории этого файла. Следующий пуш в `dev` снова выкатит
+свежий код, так что откатывать или чинить нужно и в `dev`. Схему базы откат не трогает: мигратор
+старого образа не знает новых версий и ничего не отменяет, старый код работает на новой схеме.
