@@ -4,6 +4,7 @@ import { buildTestApp, signIn } from "../auth/testing.ts";
 import { sql } from "../db.ts";
 import {
   alike,
+  as,
   counters,
   jobsFor,
   list,
@@ -824,6 +825,282 @@ test("a wish about the music is kept with the track it is written to, and only a
   const longest = await asked({ music_tracks: ["calm"], music_wishes: { calm: "я".repeat(500) } });
   expect(longest.statusCode).toBe(201);
   expect(longest.json().params.music_wishes.calm).toHaveLength(500);
+
+  await app.close();
+});
+
+test("a wish is measured in characters as a person counts them, and only its edges are cleaned", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+  const asked = async (music_wishes: unknown) =>
+    alike(app, token, memory.id, { music_tracks: ["calm", "road"], music_wishes });
+  const stored = (res: Awaited<ReturnType<typeof asked>>) => res.json().params.music_wishes;
+
+  // Exactly 500 and 501, in Latin, in Cyrillic and in emoji — an emoji is one
+  // character to the person and two to a naive length count, and the limit is
+  // the person's.
+  for (const glyph of ["a", "я", "🎵"]) {
+    const whole = await asked({ calm: glyph.repeat(500) });
+    expect([glyph, whole.statusCode]).toEqual([glyph, 201]);
+    expect(stored(whole).calm).toBe(glyph.repeat(500));
+    const over = await asked({ calm: glyph.repeat(501) });
+    expect([glyph, over.statusCode]).toEqual([glyph, 400]);
+    expect(over.json().message).toContain("music_wishes");
+  }
+
+  // The limit is on each wish, not on the sum: two of 500 go in together.
+  const both = await asked({ calm: "я".repeat(500), road: "ы".repeat(500) });
+  expect(both.statusCode).toBe(201);
+  expect(stored(both)).toEqual({ calm: "я".repeat(500), road: "ы".repeat(500) });
+
+  // Spaces at the edges are taken off and are not what the wish is: 496
+  // characters with two spaces either side is 500 as typed and goes in.
+  const padded = await asked({ calm: `  ${"я".repeat(496)}  ` });
+  expect(padded.statusCode).toBe(201);
+  expect(stored(padded)).toEqual({ calm: "я".repeat(496) });
+  // Tabs and newlines at the edges go the same way; inside they stay as the
+  // person typed them, and so do emoji and a wish in another script.
+  const typed = await asked({
+    calm: "\n\t🎵 сначала тихо,\n\nпотом — ярче 🎶 音楽\t",
+    road: "  a  b  ",
+  });
+  expect(typed.statusCode).toBe(201);
+  expect(stored(typed)).toEqual({ calm: "🎵 сначала тихо,\n\nпотом — ярче 🎶 音楽", road: "a  b" });
+
+  // Nothing but blanks of every kind is «не сказали», and so is an empty
+  // string: no key at all, and no `music_wishes`.
+  for (const blank of ["", " ", "\n", "\t \n"]) {
+    const none = await asked({ calm: blank, road: blank });
+    expect([blank, none.statusCode]).toEqual([blank, 201]);
+    expect(none.json().params).toEqual({ target_seconds: 60, music_tracks: ["calm", "road"] });
+  }
+
+  // An empty wish is not a wish, whichever track it is written to — one this
+  // order does not play included, with or without tracks in the order.
+  for (const payload of [
+    { music_wishes: { calm: "" } },
+    { music_wishes: { nowhere: "   " } },
+    { music_tracks: ["calm"], music_wishes: { road: "", calm: "тихо" } },
+  ]) {
+    const kept = await alike(app, token, memory.id, payload);
+    expect([payload, kept.statusCode]).toEqual([payload, 201]);
+  }
+
+  // A key is the track exactly as `music_tracks` writes it: not another case
+  // and not padded with a space. Each one refused by name, the answer the same
+  // from both routes, and nothing written.
+  const before = (await montageRows(memory.id)).length;
+  for (const key of ["Calm", "CALM", "calm ", " calm", "calm\n"]) {
+    const refused = await alike(app, token, memory.id, {
+      music_tracks: ["calm"],
+      music_wishes: { [key]: "тихо" },
+    });
+    expect([key, refused.statusCode]).toEqual([key, 400]);
+    expect(refused.json()).toEqual({
+      error: "music wish for a track not in music_tracks",
+      music_wishes: [key],
+    });
+  }
+
+  // Not text: an object or a list of several is no wish and is refused. (A lone
+  // number or flag is written down as its text — the coercion Fastify's schema
+  // gives every string field here, `story_text` too — and is not pinned.)
+  for (const wish of [{ text: "тихо" }, ["a", "b"], []]) {
+    const refused = await alike(app, token, memory.id, {
+      music_tracks: ["calm"],
+      music_wishes: { calm: wish },
+    });
+    expect([wish, refused.statusCode]).toEqual([wish, 400]);
+  }
+  // Nor is the whole `music_wishes` a list, a string, a number or null.
+  for (const shape of [["тихо"], "тихо", null, 7]) {
+    const refused = await alike(app, token, memory.id, {
+      music_tracks: ["calm"],
+      music_wishes: shape,
+    });
+    expect([shape, refused.statusCode]).toEqual([shape, 400]);
+  }
+  expect((await montageRows(memory.id)).length).toBe(before);
+
+  // The keys of an object are text nobody trusts: a name that is special to
+  // JavaScript is a track that is not in the order, refused like any other
+  // and never a crash.
+  for (const key of ["__proto__", "constructor", "toString"]) {
+    const res = await app.inject({
+      method: "POST",
+      url: `/memories/${memory.id}/montages`,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: `{"music_tracks":["calm"],"music_wishes":{"${key}":"тихо"}}`,
+    });
+    expect([key, res.statusCode]).toEqual([key, 400]);
+  }
+  expect((await montageRows(memory.id)).length).toBe(before);
+
+  await app.close();
+});
+
+test("every track of a long list keeps its own wish, in the order the tracks were named", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+
+  // The five on the shelf and forty-five of their own, the most a video may be
+  // cut to, every track with a long wish of its own.
+  const own = await Promise.all(
+    Array.from({ length: 45 }, () => track(memory.id, organizer.user.id)),
+  );
+  const shelf = ["road", "night", "calm", "warm", "bright"];
+  const tracks = own.flatMap((key, n) => (n % 9 === 0 ? [shelf[n / 9] as string, key] : [key]));
+  expect(tracks).toHaveLength(50);
+  const wishes = Object.fromEntries(
+    tracks.map((name, n) => [name, `${n}:${"ж".repeat(495)}`.slice(0, 500)]),
+  );
+  const full = await alike(app, token, memory.id, { music_tracks: tracks, music_wishes: wishes });
+  expect(full.statusCode).toBe(201);
+  expect(full.json().params.music_tracks).toEqual(tracks);
+  expect(full.json().params.music_wishes).toEqual(wishes);
+
+  // A wish to only some of them: the rest simply are not named.
+  const some = { [tracks[49] as string]: "в самом конце", [tracks[0] as string]: "в самом начале" };
+  const partial = await alike(app, token, memory.id, { music_tracks: tracks, music_wishes: some });
+  expect(partial.statusCode).toBe(201);
+  expect(partial.json().params.music_wishes).toEqual(some);
+
+  // Turning the list round turns the order of playing and leaves each wish on
+  // its own track.
+  const flipped = [...tracks].reverse();
+  const turned = await alike(app, token, memory.id, { music_tracks: flipped, music_wishes: some });
+  expect(turned.statusCode).toBe(201);
+  expect(turned.json().params.music_tracks).toEqual(flipped);
+  expect(turned.json().params.music_wishes).toEqual(some);
+
+  // One track over the most a video may be cut to is a refusal, wishes or not,
+  // and so is naming one track twice.
+  const extra = await track(memory.id, organizer.user.id);
+  for (const music_tracks of [
+    [...tracks, extra],
+    ["calm", "calm"],
+    [own[0], own[0]],
+  ]) {
+    const refused = await alike(app, token, memory.id, { music_tracks, music_wishes: some });
+    expect(refused.statusCode).toBe(400);
+  }
+
+  await app.close();
+});
+
+test("the worker finds each order's wishes on its own row, and orders placed at once do not mix", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+  const own = await track(memory.id, organizer.user.id);
+
+  // Twelve taps at the same moment, no two alike: some with no wishes at all,
+  // some with wishes to a track of their own and the shelf's, some with a
+  // wish to one track of two.
+  const bodies = Array.from({ length: 12 }, (_, n) =>
+    n % 3 === 0
+      ? { music_tracks: ["calm"] }
+      : n % 3 === 1
+        ? {
+            music_tracks: [own, "road"],
+            music_wishes: { [own]: `к своему ${n}`, road: `к дороге ${n}` },
+          }
+        : { music_tracks: ["warm", "night"], music_wishes: { night: `к ночи ${n}` } },
+  );
+  const placed = await Promise.all(bodies.map((body) => order(app, token, memory.id, body)));
+  expect(placed.map((res) => res.statusCode)).toEqual(bodies.map(() => 201));
+
+  // What the worker reads is the `montages` row its job points at, not the
+  // answer the app got. Each row carries exactly its own order's wishes.
+  const jobs = await sql<{ ref: string; params: Record<string, unknown> }[]>`
+    select j.ref, m.params
+    from jobs j join montages m on m.id::text = j.ref
+    where j.type = 'montage' and m.memory_id = ${memory.id}
+  `;
+  expect(jobs).toHaveLength(bodies.length);
+  const byId = new Map(jobs.map((job) => [job.ref, job.params]));
+  for (const [n, res] of placed.entries()) {
+    const { music_tracks, music_wishes } = bodies[n] as {
+      music_tracks: string[];
+      music_wishes?: object;
+    };
+    expect(byId.get(res.json().id), `order ${n}`).toEqual({
+      target_seconds: 60,
+      music_tracks,
+      ...(music_wishes ? { music_wishes } : {}),
+    });
+  }
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 12, user: 12 });
+
+  await app.close();
+});
+
+test("wishes to the music are the organizer's to place, and a stranger learns nothing", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const stranger = await signIn(app, email());
+  await material(memory.id, organizer.user.id, 3);
+  const good = { music_tracks: ["calm"], music_wishes: { calm: "тихо" } };
+  // A wish to a track that is not in the order: refused for the seat first,
+  // so whoever may not order learns nothing of what the order is checked for.
+  const astray = { music_tracks: ["calm"], music_wishes: { road: "громко" } };
+
+  for (const path of ["montages", "montages/preview"]) {
+    const call = (who: { token: string }, id: string, payload: object) =>
+      app.inject(as(who.token, { method: "POST", url: `/memories/${id}/${path}`, payload }));
+    for (const payload of [good, astray]) {
+      for (const who of [contributor, viewer]) {
+        const refused = await call(who, memory.id, payload);
+        expect([path, refused.statusCode, refused.json()]).toEqual([
+          path,
+          403,
+          { error: "forbidden" },
+        ]);
+      }
+      // Not a member: the one «not found» of a memory that is not theirs — and
+      // of one that does not exist at all.
+      for (const id of [memory.id, randomUUID()]) {
+        const hidden = await call(stranger, id, payload);
+        expect([path, hidden.statusCode, hidden.json()]).toEqual([
+          path,
+          404,
+          { error: "not found" },
+        ]);
+      }
+      const noToken = await app.inject({
+        method: "POST",
+        url: `/memories/${memory.id}/${path}`,
+        payload,
+      });
+      expect([path, noToken.statusCode]).toEqual([path, 401]);
+    }
+  }
+  expect(await montageRows(memory.id)).toEqual([]);
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
+
+  // The organizer's own preview with wishes is a question and not an order:
+  // it answers 200 and leaves no row, no job, no count behind.
+  const shown = await preview(app, organizer.token, memory.id, good);
+  expect(shown.statusCode).toBe(200);
+  expect(await montageRows(memory.id)).toEqual([]);
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
+  const queued = await sql<{ ref: string }[]>`
+    select ref from jobs where type = 'montage' and ref in (
+      select id::text from montages where memory_id = ${memory.id}
+    )
+  `;
+  expect(queued).toEqual([]);
 
   await app.close();
 });

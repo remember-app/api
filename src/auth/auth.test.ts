@@ -1323,6 +1323,19 @@ test("the same provider account is the same user, and a token that carries no pr
       });
       expect(me.statusCode).toBe(200);
     }
+
+    // «Даты между днями» sits on the account, not on the session: switched on
+    // through one token, the next sign-in through the provider finds it on.
+    const on = await app.inject({
+      method: "POST",
+      url: "/me/dates-between-days",
+      headers: { authorization: `Bearer ${one.token}` },
+      payload: { dates_between_days: true },
+    });
+    expect(on.statusCode).toBe(200);
+    const third = await signInWith(app, "apple");
+    expect(third.statusCode).toBe(200);
+    expect(third.json()).toMatchObject({ user: { id: one.user.id, dates_between_days: true } });
   } finally {
     restore();
     setEnv("APPLE_CLIENT_ID", previous);

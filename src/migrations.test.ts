@@ -5,7 +5,8 @@ import { afterAll, expect, test } from "vitest";
 import { sql } from "./db.ts";
 
 /**
- * Migrations 100 (frame info) and 110 (memory cover): the three promises the
+ * Migrations 100 (frame info), 110 (memory cover) and 140 (dates between
+ * days): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -219,6 +220,80 @@ test(
     await db`update memories set cover_media_id = ${again} where id = ${memory}`;
     await db`delete from media_items where id = ${again}`;
     expect(await coverOf()).toBeNull();
+  },
+  slow,
+);
+
+test(
+  "140 dates-between-days: accounts made before it start switched off, a replay keeps every choice, an undo restores the old schema and keeps the accounts, a redo starts everyone off",
+  async () => {
+    const { db, apply, shape } = await chain(140);
+    const before = await shape();
+    const person = async () => {
+      const [row] = await db<{ id: string }[]>`
+        insert into users (email) values (${`mig-${randomUUID()}@example.com`}) returning id
+      `;
+      if (!row) throw new Error("no user");
+      return row.id;
+    };
+    // Two accounts that were there before the setting existed.
+    const early = await person();
+    const other = await person();
+
+    await apply(140, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    const setting = after.columns.find(
+      (c) => c.table_name === "users" && c.column_name === "dates_between_days",
+    );
+    expect(setting).toMatchObject({ data_type: "boolean", is_nullable: "NO" });
+
+    const switches = async () =>
+      new Map(
+        (
+          await db<{ id: string; dates_between_days: boolean }[]>`
+            select id, dates_between_days from users
+          `
+        ).map((row) => [row.id, row.dates_between_days]),
+      );
+    // Off for the accounts that were there and for one made afterwards, and
+    // «not set» is not a state the column can hold.
+    const fresh = await person();
+    expect(await switches()).toEqual(
+      new Map([
+        [early, false],
+        [other, false],
+        [fresh, false],
+      ]),
+    );
+    await expect(
+      db`update users set dates_between_days = null where id = ${early}`,
+    ).rejects.toThrow();
+
+    // The replay: same schema, and the choice already made is still made — a
+    // `DROP … ; ADD …` in place of `IF NOT EXISTS` would switch everyone off.
+    await db`update users set dates_between_days = true where id = ${early}`;
+    await apply(140, "do");
+    expect(await shape()).toEqual(after);
+    expect((await switches()).get(early)).toBe(true);
+    expect((await switches()).get(other)).toBe(false);
+
+    // The undo: the schema is what it was before 140, nobody is lost, and an
+    // undo that fails on a second go is a redo nobody can script.
+    await apply(140, "undo");
+    expect(await shape()).toEqual(before);
+    const [left] = await db`select count(*)::int as n from users`;
+    expect(left?.n).toBe(3);
+    await apply(140, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo is the very schema the first run made, and — as its file says —
+    // starts everybody off, the choice made before the undo gone with it.
+    await apply(140, "do");
+    expect(await shape()).toEqual(after);
+    expect([...(await switches()).values()]).toEqual([false, false, false]);
+    await db`update users set dates_between_days = true where id = ${early}`;
+    expect((await switches()).get(early)).toBe(true);
   },
   slow,
 );
