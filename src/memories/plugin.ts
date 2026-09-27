@@ -220,11 +220,13 @@ export function memoriesPlugin(app: FastifyInstance) {
       // Spelled out rather than absent: the listing answers with exactly this
       // shape, and the client prepends what it just created to the list it
       // holds. A memory a moment old has no material, so there is nothing to
-      // sign — no tail and no cover — and exactly one member, its organizer,
-      // who has brought nothing yet. Constants and not a second query: the
-      // statement above is what made all of those true.
+      // sign — no tail and no cover — nothing to lose by deleting it, and
+      // exactly one member, its organizer, who has brought nothing yet.
+      // Constants and not a second query: the statement above is what made all
+      // of those true.
       return reply.code(201).send({
         ...memory,
+        removal_media_count: 0,
         cover_thumbnail_url: null,
         recent_thumbnail_urls: [],
         member_count: 1,
@@ -318,6 +320,16 @@ export function memoriesPlugin(app: FastifyInstance) {
  * card to fetch them would be a round trip per card. Four is what the card
  * draws — enough of the material to speak for itself, so nothing has to count
  * the rest beside them.
+ *
+ * Two numbers of frames, because two different questions are asked of them.
+ * `media_count` is what the caller opens: the gallery's own predicates, so a
+ * frame somebody hid counts for them alone and the card agrees with the
+ * gallery. `removal_media_count` is what deleting the memory takes — every
+ * frame, hidden ones too — and only the organizer, the one person who can
+ * delete it, is told; everybody else gets null. The row keeps a whole count of
+ * its own — the file limit reads it — yet the price is counted from the rows
+ * rather than read off it: a confirmation that names the price of something
+ * irreversible has to be the rows that will go, not a tally kept beside them.
  */
 export async function cards(userId: string, memoryId?: string) {
   type Row = Memory & {
@@ -326,9 +338,13 @@ export async function cards(userId: string, memoryId?: string) {
     cover_thumbnail_key: string | null;
     member_count: number;
     contributed_member_count: number;
+    seen_media_count: number;
+    removal_media_count: number | null;
   };
   const rows = await sql<Row[]>`
     select m.*, mm.role, counts.member_count, counts.contributed_member_count,
+      frames.seen as seen_media_count,
+      case when mm.role = 'organizer' then frames.whole end as removal_media_count,
       -- The chosen frame, joined rather than fetched per card for the reason
       -- the tail below is: one answer holds the whole screen. Null both when
       -- no cover is chosen and — impossible for as long as only a ready frame
@@ -371,6 +387,14 @@ export async function cards(userId: string, memoryId?: string) {
       from memory_members roster
       where roster.memory_id = m.id and roster.role <> 'viewer'
     ) counts on true
+    -- Frames with bytes behind them — the gallery leaves pending_upload out,
+    -- and so does the counter a deletion moves — seen and whole in one pass.
+    join lateral (
+      select count(*) filter (where ${seenBy("mi", userId)})::int as seen,
+        count(*)::int as whole
+      from media_items mi
+      where mi.memory_id = m.id and mi.status <> 'pending_upload'
+    ) frames on true
     where mm.user_id = ${userId}
       -- One card or all of them, in one statement: the edit route answers
       -- with the row it just wrote, and it must be assembled by exactly the
@@ -387,8 +411,9 @@ export async function cards(userId: string, memoryId?: string) {
   const ttl = downloadTtlSeconds();
   const configured = storageConfigured();
   return Promise.all(
-    rows.map(async ({ thumbnail_keys, cover_thumbnail_key, ...memory }) => ({
+    rows.map(async ({ thumbnail_keys, cover_thumbnail_key, seen_media_count, ...memory }) => ({
       ...memory,
+      media_count: seen_media_count,
       // The cover goes out as a link to the derivative, exactly as the tail
       // does; null while none is chosen, which is the card drawn as it is
       // drawn today (doc-01).

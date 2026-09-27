@@ -301,10 +301,13 @@ test("an unconfigured bucket still answers, with empty tails and not a smaller c
   try {
     // A ready thumbnail exists, but with nothing to sign against the answer
     // is an empty tail rather than a count that leaks the unsigned key or a
-    // 500 — the same rule upload.test.ts pins for the write side.
+    // 500 — the same rule upload.test.ts pins for the write side. The frame
+    // itself is counted all the same: the card counts rows, not links.
     const listed = await list(app, token);
     expect(listed.statusCode).toBe(200);
-    expect(listed.json()).toEqual([{ ...memory, recent_thumbnail_urls: [] }]);
+    expect(listed.json()).toEqual([
+      { ...memory, media_count: 1, removal_media_count: 1, recent_thumbnail_urls: [] },
+    ]);
   } finally {
     if (original === undefined) delete process.env.R2_ENDPOINT;
     else process.env.R2_ENDPOINT = original;
