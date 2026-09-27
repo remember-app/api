@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
 import { seenBy, uuidPattern } from "../memories/plugin.ts";
+import type { Montage } from "../montages/row.ts";
+import { montageName } from "../montages/view.ts";
 import type { MediaItem } from "./upload.ts";
 
 /**
@@ -45,19 +47,21 @@ type FrameRow = {
   uploader_id: string;
   uploader_username: string | null;
   uploader_name: string | null;
-  /** How many frames that person brought to *this* memory. */
+  /** How many of the frames that person brought to *this* memory the caller sees. */
   uploader_media_count: number;
 };
 
 /**
- * One line of «В роликах»: the video, how long it turned out, and the second
- * this frame stands at. The video's name is not carried here yet: the list of
- * montages says it (`view.ts`), and this line still leaves the label to the app,
- * built out of the length. `duration_seconds` is the video's, as it is in
+ * One line of «В роликах» as the database holds it: the video, what it is
+ * called, how long it turned out, and the second this frame stands at.
+ * `duration_seconds` is the video's, as it is in
  * `GET /memories/:memoryId/montages`, and `start_seconds` is this frame's place
- * inside it.
+ * inside it. `name` and `params` go out as the one name `montageName` makes of
+ * them — the one the list of montages says.
  */
-type InMontage = { id: string; duration_seconds: number | null; start_seconds: number };
+type InMontage = Pick<Montage, "id" | "name" | "params" | "duration_seconds"> & {
+  start_seconds: number;
+};
 
 /**
  * What the owner may change about their frame. Whatever is not sent stays as it
@@ -125,7 +129,9 @@ export function frameRoutes(app: FastifyInstance) {
       //
       // The tally rides in the same statement rather than in a second one: it
       // is one number about the row already being read, and the sheet shows the
-      // two on one line («принёс 15 сентября · всего 96 кадров»).
+      // two on one line («принёс 15 сентября · всего 96 кадров»). It counts
+      // what the gallery shows the caller, so frames the uploader has hidden
+      // are in it for the uploader alone.
       const [frame] = await sql<FrameRow[]>`
         select i.id, i.file_name, i.size_bytes, i.captured_at, i.created_at,
                i.width, i.height, i.camera_model, i.focal_length_mm, i.aperture,
@@ -135,7 +141,8 @@ export function frameRoutes(app: FastifyInstance) {
                (select count(*)::int from media_items brought
                  where brought.memory_id = i.memory_id
                    and brought.uploaded_by = i.uploaded_by
-                   and brought.status <> 'pending_upload') as uploader_media_count
+                   and brought.status <> 'pending_upload'
+                   and ${seenBy("brought", request.user.id)}) as uploader_media_count
         from media_items i
         join users u on u.id = i.uploaded_by
         where i.id = ${mediaId} and i.memory_id = ${memoryId}
@@ -154,7 +161,7 @@ export function frameRoutes(app: FastifyInstance) {
       // Newest first, as `GET /memories/:memoryId/montages` is ordered, so the
       // list reads the same way round in both places.
       const montages = await sql<InMontage[]>`
-        select m.id, m.duration_seconds, f.start_seconds
+        select m.id, m.name, m.params, m.duration_seconds, f.start_seconds
         from montage_frames f
         join montages m on m.id = f.montage_id
         where f.media_id = ${mediaId} and m.memory_id = ${memoryId}
@@ -186,7 +193,10 @@ export function frameRoutes(app: FastifyInstance) {
           name: uploader_name,
           media_count: uploader_media_count,
         },
-        montages,
+        montages: montages.map(({ params, ...line }) => ({
+          ...line,
+          name: montageName({ ...line, params }, request.user.language),
+        })),
       };
     },
   );

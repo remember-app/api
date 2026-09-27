@@ -4,7 +4,7 @@ import { findByUsername, type PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { dropKeys, removeMedia } from "../media/gallery.ts";
 import { handOverLabels } from "../media/labels.ts";
-import { type ContributionStatus, cards, type MemberRole, uuidPattern } from "./plugin.ts";
+import { type ContributionStatus, cards, type MemberRole, seenBy, uuidPattern } from "./plugin.ts";
 import { notifyInvited } from "./push.ts";
 
 /**
@@ -193,10 +193,12 @@ export function memberRoutes(app: FastifyInstance) {
       // `media_count` — how many frames this person brought to *this* memory,
       // the number that stands beside the status on that screen. Counted here
       // and not on the client, which used to do it by reading the whole gallery
-      // (TASK-110): the roster is the screen, and the same predicate the
-      // gallery lists by (`status <> 'pending_upload'` — bytes are in the store)
-      // makes the number agree with what the gallery shows. Cast to int because
-      // count() is bigint, which postgres.js hands over as a string.
+      // (TASK-110): the roster is the screen, and the same predicates the
+      // gallery lists by (`status <> 'pending_upload'` — bytes are in the
+      // store — and `seenBy`, so a frame somebody has hidden counts for them
+      // alone) make the number agree with what the gallery shows the caller.
+      // Cast to int because count() is bigint, which postgres.js hands over as
+      // a string.
       type Row = PublicUser & {
         role: MemberRole;
         contribution_status: ContributionStatus | null;
@@ -208,7 +210,7 @@ export function memberRoutes(app: FastifyInstance) {
           (
             select count(*)::int from media_items mi
             where mi.memory_id = mm.memory_id and mi.uploaded_by = mm.user_id
-              and mi.status <> 'pending_upload'
+              and mi.status <> 'pending_upload' and ${seenBy("mi", request.user.id)}
           ) as media_count
         from memory_members mm
         join users u on u.id = mm.user_id

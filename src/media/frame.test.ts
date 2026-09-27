@@ -140,7 +140,7 @@ type Sheet = {
   latitude: number | null;
   longitude: number | null;
   uploaded_by: { id: string; username: string | null; name: string | null; media_count: number };
-  montages: { id: string; duration_seconds: number | null; start_seconds: number }[];
+  montages: { id: string; name: string; duration_seconds: number | null; start_seconds: number }[];
 };
 
 test("the sheet says who brought the frame, what the file is and what took it", async () => {
@@ -260,9 +260,53 @@ test("a frame that stands in two finished videos names both, and nothing else", 
   expect(read.statusCode).toBe(200);
   // Newest first, as the list of montages itself is ordered.
   expect((read.json() as Sheet).montages).toEqual([
-    { id: newer, duration_seconds: 90, start_seconds: 72.5 },
-    { id: older, duration_seconds: 60, start_seconds: 12 },
+    { id: newer, name: "Ролик на 1:30", duration_seconds: 90, start_seconds: 72.5 },
+    { id: older, name: "Ролик на 1:00", duration_seconds: 60, start_seconds: 12 },
   ]);
+
+  await app.close();
+});
+
+test("«В роликах» calls a video what the list of montages calls it: its own name, or its length in the reader's words", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const id = await frame(memory.id, organizer.user.id);
+  const video = await montage(memory.id, organizer.user.id, { duration_seconds: 90 });
+  await stands(video, id, 3);
+
+  const names = async (token: string) =>
+    ((await info(app, token, memory.id, id)).json() as Sheet).montages.map((line) => line.name);
+  const listed = async (token: string) => {
+    const list = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/montages` }),
+    );
+    expect(list.statusCode).toBe(200);
+    return (list.json() as { id: string; name: string }[]).map((one) => one.name);
+  };
+
+  // Nobody has named it: it is its length, in each reader's own language.
+  const english = await app.inject(
+    as(mark.token, { method: "POST", url: "/me/language", payload: { language: "en" } }),
+  );
+  expect(english.statusCode).toBe(200);
+  expect(await names(organizer.token)).toEqual(["Ролик на 1:30"]);
+  expect(await names(mark.token)).toEqual(["Movie of 1:30"]);
+
+  // Renamed — the sheet says the new name, the very one the list says.
+  const renamed = await app.inject(
+    as(organizer.token, {
+      method: "PATCH",
+      url: `/memories/${memory.id}/montages/${video}`,
+      payload: { name: "Свадьба Марка" },
+    }),
+  );
+  expect(renamed.statusCode).toBe(200);
+  for (const token of [organizer.token, mark.token]) {
+    expect(await names(token)).toEqual(["Свадьба Марка"]);
+    expect(await names(token)).toEqual(await listed(token));
+  }
 
   await app.close();
 });
@@ -485,9 +529,9 @@ test("a frame that stands twice in one video is listed twice, and a finished vid
   const read = await info(app, organizer.token, memory.id, id);
   expect(read.statusCode).toBe(200);
   expect((read.json() as Sheet).montages).toEqual([
-    { id: unmeasured, duration_seconds: null, start_seconds: 1 },
-    { id: cut, duration_seconds: 60, start_seconds: 5.5 },
-    { id: cut, duration_seconds: 60, start_seconds: 40 },
+    { id: unmeasured, name: "Ролик на 0:00", duration_seconds: null, start_seconds: 1 },
+    { id: cut, name: "Ролик на 1:00", duration_seconds: 60, start_seconds: 5.5 },
+    { id: cut, name: "Ролик на 1:00", duration_seconds: 60, start_seconds: 40 },
   ]);
 
   await app.close();
@@ -537,7 +581,7 @@ test("a frame deleted, or carried out by the person who brought it, leaves the l
   // A video already cut is left alone, and what stays in it still says so.
   const read = await info(app, organizer.token, memory.id, mine);
   expect((read.json() as Sheet).montages).toEqual([
-    { id: video, duration_seconds: 60, start_seconds: 0 },
+    { id: video, name: "Ролик на 1:00", duration_seconds: 60, start_seconds: 0 },
   ]);
 
   await app.close();
@@ -597,6 +641,7 @@ test("the sheet hands out no key of the store and no address, and needs no stora
     expect(Object.keys(sheet.montages[0] ?? {}).sort()).toEqual([
       "duration_seconds",
       "id",
+      "name",
       "start_seconds",
     ]);
   } finally {
@@ -682,6 +727,86 @@ test("a hidden frame stays with the one who brought it and leaves everyone else'
   expect((await edit(app, mark.token, memory.id, hidden, { hidden: false })).statusCode).toBe(200);
   expect(await galleryIds(app, organizer.token, memory.id)).toEqual([hidden, kept, his]);
   expect(await materialLeft(memory.id, [], [])).toMatchObject({ ready: 3 });
+
+  await app.close();
+});
+
+test("a hidden frame is counted for the one who brought it alone: the label, the roster and the sheet say what the gallery opens", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+
+  const hidden = await frame(memory.id, mark.user.id);
+  const kept = await frame(memory.id, mark.user.id);
+  await frame(memory.id, mark.user.id);
+  const his = await frame(memory.id, organizer.user.id);
+
+  // A shared box holding the frame before it was hidden: the link stays, and
+  // so does the frame's place in it once it is shown again.
+  const boxed = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/labels`,
+      payload: { title: "Лучшее", color: 1, shared: true, media_ids: [hidden, kept, his] },
+    }),
+  );
+  expect(boxed.statusCode).toBe(201);
+  const best = (boxed.json() as { id: string }).id;
+  expect((await edit(app, mark.token, memory.id, hidden, { hidden: true })).statusCode).toBe(200);
+
+  /**
+   * Every number a person reads about the frames, next to what the gallery
+   * actually opens for them: the box as a filter, and the person as one.
+   */
+  const counted = async (token: string) => {
+    const gallery = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/media` }),
+    );
+    expect(gallery.statusCode).toBe(200);
+    const items = gallery.json() as { id: string; uploaded_by: string; label_ids: string[] }[];
+    const labels = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/labels` }),
+    );
+    const roster = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/members` }),
+    );
+    return {
+      label: (labels.json() as { id: string; media_count: number }[]).find((l) => l.id === best)
+        ?.media_count,
+      labelFilter: items.filter((item) => item.label_ids.includes(best)).length,
+      member: (roster.json() as { id: string; media_count: number }[]).find(
+        (m) => m.id === mark.user.id,
+      )?.media_count,
+      sheet: ((await info(app, token, memory.id, kept)).json() as Sheet).uploaded_by.media_count,
+      memberFilter: items.filter((item) => item.uploaded_by === mark.user.id).length,
+    };
+  };
+
+  // Everybody else — the organizer too — counts what they can open: the
+  // hidden frame is in none of their numbers.
+  for (const token of [organizer.token, viewer.token]) {
+    expect(await counted(token)).toEqual({
+      label: 2,
+      labelFilter: 2,
+      member: 2,
+      sheet: 2,
+      memberFilter: 2,
+    });
+  }
+  // The one who hid it still has it in «Мои кадры», and it is counted there.
+  expect(await counted(mark.token)).toEqual({
+    label: 3,
+    labelFilter: 3,
+    member: 3,
+    sheet: 3,
+    memberFilter: 3,
+  });
+
+  // Shown again, it is back in everybody's numbers.
+  expect((await edit(app, mark.token, memory.id, hidden, { hidden: false })).statusCode).toBe(200);
+  expect(await counted(organizer.token)).toMatchObject({ label: 3, member: 3, sheet: 3 });
 
   await app.close();
 });

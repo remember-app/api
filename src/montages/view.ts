@@ -16,14 +16,20 @@ export const viewColumns = sql`m.*, u.username as orderer_username, u.name as or
 export type ViewRow = Montage & { orderer_username: string | null; orderer_name: string | null };
 
 /**
- * What a video is called until somebody names it: its ordered length — every
- * order writes one, a row made any other way falls back to the length it came
- * out — in the words the app puts on the same card (`ofLength`) and in the
- * language of whoever is looking (doc-8). Worked out here rather than written to the row —
- * it is a label, not a name, and a Russian and an English member of one memory
- * should each read it in their own words.
+ * What a video is called: the name somebody gave it, or else its ordered
+ * length — every order writes one, a row made any other way falls back to the
+ * length it came out — in the words the app puts on the same card (`ofLength`)
+ * and in the language of whoever is looking (doc-8). That stand-in is worked out
+ * here rather than written to the row — it is a label, not a name, and a Russian
+ * and an English member of one memory should each read it in their own words. One
+ * function for every answer that says a video's name, so the list and the frame
+ * sheet cannot call one video two things.
  */
-function unnamed({ params, duration_seconds }: Montage, language: Language) {
+export function montageName(
+  { name, params, duration_seconds }: Pick<Montage, "name" | "params" | "duration_seconds">,
+  language: Language,
+) {
+  if (name !== null) return name;
   const whole = Math.round(params.target_seconds ?? duration_seconds ?? 0);
   const runtime = `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
   return language === "ru" ? `Ролик на ${runtime}` : `Movie of ${runtime}`;
@@ -52,7 +58,7 @@ export async function view(montage: ViewRow, ttl: number, language: Language) {
   return {
     ...rest,
     ordered_by: { id: montage.ordered_by, username: orderer_username, name: orderer_name },
-    name: montage.name ?? unnamed(montage, language),
+    name: montageName(montage, language),
     video_url: await link(video_key),
     poster_url: await link(poster_key),
   };

@@ -1,7 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
-import { lowerIds, type MemberRole, mediaIdsSchema, uuidPattern } from "../memories/plugin.ts";
+import {
+  lowerIds,
+  type MemberRole,
+  mediaIdsSchema,
+  seenBy,
+  uuidPattern,
+} from "../memories/plugin.ts";
 
 /**
  * Лейблы — коробки с названием и цветом, по которым участник раскладывает кадры
@@ -142,10 +148,11 @@ export const handOverLabels = (
  * одним запросом на оба случая: маршруты записи отвечают той же строкой, что
  * приходит в списке, и собирать её вторым способом значит однажды разойтись.
  *
- * `media_count` считается по связям, а не по кадрам: удалённый кадр уносит свою
- * связь каскадом (миграция 120), поэтому число всегда равно тому, что в коробке
- * лежит на самом деле. `::int` — иначе count() приходит bigint, то есть строкой,
- * и «23 кадра» нечем сравнить с «12».
+ * `media_count` — сколько кадров коробки спрашивающий видит в галерее: тот же
+ * лейбл в фильтре открывает ровно столько. Удалённый кадр уносит свою связь
+ * каскадом (миграция 120), а чужой скрытый связь сохраняет, но не считается —
+ * по тому же `seenBy`, по которому его нет в галерее. `::int` — иначе count()
+ * приходит bigint, то есть строкой, и «23 кадра» нечем сравнить с «12».
  */
 async function labelCards(
   memoryId: string,
@@ -155,7 +162,9 @@ async function labelCards(
   type Row = LabelRow & { title: string; color: number; media_count: number };
   const rows = await sql<Row[]>`
     select l.id, l.title, l.color, l.shared, l.owner_id,
-      (select count(*)::int from label_media lm where lm.label_id = l.id) as media_count
+      (select count(*)::int from label_media lm
+        join media_items mi on mi.id = lm.media_id
+        where lm.label_id = l.id and ${seenBy("mi", caller.id)}) as media_count
     from (${visibleLabels(memoryId, caller.id)}) l
     where ${labelId}::uuid is null or l.id = ${labelId}::uuid
     ${labelOrder}

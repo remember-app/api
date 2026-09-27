@@ -3,7 +3,7 @@ import { positive } from "../auth/config.ts";
 import { sql } from "../db.ts";
 import { downloadTtlSeconds } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
-import { uuidPattern } from "../memories/plugin.ts";
+import { seenBy, uuidPattern } from "../memories/plugin.ts";
 
 /**
  * Как собирался ролик, вживую и потом (doc-03: «Монтаж в прямом эфире» и
@@ -290,11 +290,18 @@ export function journalRoutes(app: FastifyInstance) {
       //
       // Кадра уже нет — запись остаётся без сведений, и это не ошибка: у неё
       // нет внешнего ключа именно ради этого.
+      //
+      // Кадр, который хозяин скрыл, из журнала не вычёркивается — ролик и
+      // правда собран из него, и запись с местом в ролике остаётся. Но лица у
+      // него для остальных нет: ни миниатюры, ни того, кто его принёс, — по тому
+      // же `seenBy`, по которому его нет в их галерее. Хозяин видит свой кадр
+      // как обычно.
       const mediaIds = [...new Set(entries.map((e) => e.media_id).filter((id) => id !== null))];
+      const seen = seenBy("media_items", request.user.id);
       type File = {
         id: string;
         kind: "photo" | "video";
-        uploaded_by: string;
+        uploaded_by: string | null;
         captured_at: Date | null;
         duration_seconds: number | null;
         thumbnail_key: string | null;
@@ -312,7 +319,9 @@ export function journalRoutes(app: FastifyInstance) {
         mediaIds.length > 0
           ? await Promise.all([
               sql<File[]>`
-                select id, kind, uploaded_by, captured_at, duration_seconds, thumbnail_key
+                select id, kind, case when ${seen} then uploaded_by end as uploaded_by,
+                  captured_at, duration_seconds,
+                  case when ${seen} then thumbnail_key end as thumbnail_key
                 from media_items
                 where memory_id = ${memory.id} and id in ${sql(mediaIds)}
               `,
