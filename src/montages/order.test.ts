@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, expect, test } from "vitest";
 import { buildTestApp, signIn } from "../auth/testing.ts";
 import { sql } from "../db.ts";
+import { templateIds } from "./row.ts";
 import {
   alike,
   as,
@@ -13,6 +14,7 @@ import {
   order,
   preview,
   screened,
+  speak,
   track,
   underTag,
 } from "./testing.ts";
@@ -1105,6 +1107,54 @@ test("wishes to the music are the organizer's to place, and a stranger learns no
     )
   `;
   expect(queued).toEqual([]);
+
+  await app.close();
+});
+
+test("an order named or built off a template keeps both; nothing said gets the default label off the length, and a template is one of the six or nothing at all", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 3);
+
+  // Said nothing: the row carries neither, and the label is the length, in
+  // the words of whoever is looking (`view.ts`).
+  const plain = await order(app, organizer.token, memory.id, { target_seconds: 65 });
+  expect(plain.statusCode).toBe(201);
+  expect(plain.json()).toMatchObject({ name: "Ролик на 1:05", template: null });
+  expect((await speak(app, organizer.token, "en")).statusCode).toBe(200);
+  const englishList = (await list(app, organizer.token, memory.id)).json() as {
+    id: string;
+    name: string;
+  }[];
+  expect(englishList.find((m) => m.id === plain.json().id)?.name).toBe("Movie of 1:05");
+  await speak(app, organizer.token, "ru");
+
+  // Named, and started off a card: both stay with the row exactly as given,
+  // the name cleaned the way the story is.
+  const named = await order(app, organizer.token, memory.id, {
+    name: "  Свадьба Ани и Пети  ",
+    template: "quick",
+  });
+  expect(named.statusCode).toBe(201);
+  expect(named.json()).toMatchObject({ name: "Свадьба Ани и Пети", template: "quick" });
+
+  // A blank name is «не назвали», the same as never sending the field at all.
+  const blankName = await order(app, organizer.token, memory.id, { name: "   " });
+  expect(blankName.statusCode).toBe(201);
+  expect(blankName.json().name).toMatch(/^Ролик на \d/);
+
+  // Every card of `templates.ts` is a template this route honours, and
+  // nothing else: a name from another dictionary is a client bug, not a card
+  // this memory lacks.
+  for (const template of templateIds) {
+    const asked = await order(app, organizer.token, memory.id, { template });
+    expect(asked.statusCode, template).toBe(201);
+    expect(asked.json().template).toBe(template);
+  }
+  expect((await order(app, organizer.token, memory.id, { template: "custom" })).statusCode).toBe(
+    400,
+  );
 
   await app.close();
 });

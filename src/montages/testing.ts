@@ -182,6 +182,50 @@ export const retry = (app: App, token: string, memoryId: string, montageId: stri
     as(token, { method: "POST", url: `/memories/${memoryId}/montages/${montageId}/retry` }),
   );
 
+/** «Переименовать» — a blank name hands the video back to its default label. */
+export const rename = (
+  app: App,
+  token: string,
+  memoryId: string,
+  montageId: string,
+  name: string,
+) =>
+  app.inject(
+    as(token, {
+      method: "PATCH",
+      url: `/memories/${memoryId}/montages/${montageId}`,
+      payload: { name },
+    }),
+  );
+
+/** «Удалить ролик». */
+export const removeMontage = (app: App, token: string, memoryId: string, montageId: string) =>
+  app.inject(as(token, { method: "DELETE", url: `/memories/${memoryId}/montages/${montageId}` }));
+
+/** The screen's own knock — «я открыл готовый ролик» (`watched.ts`). */
+export const markWatched = (app: App, token: string, memoryId: string, montageId: string) =>
+  app.inject(
+    as(token, { method: "POST", url: `/memories/${memoryId}/montages/${montageId}/watched` }),
+  );
+
+/** Who has watched a montage and when they first did, straight from the table `watched.ts` writes. */
+export const watchesOf = (montageId: string) =>
+  sql<{ user_id: string; watched_at: Date }[]>`
+    select user_id, watched_at from montage_watches
+    where montage_id = ${montageId} order by watched_at
+  `;
+
+/** How much layout the worker left behind for a montage — cleared by a delete along with everything else. */
+export const layoutOf = async (montageId: string) => {
+  const [row] = await sql<{ n: number }[]>`
+    select count(*)::int as n from montage_frames where montage_id = ${montageId}
+  `;
+  return row?.n ?? 0;
+};
+
+export const speak = (app: App, token: string, language: "ru" | "en") =>
+  app.inject(as(token, { method: "POST", url: "/me/language", payload: { language } }));
+
 /** «Как собирался» — the journal route, asked here about what retry left it. */
 export const journal = (app: App, token: string, memoryId: string, montageId: string) =>
   app.inject(

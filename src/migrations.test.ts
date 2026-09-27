@@ -6,7 +6,8 @@ import { sql } from "./db.ts";
 
 /**
  * Migrations 100 (frame info), 110 (memory cover), 140 (dates between
- * days) and 150 (hidden frame, place set by hand): the three promises the
+ * days), 150 (hidden frame, place set by hand), 160 (montage name and
+ * «посмотрели») and 170 (montage template and file size): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -355,6 +356,138 @@ test(
     expect(await shape()).toEqual(after);
     expect(await frame()).toEqual({ hidden: false, latitude: 55.5 });
     expect(await placed()).toEqual({ hidden: true, latitude: 59.94 });
+  },
+  slow,
+);
+
+test(
+  "160 montage-name-watched: a montage starts unnamed and unwatched, a replay keeps what was written, an undo takes both away with the schema, a redo starts clean",
+  async () => {
+    const { db, apply, shape } = await chain(160);
+    const before = await shape();
+    const { user, memory } = await seed(db);
+    const [montage] = await db<{ id: string }[]>`
+      insert into montages (memory_id, ordered_by) values (${memory}, ${user}) returning id
+    `;
+    if (!montage) throw new Error("no montage");
+
+    await apply(160, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    expect(
+      after.columns.filter((c) => c.table_name === "montages").map((c) => c.column_name),
+    ).toContain("name");
+    expect(after.columns.some((c) => c.table_name === "montage_watches")).toBe(true);
+
+    const named = async () => {
+      const [row] = await db<{ name: string | null }[]>`
+        select name from montages where id = ${montage.id}
+      `;
+      return row?.name;
+    };
+    const watchers = async () =>
+      db<{ user_id: string }[]>`
+        select user_id from montage_watches where montage_id = ${montage.id}
+      `;
+    expect(await named()).toBeNull();
+    expect(await watchers()).toEqual([]);
+
+    // The organizer names it and opens it — the row the app writes.
+    await db`update montages set name = 'Свадьба Ани и Пети' where id = ${montage.id}`;
+    await db`insert into montage_watches (montage_id, user_id) values (${montage.id}, ${user})`;
+    // A second showing does not double the row — the same primary key `watched.ts` counts on.
+    await db`
+      insert into montage_watches (montage_id, user_id) values (${montage.id}, ${user})
+      on conflict do nothing
+    `;
+    expect(await named()).toBe("Свадьба Ани и Пети");
+    expect(await watchers()).toEqual([{ user_id: user }]);
+
+    // The replay: same schema, and neither the name nor the watcher lost.
+    await apply(160, "do");
+    expect(await shape()).toEqual(after);
+    expect(await named()).toBe("Свадьба Ани и Пети");
+    expect(await watchers()).toEqual([{ user_id: user }]);
+
+    // The undo: the schema is what it was before, the montage itself stands —
+    // and, as its own file says, the name and the watcher go with the columns
+    // that held them, because the code that runs after an undo knows neither.
+    await apply(160, "undo");
+    expect(await shape()).toEqual(before);
+    const [left] = await db`select count(*)::int as n from montages where id = ${montage.id}`;
+    expect(left?.n).toBe(1);
+    // An undo that fails on a second go is a redo nobody can script.
+    await apply(160, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo: the very schema the first run made, starting clean — and the
+    // rule still works, a name and a watcher written down again.
+    await apply(160, "do");
+    expect(await shape()).toEqual(after);
+    expect(await named()).toBeNull();
+    expect(await watchers()).toEqual([]);
+    await db`update montages set name = 'Заново' where id = ${montage.id}`;
+    await db`insert into montage_watches (montage_id, user_id) values (${montage.id}, ${user})`;
+    expect(await named()).toBe("Заново");
+    expect(await watchers()).toEqual([{ user_id: user }]);
+  },
+  slow,
+);
+
+test(
+  "170 montage-info: a montage starts with no template and no size, a replay keeps what the worker wrote, an undo takes both columns away, a redo brings them back empty",
+  async () => {
+    const { db, apply, shape } = await chain(170);
+    const before = await shape();
+    const { user, memory } = await seed(db);
+    const [montage] = await db<{ id: string }[]>`
+      insert into montages (memory_id, ordered_by) values (${memory}, ${user}) returning id
+    `;
+    if (!montage) throw new Error("no montage");
+
+    await apply(170, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    const montageColumns = after.columns
+      .filter((c) => c.table_name === "montages")
+      .map((c) => c.column_name);
+    expect(montageColumns).toEqual(expect.arrayContaining(["template", "size_bytes"]));
+
+    const info = async () => {
+      const [row] = await db<{ template: string | null; size_bytes: string | null }[]>`
+        select template, size_bytes from montages where id = ${montage.id}
+      `;
+      return row;
+    };
+    expect(await info()).toEqual({ template: null, size_bytes: null });
+
+    // The order named a card, and the worker weighed in the finished file.
+    await db`
+      update montages set template = 'quick', size_bytes = 41943040 where id = ${montage.id}
+    `;
+    expect(await info()).toEqual({ template: "quick", size_bytes: "41943040" });
+
+    // The replay: same schema, and neither value lost.
+    await apply(170, "do");
+    expect(await shape()).toEqual(after);
+    expect(await info()).toEqual({ template: "quick", size_bytes: "41943040" });
+
+    // The undo: the schema as before, the montage itself kept, and twice over,
+    // as a redo script would run it.
+    await apply(170, "undo");
+    expect(await shape()).toEqual(before);
+    const [left] = await db`select count(*)::int as n from montages where id = ${montage.id}`;
+    expect(left?.n).toBe(1);
+    await apply(170, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo: the same schema, the columns back and empty — the undo forgot
+    // what they held — and the worker can write them down again.
+    await apply(170, "do");
+    expect(await shape()).toEqual(after);
+    expect(await info()).toEqual({ template: null, size_bytes: null });
+    await db`update montages set template = 'report', size_bytes = 1024 where id = ${montage.id}`;
+    expect(await info()).toEqual({ template: "report", size_bytes: "1024" });
   },
   slow,
 );

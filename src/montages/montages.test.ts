@@ -9,16 +9,22 @@ import {
   jobsFor,
   journal,
   journalOf,
+  layoutOf,
   list,
+  markWatched,
   material,
   montageRows,
   order,
+  removeMontage,
+  rename,
   retry,
   running,
   said,
+  speak,
   stage,
   track,
   underTag,
+  watchesOf,
   watching,
 } from "./testing.ts";
 
@@ -451,6 +457,134 @@ test("a montage ordered before the music became a list, or before its wishes wen
   expect(listed.get(oldFailedNoted)).toEqual(noted);
   // Nobody ordered anything: the counters stay where they were.
   expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 0 });
+
+  await app.close();
+});
+
+test("only the organizer renames a montage, and a blank name hands it back its default label", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const elsewhere = await createMemory(app, organizer.token);
+
+  await material(memory.id, organizer.user.id, 3);
+  await material(elsewhere.id, organizer.user.id, 3);
+  // The length names it until somebody does — 65 seconds is «Ролик на 1:05».
+  const montage = (await order(app, organizer.token, memory.id, { target_seconds: 65 })).json();
+  const stray = (await order(app, organizer.token, elsewhere.id, {})).json();
+  expect(montage.name).toBe("Ролик на 1:05");
+  expect((await speak(app, organizer.token, "en")).statusCode).toBe(200);
+  expect((await list(app, organizer.token, memory.id)).json()).toMatchObject([
+    { id: montage.id, name: "Movie of 1:05" },
+  ]);
+  await speak(app, organizer.token, "ru");
+
+  // The video is everybody's; what it is called is the organizer's alone.
+  for (const token of [contributor.token, viewer.token]) {
+    const refused = await rename(app, token, memory.id, montage.id, "Свадьба Ани и Пети");
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+  }
+
+  const named = await rename(app, organizer.token, memory.id, montage.id, "Свадьба Ани и Пети");
+  expect(named.statusCode).toBe(200);
+  expect(named.json()).toMatchObject({ id: montage.id, name: "Свадьба Ани и Пети" });
+
+  // Blank — spaces included — is «не назвали», not a name of its own: the row
+  // goes back to null and the label back to the length, the way `nameOf` cleans it.
+  const blanked = await rename(app, organizer.token, memory.id, montage.id, "   ");
+  expect(blanked.statusCode).toBe(200);
+  expect(blanked.json()).toMatchObject({ id: montage.id, name: "Ролик на 1:05" });
+
+  // Never existed, not a uuid, and alive but in another memory — one answer for
+  // all three, and the stray is untouched by having been asked about.
+  for (const id of [randomUUID(), "not-a-uuid", stray.id]) {
+    const answer = await rename(app, organizer.token, memory.id, id, "x");
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+  expect((await list(app, organizer.token, elsewhere.id)).json()).toMatchObject([
+    { id: stray.id, name: expect.any(String) },
+  ]);
+
+  // No session at all — the same 401 the other routes give, and no row moved behind it.
+  const anonymous = await app.inject({
+    method: "PATCH",
+    url: `/memories/${memory.id}/montages/${montage.id}`,
+    payload: { name: "x" },
+  });
+  expect(anonymous.statusCode).toBe(401);
+
+  await app.close();
+});
+
+test("only the organizer deletes a montage, and it takes the counter, the queue, the watches and the layout with it", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const neighbour = await createMemory(app, organizer.token);
+
+  const [media] = await material(memory.id, organizer.user.id, 3);
+  if (!media) throw new Error("the fixture wrote no media row");
+  await material(neighbour.id, organizer.user.id, 3);
+  const gone = (await order(app, organizer.token, memory.id, {})).json();
+  const kept = (await order(app, organizer.token, neighbour.id, {})).json();
+  await assembled(gone.id);
+  await assembled(kept.id);
+
+  // Watched, laid out — everything a ready video picks up on the way, and
+  // everything a delete has to take with it.
+  await markWatched(app, organizer.token, memory.id, gone.id);
+  await markWatched(app, viewer.token, memory.id, gone.id);
+  await sql`
+    insert into montage_frames (montage_id, media_id, start_seconds, duration_seconds)
+    values (${gone.id}, ${media}, 0, 3)
+  `;
+  expect(await watchesOf(gone.id)).toHaveLength(2);
+  expect(await layoutOf(gone.id)).toBe(1);
+
+  // The video is everybody's; taking it away is the organizer's alone.
+  for (const token of [contributor.token, viewer.token]) {
+    const refused = await removeMontage(app, token, memory.id, gone.id);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+  }
+
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 1, user: 2 });
+  const removed = await removeMontage(app, organizer.token, memory.id, gone.id);
+  expect(removed.statusCode).toBe(200);
+  expect(removed.json()).toEqual({ ok: true });
+
+  // The card's own count follows the row down — the tally of what was ordered
+  // (`user_usage`) does not, because a deleted video was still made.
+  expect(await counters(memory.id, organizer.user.id)).toEqual({ memory: 0, user: 2 });
+  expect(await montageRows(memory.id)).toEqual([]);
+  expect(await jobsFor(gone.id)).toEqual([]);
+  expect(await watchesOf(gone.id)).toEqual([]);
+  expect(await layoutOf(gone.id)).toBe(0);
+
+  // The neighbour's video, and its own tally, are untouched.
+  expect(await montageRows(neighbour.id)).toEqual([{ id: kept.id, status: "ready" }]);
+  expect(await counters(neighbour.id, organizer.user.id)).toEqual({ memory: 1, user: 2 });
+
+  // Never existed, not a uuid, already gone, and alive but in another memory —
+  // one answer for all four.
+  for (const id of [randomUUID(), "not-a-uuid", gone.id, kept.id]) {
+    const answer = await removeMontage(app, organizer.token, memory.id, id);
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  const anonymous = await app.inject({
+    method: "DELETE",
+    url: `/memories/${memory.id}/montages/${kept.id}`,
+  });
+  expect(anonymous.statusCode).toBe(401);
+  expect(await montageRows(neighbour.id)).toEqual([{ id: kept.id, status: "ready" }]);
 
   await app.close();
 });
