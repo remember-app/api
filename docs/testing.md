@@ -49,14 +49,14 @@ multipart нет, поэтому `fetch` подменён, а ключ служ�
 | `journal_algorithm.json`                              | снимок сборки без нейросети (отсев и ритм): 12 файлов, ролик 10,07 с     |
 | `responses_director.json`, `responses_algorithm.json` | ответы api по этим двум сборкам — для приложения (ниже)                  |
 
-**Снимки — копии.** Их пишет воркер (`projects/montage/fixtures/journal_*.json`; формат и
-нормализация — в README montage, «Золотой снимок журнала»), а здесь лежат закоммиченные копии.
+**Снимки — копии.** Их пишет воркер (`projects/montage/tests/fixtures/journal_*.json`; формат и
+нормализация — в `docs/testing.md` montage, «Золотой снимок журнала»), а здесь лежат закоммиченные копии.
 Между репозиториями ничто не следит, что копии свежие: воркер перезаписал свои снимки, а здесь их не
 обновили — тест зелёный на старом выводе. Этот разъезд — условие связи, устранить его api не может.
 Обновить копии:
 
 ```sh
-cp ../montage/fixtures/journal_*.json src/montages/golden/
+cp ../montage/tests/fixtures/journal_*.json src/montages/golden/
 npx biome format --write src/montages/golden       # воркер пишет свой формат, biome его переписывает
 npm test -- src/montages/journal.golden.test.ts    # упадёт на записанных ответах, если вывод изменился
 ```

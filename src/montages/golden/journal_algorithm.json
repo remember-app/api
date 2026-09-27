@@ -138,7 +138,7 @@
       "stage": "directing",
       "state": "done",
       "started_at": "2026-01-01T00:00:15Z",
-      "finished_at": "2026-01-01T00:00:23Z",
+      "finished_at": "2026-01-01T00:00:25Z",
       "eta_seconds": 0,
       "done_count": 12,
       "total_count": 12,
@@ -146,13 +146,13 @@
         "of": 12,
         "frames": 4
       },
-      "updated_at": "2026-01-01T00:00:23Z"
+      "updated_at": "2026-01-01T00:00:25Z"
     },
     {
       "stage": "rhythm",
       "state": "done",
-      "started_at": "2026-01-01T00:00:24Z",
-      "finished_at": "2026-01-01T00:00:25Z",
+      "started_at": "2026-01-01T00:00:26Z",
+      "finished_at": "2026-01-01T00:00:27Z",
       "eta_seconds": 0,
       "done_count": 4,
       "total_count": 4,
@@ -161,13 +161,13 @@
         "cuts": 3,
         "track": ["warm"]
       },
-      "updated_at": "2026-01-01T00:00:25Z"
+      "updated_at": "2026-01-01T00:00:27Z"
     },
     {
       "stage": "assembly",
       "state": "done",
-      "started_at": "2026-01-01T00:00:26Z",
-      "finished_at": "2026-01-01T00:00:27Z",
+      "started_at": "2026-01-01T00:00:28Z",
+      "finished_at": "2026-01-01T00:00:29Z",
       "eta_seconds": 0,
       "done_count": 4,
       "total_count": 4,
@@ -175,7 +175,7 @@
         "cuts": 3,
         "seconds": 10.1
       },
-      "updated_at": "2026-01-01T00:00:27Z"
+      "updated_at": "2026-01-01T00:00:29Z"
     }
   ],
   "entries": [
@@ -438,10 +438,10 @@
     {
       "n": 17,
       "stage": "directing",
-      "media": "f6",
+      "media": "f2",
       "thought": null,
       "decision": "skip",
-      "reason": "no_room",
+      "reason": "duplicate",
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
@@ -454,6 +454,38 @@
     {
       "n": 18,
       "stage": "directing",
+      "media": "f3",
+      "thought": null,
+      "decision": "skip",
+      "reason": "duplicate",
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:22Z"
+    },
+    {
+      "n": 19,
+      "stage": "directing",
+      "media": "f6",
+      "thought": null,
+      "decision": "skip",
+      "reason": "no_room",
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:23Z"
+    },
+    {
+      "n": 20,
+      "stage": "directing",
       "media": "f7",
       "thought": null,
       "decision": "skip",
@@ -465,7 +497,7 @@
       "source_to_seconds": null,
       "labels": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:22Z"
+      "created_at": "2026-01-01T00:00:24Z"
     }
   ],
   "layout": [
