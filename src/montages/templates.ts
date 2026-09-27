@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Language } from "../auth/session.ts";
 import type { musicTracks } from "./music.ts";
 import { checkOrder } from "./order.ts";
+import type { templateIds } from "./row.ts";
 
 /**
  * Шесть готовых роликов на выбор (doc-03: «Шаблон — это текст истории, музыка,
@@ -10,9 +11,10 @@ import { checkOrder } from "./order.ts";
  *
  * Шаблон здесь — это заранее заполненное тело заказа и ничего больше: что
  * маршрут отдал, то приложение и шлёт в `POST /memories/:memoryId/montages`,
- * при желании поправив руками по дороге (doc-03, «Автопилот»). Поэтому ни
- * строки в базе и ни одного своего поля: всё, из чего состоит шаблон, уже
- * описано заказом.
+ * при желании поправив руками по дороге (doc-03, «Автопилот»). Поэтому своих
+ * строк в базе у шаблонов нет: всё, из чего шаблон состоит, уже описано
+ * заказом. От шаблона ролику остаётся только `id` карточки — заказ шлёт его
+ * полем `template`, чтобы сведения ролика потом сказали, с чего он начался.
  *
  * «Настроить самому» сюда не входит — это пустой заказ, про который маршруту
  * нечего сказать. Названия и подписи карточек тоже: они живут в словаре
@@ -26,7 +28,7 @@ type Facts = { title: string; dates: string; people: string };
 type Track = (typeof musicTracks)[number];
 
 type Template = {
-  id: string;
+  id: (typeof templateIds)[number];
   /** Длина из макета; на деле зажимается по материалу воспоминания. */
   seconds: number;
   orientation: "landscape" | "portrait";

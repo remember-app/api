@@ -9,7 +9,7 @@ import { stagesFor } from "./journal.ts";
 import { checkOrder, nameField, nameOf, type OrderBody, orderBodySchema } from "./order.ts";
 import type { Montage } from "./row.ts";
 import { orderSummary } from "./summary.ts";
-import { view } from "./view.ts";
+import { type ViewRow, view, viewColumns } from "./view.ts";
 import { watchersOf } from "./watched.ts";
 
 /**
@@ -111,11 +111,14 @@ export function montageRoutes(app: FastifyInstance) {
       const { params } = checked;
 
       const montage = await sql.begin(async (tx) => {
-        const [row] = await tx<Montage[]>`
-          insert into montages (memory_id, ordered_by, params, name)
-          values (${memory.id}, ${request.user.id}, ${sql.json(params)},
-            ${nameOf(request.body?.name)})
-          returning *
+        const [row] = await tx<ViewRow[]>`
+          with m as (
+            insert into montages (memory_id, ordered_by, params, name, template)
+            values (${memory.id}, ${request.user.id}, ${sql.json(params)},
+              ${nameOf(request.body?.name)}, ${request.body?.template ?? null})
+            returning *
+          )
+          select ${viewColumns} from m join users u on u.id = m.ordered_by
         `;
         if (!row) throw new Error("insert into montages returned no row");
         // Queued in the same transaction as the row, as the preview job is:
@@ -182,9 +185,10 @@ export function montageRoutes(app: FastifyInstance) {
         return reply.code(503).send({ error: "storage not configured" });
       }
 
-      const montages = await sql<Montage[]>`
-        select * from montages where memory_id = ${request.membership.memory.id}
-        order by created_at desc, id desc
+      const montages = await sql<ViewRow[]>`
+        select ${viewColumns} from montages m join users u on u.id = m.ordered_by
+        where m.memory_id = ${request.membership.memory.id}
+        order by m.created_at desc, m.id desc
       `;
 
       // Where the unfinished ones have got to — one query for the whole list
@@ -239,10 +243,12 @@ export function montageRoutes(app: FastifyInstance) {
       const requeued = await sql.begin(async (tx) => {
         // The status in the WHERE and not only in an `if`: two taps on the
         // button race, and whoever moves the row is the one who queues the job.
-        const [row] = await tx<Montage[]>`
-          update montages set status = 'queued', error_text = null, updated_at = now()
-          where id = ${montageId} and memory_id = ${memory.id} and status = 'failed'
-          returning *
+        const [row] = await tx<ViewRow[]>`
+          update montages m set status = 'queued', error_text = null, updated_at = now()
+          from users u
+          where m.id = ${montageId} and m.memory_id = ${memory.id} and m.status = 'failed'
+            and u.id = m.ordered_by
+          returning ${viewColumns}
         `;
         if (!row) return undefined;
         // A clean sheet in the same breath as the status: what the attempt that
@@ -290,10 +296,11 @@ export function montageRoutes(app: FastifyInstance) {
       const { montageId } = request.params;
       if (!uuidPattern.test(montageId)) return reply.code(404).send(notFound);
 
-      const [row] = await sql<Montage[]>`
-        update montages set name = ${nameOf(request.body.name)}, updated_at = now()
-        where id = ${montageId} and memory_id = ${memory.id}
-        returning *
+      const [row] = await sql<ViewRow[]>`
+        update montages m set name = ${nameOf(request.body.name)}, updated_at = now()
+        from users u
+        where m.id = ${montageId} and m.memory_id = ${memory.id} and u.id = m.ordered_by
+        returning ${viewColumns}
       `;
       if (!row) return reply.code(404).send(notFound);
       return view(row, downloadTtlSeconds(), request.user.language);

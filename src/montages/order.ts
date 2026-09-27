@@ -4,7 +4,7 @@ import { lowerIds, mediaIdsSchema } from "../memories/plugin.ts";
 import { materialLeft, minReadyItems } from "./material.ts";
 import { musicTracks } from "./music.ts";
 import type { Montage } from "./row.ts";
-import { orientations } from "./row.ts";
+import { orientations, templateIds } from "./row.ts";
 
 /**
  * An order for a video weighed against the memory it is for — what a client may
@@ -123,9 +123,12 @@ export const orderBodySchema = () => {
         additionalProperties: { type: "string", maxLength: maxWishChars },
       },
       orientation: { type: "string", enum: [...orientations] },
-      // Not a knob for the worker, so it goes to its own column and not into
-      // `params`; «итог перед монтажом» takes it and has nothing to say about it.
+      // Not knobs for the worker, so each goes to its own column and not into
+      // `params`; «итог перед монтажом» takes them and has nothing to say about
+      // either. The template is the card the order started from — what it
+      // filled in is already the rest of this body.
       name: nameField,
+      template: { type: "string", enum: [...templateIds] },
       // The one-track fields `music_tracks` replaced. Refused rather than
       // stripped like an invented field: a client still naming its track this
       // way would get a video with no music and no word about why.
@@ -145,6 +148,7 @@ export type OrderBody = {
   music_wishes?: Record<string, string>;
   orientation?: (typeof orientations)[number];
   name?: string;
+  template?: (typeof templateIds)[number];
 } | null;
 
 /**
