@@ -17,7 +17,7 @@ export const positive = (name: string, fallback: number) => {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-export const sessionTtlDays = () => positive("SESSION_TTL_DAYS", 30);
+export const sessionTtlDays = () => positive("SESSION_TTL_DAYS", 365);
 export const emailLoginTtlMinutes = () => positive("EMAIL_LOGIN_TTL_MINUTES", 15);
 export const rateWindowMs = () => positive("EMAIL_LOGIN_RATE_WINDOW_MINUTES", 15) * 60_000;
 

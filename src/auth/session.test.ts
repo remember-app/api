@@ -18,7 +18,7 @@ const me = (app: App, token: string) =>
   app.inject({ method: "GET", url: "/me", headers: { authorization: `Bearer ${token}` } });
 
 /**
- * Time passing, where a test cannot wait a month: the session's end moves that
+ * Time passing, where a test cannot wait out a term: the session's end moves that
  * many hours closer to now, and the end is all the session check reads.
  */
 const age = (token: string, hours: number) => sql`
