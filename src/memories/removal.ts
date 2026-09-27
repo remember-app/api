@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
 import { dropKeys, removeMedia } from "../media/gallery.ts";
+import { removeMontages } from "../montages/montages.ts";
 
 /**
  * «Удалить воспоминание» — the one act that takes a whole memory down (doc-01,
@@ -33,24 +34,11 @@ export function memoryRemovalRoutes(app: FastifyInstance) {
         // moment later — and a branch to skip that would cost more than it.
         const media = await removeMedia(tx, memory.id, "everything");
 
-        // The assembled videos. Deleted by hand and not by the cascade below
-        // only because the cascade cannot hand back what to take out of the
-        // bucket; the rows would go either way.
-        const montages = await tx<{ video_key: string | null; poster_key: string | null }[]>`
-          with gone as (
-            delete from montages where memory_id = ${memory.id}
-            returning id, video_key, poster_key
-          ),
-          -- Сборка, до которой очередь ещё не дошла, отменяется здесь же: её
-          -- ролика больше нет, и работа над ним была бы работой в пустоту.
-          -- Ту, что уже идёт, отменить некому — воркер дописывает ролик и,
-          -- не найдя строки, сам убирает из хранилища то, что залил
-          -- (montage video/montage.py, «went away mid-assembly»).
-          queued as (
-            delete from jobs where ref in (select id::text from gone)
-          )
-          select video_key, poster_key from gone
-        `;
+        // The assembled videos, through the statement «Удалить ролик» goes
+        // through. Deleted by hand and not by the cascade below only because
+        // the cascade cannot hand back what to take out of the bucket; the rows
+        // would go either way.
+        const montages = await removeMontages(tx, memory.id, "everything");
 
         // Свои треки организатора. Счётчиков они не двигали (`music.ts`), так
         // что от них остаётся ровно то, что лежит в хранилище: ключ и, у
@@ -64,11 +52,7 @@ export function memoryRemovalRoutes(app: FastifyInstance) {
         await tx`delete from memories where id = ${memory.id}`;
 
         return {
-          keys: [
-            ...media.keys,
-            ...montages.flatMap((row) => [row.video_key, row.poster_key]),
-            ...music.map((row) => row.object_key),
-          ].filter((key): key is string => key !== null),
+          keys: [...media.keys, ...montages.keys, ...music.map((row) => row.object_key)],
           uploads: [
             ...media.uploads,
             ...music.flatMap((row) =>

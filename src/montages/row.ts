@@ -10,6 +10,8 @@ export type Montage = {
   memory_id: string;
   ordered_by: string;
   status: "queued" | "processing" | "ready" | "failed";
+  /** The name somebody gave it; null until then, and `view` says «Ролик на 1:00» instead. */
+  name: string | null;
   video_key: string | null;
   /** The frame the app shows before the video plays; the worker cuts it. */
   poster_key: string | null;

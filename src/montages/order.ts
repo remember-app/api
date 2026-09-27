@@ -65,6 +65,20 @@ const defaultTargetSeconds = () => positive("MONTAGE_TARGET_SECONDS", 60);
 const storable = (text: string) => text.replaceAll("\u0000", "").replace(/\p{Cs}/gu, "");
 
 /**
+ * What a video is called — the template's name out of the app's own dictionary,
+ * or whatever the organizer typed. The memory title's ceiling, for a line of the
+ * same kind. Shared by the order and by «Переименовать».
+ */
+export const nameField = { type: "string", maxLength: 200 } as const;
+
+/**
+ * A name as the row holds it, cleaned the way the story is. Blank is «не
+ * назвали» — «Настроить самому» sends nothing, a cleared field sends "" — and
+ * leaves the row without one, which `view` answers with «Ролик на 1:00».
+ */
+export const nameOf = (text: string | undefined) => storable(text ?? "").trim() || null;
+
+/**
  * The body both order routes take, built at registration rather than read per
  * request as the media limits are: ajv compiles a schema once, so the numbers
  * have to be in it by then. `buildApp` runs per process (and per test), which is
@@ -109,6 +123,9 @@ export const orderBodySchema = () => {
         additionalProperties: { type: "string", maxLength: maxWishChars },
       },
       orientation: { type: "string", enum: [...orientations] },
+      // Not a knob for the worker, so it goes to its own column and not into
+      // `params`; «итог перед монтажом» takes it and has nothing to say about it.
+      name: nameField,
       // The one-track fields `music_tracks` replaced. Refused rather than
       // stripped like an invented field: a client still naming its track this
       // way would get a video with no music and no word about why.
@@ -127,6 +144,7 @@ export type OrderBody = {
   music_tracks?: string[];
   music_wishes?: Record<string, string>;
   orientation?: (typeof orientations)[number];
+  name?: string;
 } | null;
 
 /**
