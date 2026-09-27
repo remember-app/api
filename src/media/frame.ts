@@ -1,23 +1,29 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "../db.ts";
-import { uuidPattern } from "../memories/plugin.ts";
+import { seenBy, uuidPattern } from "../memories/plugin.ts";
+import type { MediaItem } from "./upload.ts";
 
 /**
- * «Сведения о кадре» (doc-02, `design/screens/SheetFrameInfo.html`): everything
- * about one frame that the picture itself does not say — who brought it and
- * when, the file it arrived as, the camera and the place it was shot at, and
- * which finished videos it stands in, at which second.
+ * One frame on its own. «Сведения о кадре» (doc-02,
+ * `design/screens/SheetFrameInfo.html`): everything about it that the picture
+ * itself does not say — who brought it and when, the file it arrived as, the
+ * camera and the place it was shot at, and which finished videos it stands in,
+ * at which second. And «Мой кадр» (`design/screens/SheetMyFrame.html`): what
+ * the person who brought it may change about it — hide it, correct when and
+ * where it was shot.
  *
- * One route, because it is one sheet: the app opens it over a frame it is
- * already showing, so there is nothing here to sign and no link to hand out —
- * the thumbnail came with the gallery.
+ * The sheet is one route, because it is one sheet: the app opens it over a
+ * frame it is already showing, so there is nothing here to sign and no link to
+ * hand out — the thumbnail came with the gallery.
  *
- * Three of the answers are not api's to write. `camera_model`,
- * `focal_length_mm`, `aperture`, `latitude` and `longitude` are the montage
- * worker's, read out of the original's metadata exactly as `width` and `height`
- * are; `montage_frames` is the worker's too, written while it cuts a video.
- * Null and an empty list are «ещё не посчитано», not «нечего показывать» — the
- * same silence the gallery's missing derivatives keep.
+ * Most of its answers are not api's to write. `camera_model`,
+ * `focal_length_mm` and `aperture` are the montage worker's, read out of the
+ * original's metadata exactly as `width` and `height` are; so are `latitude`
+ * and `longitude` until the owner sets the place by hand, after which the
+ * database keeps the worker from writing over it (migration 150).
+ * `montage_frames` is the worker's too, written while it cuts a video. Null and
+ * an empty list are «ещё не посчитано», not «нечего показывать» — the same
+ * silence the gallery's missing derivatives keep.
  */
 
 /** The row behind the sheet: the frame, its uploader, and that person's tally. */
@@ -54,6 +60,38 @@ type FrameRow = {
 type InMontage = { id: string; duration_seconds: number | null; start_seconds: number };
 
 /**
+ * What the owner may change about their frame. Whatever is not sent stays as it
+ * was — the sheet sends what the person touched — and a body that says nothing
+ * is not an edit, so it is refused rather than answered `200`.
+ *
+ * The date is set and never cleared: every frame was shot at some moment, and
+ * the phone's is only replaced with the person's. The place may be cleared —
+ * `null` in both — because «где» is a thing a person may rightly not want said,
+ * and a wrong one is worse than none. Its two numbers travel together: half a
+ * place is no place, and a map puts a pin down with both.
+ */
+const editBody = {
+  type: "object",
+  minProperties: 1,
+  additionalProperties: false,
+  dependencies: { latitude: ["longitude"], longitude: ["latitude"] },
+  properties: {
+    hidden: { type: "boolean" },
+    // RFC 3339 with an offset, as the upload intent takes it.
+    captured_at: { type: "string", format: "date-time" },
+    latitude: { type: ["number", "null"], minimum: -90, maximum: 90 },
+    longitude: { type: ["number", "null"], minimum: -180, maximum: 180 },
+  },
+} as const;
+
+type FrameEdit = {
+  hidden?: boolean;
+  captured_at?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+/**
  * Mounted from `buildApp` after `memoriesPlugin`, which decorates the
  * membership check this route hangs on.
  */
@@ -82,7 +120,8 @@ export function frameRoutes(app: FastifyInstance) {
 
       // `pending_upload` is left out exactly as the gallery and the download
       // route leave it out: the bytes are not there, the app is not showing
-      // such a frame, and to the caller that is «no such record».
+      // such a frame, and to the caller that is «no such record». So is a frame
+      // somebody else has hidden, for the same reason.
       //
       // The tally rides in the same statement rather than in a second one: it
       // is one number about the row already being read, and the sheet shows the
@@ -100,7 +139,7 @@ export function frameRoutes(app: FastifyInstance) {
         from media_items i
         join users u on u.id = i.uploaded_by
         where i.id = ${mediaId} and i.memory_id = ${memoryId}
-          and i.status <> 'pending_upload'
+          and i.status <> 'pending_upload' and ${seenBy("i", request.user.id)}
       `;
       // A record of another memory is «no such record» here, for the same
       // reason another memory is «no such memory».
@@ -149,6 +188,56 @@ export function frameRoutes(app: FastifyInstance) {
         },
         montages,
       };
+    },
+  );
+
+  // «Мой кадр»: hide it, correct when and where it was shot. Only the person
+  // who brought it — this is ownership and not role, so not the organizer
+  // either — and anybody else's frame is «no such record», as the upload's own
+  // routes answer it (`ownItem` in upload.ts).
+  app.patch<{ Params: { memoryId: string; mediaId: string }; Body: FrameEdit }>(
+    "/memories/:memoryId/media/:mediaId",
+    { preHandler: [app.authenticate, app.requireMembership], schema: { body: editBody } },
+    async (request, reply) => {
+      const { mediaId } = request.params;
+      // Checked here and not by a params schema, for the reason the sheet gives.
+      if (!uuidPattern.test(mediaId)) return reply.code(404).send(notFound);
+
+      const { hidden, captured_at, latitude, longitude } = request.body;
+      if ((latitude === null) !== (longitude === null)) {
+        return reply
+          .code(400)
+          .send({ error: "latitude and longitude are set or cleared together" });
+      }
+      // A place set by hand moves `place_edited_at`, and that move is what lets
+      // it through: the trigger of migration 150 keeps the owner's place against
+      // every write that leaves the mark where it was — the worker reading the
+      // camera again above all. `clock_timestamp()` and not `now()`, so that two
+      // edits in one transaction still move it.
+      const place =
+        latitude === undefined
+          ? sql``
+          : sql`latitude = ${latitude}, longitude = ${longitude ?? null},
+                place_edited_at = clock_timestamp(),`;
+
+      // One statement: the ownership is in the `where`, so nothing can change
+      // hands between checking it and writing. Not sent is left alone by
+      // `coalesce`, in the query rather than read beforehand, so two edits of
+      // different fields at once do not undo each other.
+      const [frame] = await sql<
+        Pick<MediaItem, "id" | "hidden" | "captured_at" | "latitude" | "longitude">[]
+      >`
+        update media_items set
+          hidden = coalesce(${hidden ?? null}::boolean, hidden),
+          captured_at = coalesce(${captured_at ?? null}::timestamptz, captured_at),
+          ${place}
+          updated_at = now()
+        where id = ${mediaId} and memory_id = ${request.membership.memory.id}
+          and uploaded_by = ${request.user.id}
+        returning id, hidden, captured_at, latitude, longitude
+      `;
+      if (!frame) return reply.code(404).send(notFound);
+      return frame;
     },
   );
 }

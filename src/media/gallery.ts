@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
-import { uuidPattern } from "../memories/plugin.ts";
+import { seenBy, uuidPattern } from "../memories/plugin.ts";
 import { downloadTtlSeconds } from "./config.ts";
 import { visibleLabelIds } from "./labels.ts";
 import { abortUploads, deleteObjects, downloadUrl, storageConfigured } from "./r2.ts";
@@ -191,10 +191,23 @@ export function galleryRoutes(app: FastifyInstance) {
       // маршрут за ними был бы вторым обходом той же галереи. Подзапросом, а не
       // join'ом — кадр, лежащий в трёх лейблах, приходит один раз, и состав с
       // порядком списка от лейблов не зависят вовсе (src/media/labels.ts).
-      const items = await sql<(MediaItem & { label_ids: string[] })[]>`
-        select mi.*, ${visibleLabelIds(request.membership.memory.id, request.user.id)} as label_ids
+      //
+      // Скрытый кадр приходит только тому, кто его принёс, — остальным его нет
+      // (`seenBy`). Ориентация считается здесь же из размеров, которые мерил
+      // воркер: столбец под неё был бы второй копией `width` и `height`,
+      // которую пришлось бы держать с ними в ногу.
+      type Row = MediaItem & {
+        label_ids: string[];
+        orientation: "landscape" | "portrait" | "square" | null;
+      };
+      const items = await sql<Row[]>`
+        select mi.*, ${visibleLabelIds(request.membership.memory.id, request.user.id)} as label_ids,
+          case when mi.width > mi.height then 'landscape'
+               when mi.width < mi.height then 'portrait'
+               when mi.width = mi.height then 'square' end as orientation
         from media_items mi
         where mi.memory_id = ${request.membership.memory.id} and mi.status <> 'pending_upload'
+          and ${seenBy("mi", request.user.id)}
         order by coalesce(mi.captured_at, mi.created_at), mi.id
       `;
 
@@ -209,8 +222,15 @@ export function galleryRoutes(app: FastifyInstance) {
           captured_at: item.captured_at,
           width: item.width,
           height: item.height,
+          // Горизонтальный, вертикальный или квадратный — ось фильтра, отдельная
+          // от `kind`, и фильтруется она на телефоне, как и всё остальное здесь.
+          // Null, пока воркер не измерил кадр.
+          orientation: item.orientation,
           duration_seconds: item.duration_seconds,
           created_at: item.created_at,
+          // Приходит `true` только тому, кто кадр принёс: остальным скрытый кадр
+          // не приходит вовсе.
+          hidden: item.hidden,
           // В каких лейблах этот кадр лежит — и только в тех, что видны
           // спрашивающему. Чужой личный лейбл не оставляет здесь следа: ни id,
           // ни лишней длины массива. Галерея приходит без параметров и
@@ -260,10 +280,12 @@ export function galleryRoutes(app: FastifyInstance) {
       // `pending_upload` is filtered here rather than answered separately: the
       // bytes are not in the store yet, so a link to them would sign nothing —
       // which, to the caller, is exactly «no such record».
+      // Somebody else's hidden frame is «no such record» too: the gallery does
+      // not show it to this member, so neither does its original.
       const [item] = await sql<Pick<MediaItem, "original_key">[]>`
         select original_key from media_items
         where id = ${mediaId} and memory_id = ${request.membership.memory.id}
-          and status <> 'pending_upload'
+          and status <> 'pending_upload' and ${seenBy("media_items", request.user.id)}
       `;
       if (!item) return reply.code(404).send(notFound);
 
@@ -285,6 +307,7 @@ export function galleryRoutes(app: FastifyInstance) {
       const items = await sql<Pick<MediaItem, "id" | "kind" | "original_key">[]>`
         select id, kind, original_key from media_items
         where memory_id = ${request.membership.memory.id} and status <> 'pending_upload'
+          and ${seenBy("media_items", request.user.id)}
         order by coalesce(captured_at, created_at), id
       `;
 
