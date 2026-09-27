@@ -12,10 +12,14 @@ export type Montage = {
   status: "queued" | "processing" | "ready" | "failed";
   /** The name somebody gave it; null until then, and `view` says «Ролик на 1:00» instead. */
   name: string | null;
+  /** The card the order started from; null is «Настроить самому». */
+  template: (typeof templateIds)[number] | null;
   video_key: string | null;
   /** The frame the app shows before the video plays; the worker cuts it. */
   poster_key: string | null;
   duration_seconds: number | null;
+  /** Bytes in the finished video. A string: postgres.js hands bigints over without rounding them. */
+  size_bytes: string | null;
   params: {
     target_seconds?: number;
     /** What the organizer said the video is about, in their own words (doc-03). */
@@ -64,3 +68,18 @@ export type Montage = {
  * says. The chosen one is written, because that is a choice somebody made.
  */
 export const orientations = ["landscape", "portrait"] as const;
+
+/**
+ * The six ready-made videos by the ids the app names them with — the cards of
+ * `templates.ts`, in the same order. An order says which card it started from,
+ * so the video can say it afterwards; «Настроить самому» is no card and says
+ * nothing.
+ */
+export const templateIds = [
+  "for_myself",
+  "quick",
+  "report",
+  "short_form",
+  "parents",
+  "dopamine",
+] as const;

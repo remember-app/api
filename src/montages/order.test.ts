@@ -68,7 +68,11 @@ test("the montage is ordered by the organizer alone, and only out of real materi
   const montage = asked.json();
   expect(montage).toMatchObject({
     memory_id: memory.id,
-    ordered_by: organizer.user.id,
+    ordered_by: {
+      id: organizer.user.id,
+      username: organizer.user.username,
+      name: organizer.user.name,
+    },
     status: "queued",
     duration_seconds: null,
     error_text: null,

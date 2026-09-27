@@ -201,6 +201,8 @@ test("a montage still being assembled carries its five stages in the list", asyn
     "created_at",
     "updated_at",
     "name",
+    "template",
+    "size_bytes",
     "video_url",
     "poster_url",
     "stages",
