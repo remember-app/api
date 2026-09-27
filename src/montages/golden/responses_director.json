@@ -839,9 +839,11 @@
             "error_text": null,
             "created_at": "2026-01-01T12:00:00.000Z",
             "updated_at": "2026-01-01T12:00:00.000Z",
+            "name": "Ролик на 0:00",
             "video_url": null,
             "poster_url": null,
-            "stages": null
+            "stages": null,
+            "watched_by": []
           },
           {
             "id": "00000000-0000-4000-8000-b00000000001",
@@ -859,6 +861,7 @@
             "error_text": null,
             "created_at": "2025-12-31T12:00:00.000Z",
             "updated_at": "2025-12-31T12:00:00.000Z",
+            "name": "Ролик на 0:15",
             "video_url": null,
             "poster_url": null,
             "stages": [
@@ -882,7 +885,8 @@
                 "stage": "assembly",
                 "state": "pending"
               }
-            ]
+            ],
+            "watched_by": []
           },
           {
             "id": "00000000-0000-4000-8000-b00000000002",
@@ -896,9 +900,11 @@
             "error_text": null,
             "created_at": "2025-12-30T12:00:00.000Z",
             "updated_at": "2025-12-30T12:00:00.000Z",
+            "name": "Ролик на 0:30",
             "video_url": "http://recorded.test:9000/recorded/videos/old.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/old.jpg?signed",
-            "stages": null
+            "stages": null,
+            "watched_by": []
           }
         ]
       }
@@ -4064,9 +4070,11 @@
             "error_text": null,
             "created_at": "2026-01-01T12:00:00.000Z",
             "updated_at": "2026-01-01T12:00:00.000Z",
+            "name": "Ролик на 0:00",
             "video_url": null,
             "poster_url": null,
-            "stages": null
+            "stages": null,
+            "watched_by": []
           },
           {
             "id": "00000000-0000-4000-8000-b00000000001",
@@ -4084,9 +4092,11 @@
             "error_text": null,
             "created_at": "2025-12-31T12:00:00.000Z",
             "updated_at": "2025-12-31T12:00:00.000Z",
+            "name": "Ролик на 0:15",
             "video_url": "http://recorded.test:9000/recorded/videos/00000000-0000-4000-8000-b00000000001.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/00000000-0000-4000-8000-b00000000001.jpg?signed",
-            "stages": null
+            "stages": null,
+            "watched_by": []
           },
           {
             "id": "00000000-0000-4000-8000-b00000000002",
@@ -4100,9 +4110,11 @@
             "error_text": null,
             "created_at": "2025-12-30T12:00:00.000Z",
             "updated_at": "2025-12-30T12:00:00.000Z",
+            "name": "Ролик на 0:30",
             "video_url": "http://recorded.test:9000/recorded/videos/old.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/old.jpg?signed",
-            "stages": null
+            "stages": null,
+            "watched_by": []
           }
         ]
       }

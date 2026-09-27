@@ -200,9 +200,11 @@ test("a montage still being assembled carries its five stages in the list", asyn
     "error_text",
     "created_at",
     "updated_at",
+    "name",
     "video_url",
     "poster_url",
     "stages",
+    "watched_by",
   ]);
   expect(byId.get(done.id)).toMatchObject({ status: "ready", duration_seconds: 58.5 });
   expect(byId.get(done.id)?.video_url).toContain(`montages/${done.id}.mp4`);

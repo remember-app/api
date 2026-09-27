@@ -16,6 +16,7 @@ import { montageRoutes } from "./montages/montages.ts";
 import { musicRoutes } from "./montages/music.ts";
 import { montageReadyRoutes } from "./montages/ready.ts";
 import { montageTemplateRoutes } from "./montages/templates.ts";
+import { montageWatchRoutes } from "./montages/watched.ts";
 import { privacyRoutes } from "./privacy/privacy.ts";
 
 /**
@@ -73,6 +74,8 @@ export function buildApp(options: FastifyServerOptions = {}) {
   pushRoutes(app);
   // Its `/memories/:memoryId/…` routes mount app.requireMembership too.
   montageRoutes(app);
+  // «Посмотрели» — стук экрана готового ролика, за той же проверкой участия.
+  montageWatchRoutes(app);
   // Стук воркера о готовом ролике: ни проверки сессии, ни участия — за ним нет
   // человека, и вместо них общий секрет. Отдельным файлом ровно поэтому.
   montageReadyRoutes(app);

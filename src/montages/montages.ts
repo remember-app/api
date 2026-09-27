@@ -1,17 +1,21 @@
 import type { FastifyInstance } from "fastify";
+import type { TransactionSql } from "postgres";
 import { sql } from "../db.ts";
 import { downloadTtlSeconds } from "../media/config.ts";
+import { dropKeys } from "../media/gallery.ts";
 import { storageConfigured } from "../media/r2.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { stagesFor } from "./journal.ts";
-import { checkOrder, type OrderBody, orderBodySchema } from "./order.ts";
+import { checkOrder, nameField, nameOf, type OrderBody, orderBodySchema } from "./order.ts";
 import type { Montage } from "./row.ts";
 import { orderSummary } from "./summary.ts";
 import { view } from "./view.ts";
+import { watchersOf } from "./watched.ts";
 
 /**
  * The videos assembled from a memory's material (doc-03): the organizer orders
- * one, every member watches it, the organizer retries one that fell over.
+ * one, every member watches it, the organizer retries one that fell over,
+ * renames it and deletes it.
  *
  * api owns the `montages` table and writes nothing else about a video: the
  * worker in `projects/montage` picks the job up, takes the row through
@@ -21,13 +25,59 @@ import { view } from "./view.ts";
  * type `montage`, and that route.
  *
  * What an order may say and what this memory can honour is `order.ts`; what a
- * video looks like from outside is `view.ts`. Here are the four routes a person
- * calls, and nothing else.
+ * video looks like from outside is `view.ts`; who has watched it is
+ * `watched.ts`. Here are the routes a person calls about the video itself.
  */
 
 /**
+ * Takes montages out of a memory for good — one, or all of them when the
+ * memory itself goes — with the jobs still queued about them. The journal, the
+ * stages, the layout and who watched cascade off the row. Answers with the
+ * keys the video and the poster left in the bucket, for the caller to drop once
+ * the transaction commits (`dropKeys`).
+ *
+ * `memories.montage_count` goes down with the rows: it is the «N роликов» on
+ * the memory's card, and a video gone from the list must be gone from that
+ * too. `user_usage.montage_count` does not — it counts what was ordered, which
+ * a price is charged on, and a deleted video was still made.
+ */
+export async function removeMontages(
+  tx: TransactionSql,
+  memoryId: string,
+  target: { montageId: string } | "everything",
+) {
+  const montageId = target === "everything" ? null : target.montageId;
+  const gone = await tx<{ video_key: string | null; poster_key: string | null }[]>`
+    with gone as (
+      delete from montages
+      where memory_id = ${memoryId} and (${montageId}::uuid is null or id = ${montageId}::uuid)
+      returning id, video_key, poster_key
+    ),
+    -- Сборка, до которой очередь ещё не дошла, отменяется здесь же: её ролика
+    -- больше нет, и работа над ним была бы работой в пустоту. Ту, что уже идёт,
+    -- отменить некому — воркер дописывает ролик и, не найдя строки, сам
+    -- убирает из хранилища то, что залил (montage video/montage.py, «went away
+    -- mid-assembly»).
+    queued as (
+      delete from jobs where ref in (select id::text from gone)
+    ),
+    counted as (
+      update memories set montage_count = montage_count - (select count(*) from gone)::int
+      where id = ${memoryId} and exists (select 1 from gone)
+    )
+    select video_key, poster_key from gone
+  `;
+  return {
+    removed: gone.length,
+    keys: gone
+      .flatMap((row) => [row.video_key, row.poster_key])
+      .filter((key): key is string => key !== null),
+  };
+}
+
+/**
  * Mounted from `buildApp` after `memoriesPlugin`, which decorates the
- * membership check all four routes hang on.
+ * membership check every route here hangs on.
  */
 export function montageRoutes(app: FastifyInstance) {
   const notFound = { error: "not found" };
@@ -35,6 +85,12 @@ export function montageRoutes(app: FastifyInstance) {
 
   // Built once, at registration: ajv compiles a schema once anyway.
   const orderBody = orderBodySchema();
+  const renameBody = {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: { name: nameField },
+  } as const;
 
   // «Смонтируй ролик». The organizer's line of the matrix and nobody else's
   // (architecture.md, «Проверка прав»): a contributor brought the material but
@@ -56,8 +112,9 @@ export function montageRoutes(app: FastifyInstance) {
 
       const montage = await sql.begin(async (tx) => {
         const [row] = await tx<Montage[]>`
-          insert into montages (memory_id, ordered_by, params)
-          values (${memory.id}, ${request.user.id}, ${sql.json(params)})
+          insert into montages (memory_id, ordered_by, params, name)
+          values (${memory.id}, ${request.user.id}, ${sql.json(params)},
+            ${nameOf(request.body?.name)})
           returning *
         `;
         if (!row) throw new Error("insert into montages returned no row");
@@ -85,7 +142,7 @@ export function montageRoutes(app: FastifyInstance) {
 
       // Freshly queued, so there is nothing signed in this answer and no reason
       // to ask for a bucket.
-      return reply.code(201).send(await view(montage, downloadTtlSeconds()));
+      return reply.code(201).send(await view(montage, downloadTtlSeconds(), request.user.language));
     },
   );
 
@@ -140,15 +197,23 @@ export function montageRoutes(app: FastifyInstance) {
       // — «как собирался» is its own screen, opened from the journal route —
       // and asking about it would read five rows per finished video on every
       // list, forever.
-      const progress = await stagesFor(
-        montages.filter((m) => m.status !== "ready").map((m) => m.id),
-      );
+      //
+      // Who watched, the other way round: only a ready video can have been
+      // watched (`watched.ts`), so only those are asked about.
+      const [progress, watched] = await Promise.all([
+        stagesFor(montages.filter((m) => m.status !== "ready").map((m) => m.id)),
+        watchersOf(
+          request.membership.memory.id,
+          montages.filter((m) => m.status === "ready").map((m) => m.id),
+        ),
+      ]);
 
       const ttl = downloadTtlSeconds();
       return Promise.all(
         montages.map(async (montage) => ({
-          ...(await view(montage, ttl)),
+          ...(await view(montage, ttl, request.user.language)),
           stages: progress.get(montage.id) ?? null,
+          watched_by: watched.get(montage.id) ?? [],
         })),
       );
     },
@@ -199,7 +264,7 @@ export function montageRoutes(app: FastifyInstance) {
         await tx`insert into jobs (type, ref) values ('montage', ${row.id})`;
         return row;
       });
-      if (requeued) return view(requeued, downloadTtlSeconds());
+      if (requeued) return view(requeued, downloadTtlSeconds(), request.user.language);
 
       // Nothing moved: either there is no such montage here — one answer with
       // «no such memory», as ever — or it is not a failed one, and «повторить»
@@ -210,6 +275,52 @@ export function montageRoutes(app: FastifyInstance) {
       `;
       if (!current) return reply.code(404).send(notFound);
       return reply.code(409).send({ error: "montage has not failed", status: current.status });
+    },
+  );
+
+  // «Переименовать» (макет SheetFilmInfo) — the organizer's, as the order is,
+  // and at any status: a name is not the worker's and nothing it does reads it.
+  // A blank name hands the video back to «Ролик на 1:00».
+  app.patch<{ Params: { memoryId: string; montageId: string }; Body: { name: string } }>(
+    "/memories/:memoryId/montages/:montageId",
+    { preHandler: [app.authenticate, app.requireMembership], schema: { body: renameBody } },
+    async (request, reply) => {
+      const { memory, role } = request.membership;
+      if (role !== "organizer") return reply.code(403).send(forbidden);
+      const { montageId } = request.params;
+      if (!uuidPattern.test(montageId)) return reply.code(404).send(notFound);
+
+      const [row] = await sql<Montage[]>`
+        update montages set name = ${nameOf(request.body.name)}, updated_at = now()
+        where id = ${montageId} and memory_id = ${memory.id}
+        returning *
+      `;
+      if (!row) return reply.code(404).send(notFound);
+      return view(row, downloadTtlSeconds(), request.user.language);
+    },
+  );
+
+  // «Удалить ролик» — the organizer's, for the reason deleting the memory is:
+  // the video belongs to everybody in it, and one contributor must not take it
+  // from the rest. At any status — one still being cut is let go by the worker
+  // (`removeMontages`).
+  app.delete<{ Params: { memoryId: string; montageId: string } }>(
+    "/memories/:memoryId/montages/:montageId",
+    { preHandler: [app.authenticate, app.requireMembership] },
+    async (request, reply) => {
+      const { memory, role } = request.membership;
+      if (role !== "organizer") return reply.code(403).send(forbidden);
+      const { montageId } = request.params;
+      if (!uuidPattern.test(montageId)) return reply.code(404).send(notFound);
+
+      const { removed, keys } = await sql.begin((tx) =>
+        removeMontages(tx, memory.id, { montageId }),
+      );
+      if (removed === 0) return reply.code(404).send(notFound);
+
+      // After the commit and best effort, as with a deleted frame (`dropKeys`).
+      await dropKeys(request.log, { keys, uploads: [] });
+      return { ok: true };
     },
   );
 }
