@@ -199,22 +199,37 @@ export function memberRoutes(app: FastifyInstance) {
       // alone) make the number agree with what the gallery shows the caller.
       // Cast to int because count() is bigint, which postgres.js hands over as
       // a string.
+      //
+      // `removal_media_count` — how many frames go with this person if they
+      // are shown out or walk out: every one they brought, hidden ones too,
+      // which is the price «Убрать» names and not the number beside the
+      // status. A number of its own, never `media_count` reused. Told to
+      // whoever can carry that removal out — the organizer on every row, a
+      // member on their own — and null on the rows of anybody else: somebody
+      // else's hidden frames are nothing they need to be able to count.
+      const { memory, role } = request.membership;
       type Row = PublicUser & {
         role: MemberRole;
         contribution_status: ContributionStatus | null;
         media_count: number;
+        removal_media_count: number | null;
       };
       return sql<Row[]>`
         select u.id, u.username, u.name, mm.role,
           case when mm.role = 'viewer' then null else mm.status end as contribution_status,
-          (
-            select count(*)::int from media_items mi
-            where mi.memory_id = mm.memory_id and mi.uploaded_by = mm.user_id
-              and mi.status <> 'pending_upload' and ${seenBy("mi", request.user.id)}
-          ) as media_count
+          brought.seen as media_count,
+          case when ${role === "organizer"} or mm.user_id = ${request.user.id}
+            then brought.whole end as removal_media_count
         from memory_members mm
         join users u on u.id = mm.user_id
-        where mm.memory_id = ${request.membership.memory.id}
+        join lateral (
+          select count(*) filter (where ${seenBy("mi", request.user.id)})::int as seen,
+            count(*)::int as whole
+          from media_items mi
+          where mi.memory_id = mm.memory_id and mi.uploaded_by = mm.user_id
+            and mi.status <> 'pending_upload'
+        ) brought on true
+        where mm.memory_id = ${memory.id}
         order by mm.created_at, u.id
       `;
     },

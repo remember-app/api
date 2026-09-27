@@ -369,6 +369,64 @@ test("after the deletion nobody has a ghost of it: not the list, not the gallery
   await app.close();
 });
 
+test("the price of deleting names every frame that goes, hidden ones too, apart from the count on the card", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const contributor = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  await fill(memory.id, organizer.user.id, contributor.user.id);
+  // Two more of the contributor's, which he has hidden from everybody else.
+  for (let i = 0; i < 2; i++) {
+    await sql`
+      insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes, hidden)
+      values (${memory.id}, ${contributor.user.id}, 'photo', 'ready',
+              ${`originals/${randomUUID()}`}, 1, true)
+    `;
+  }
+
+  const card = async (token: string) => {
+    const one = ((await list(app, token)).json() as Record<string, unknown>[]).find(
+      (m) => m.id === memory.id,
+    );
+    return { seen: one?.media_count, price: one?.removal_media_count };
+  };
+  // The card counts what the organizer opens — his frame and the contributor's
+  // shown one; the price counts what deleting takes — the hidden two as well.
+  // The upload still in flight is in neither: there is no frame behind it yet.
+  expect(await card(organizer.token)).toEqual({ seen: 2, price: 4 });
+  // The contributor opens his own hidden frames, and cannot delete the memory:
+  // no price for him, nor for the viewer.
+  expect(await card(contributor.token)).toEqual({ seen: 4, price: null });
+  expect(await card(viewer.token)).toEqual({ seen: 2, price: null });
+
+  // «…сюда принесли другие» on the same sheet is made of the roster's prices,
+  // which the organizer reads on every row: the contributor's three, the
+  // viewer's none — and with the organizer's own, the whole price.
+  const roster = await app.inject(
+    as(organizer.token, { method: "GET", url: `/memories/${memory.id}/members` }),
+  );
+  const prices = roster.json() as { id: string; removal_media_count: number }[];
+  const others = prices
+    .filter((m) => m.id !== organizer.user.id)
+    .reduce((sum, m) => sum + m.removal_media_count, 0);
+  expect(others).toBe(3);
+  expect(prices.reduce((sum, m) => sum + m.removal_media_count, 0)).toBe(4);
+
+  // And the price is exactly what goes.
+  const frames = () =>
+    sql<{ n: number }[]>`
+      select count(*)::int as n from media_items
+      where memory_id = ${memory.id} and status <> 'pending_upload'
+    `.then((rows) => rows[0]?.n ?? 0);
+  const { price } = await card(organizer.token);
+  const before = await frames();
+  expect((await remove(app, organizer.token, memory.id)).statusCode).toBe(200);
+  expect(before - (await frames())).toBe(price);
+
+  await app.close();
+});
+
 test("only the organizer may delete: everybody else is refused and the memory stands", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());

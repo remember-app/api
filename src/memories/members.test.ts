@@ -427,8 +427,14 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   // anything, so all three sit at the initial value an invite leaves behind —
   // all three but the viewer, who has no status at all (doc-06): they were not
   // asked to bring anything. Nobody has brought a frame either, so the count
-  // beside the status is zero on every line, the viewer's included.
-  const fresh = { name: null, contribution_status: "not_started", media_count: 0 };
+  // beside the status is zero on every line, the viewer's included — and so is
+  // the price of showing anybody out, on the rows of whoever may do it.
+  const fresh = {
+    name: null,
+    contribution_status: "not_started",
+    media_count: 0,
+    removal_media_count: 0,
+  };
   const expected = [
     { ...fresh, id: organizer.id, username: organizer.username, role: "organizer" },
     { ...fresh, id: contributor.id, username: contributor.username, role: "contributor" },
@@ -450,10 +456,13 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
   expect(sorted(mine)).toEqual(expected);
 
   // A `viewer` reads it as well: seeing who else was there is «смотреть», and
-  // this is deliberately not gated to contributor and up.
+  // this is deliberately not gated to contributor and up. The one removal a
+  // viewer can carry out is their own, so theirs is the one price they read.
   const theirs = await roster(app, viewer.token, created.id);
   expect(theirs.statusCode).toBe(200);
-  expect(sorted(theirs)).toEqual(expected);
+  expect(sorted(theirs)).toEqual(
+    expected.map((row) => (row.id === viewer.id ? row : { ...row, removal_media_count: null })),
+  );
 
   // The exact `GET /users` shape and nothing more — an address above all: this
   // roster is readable by anybody who followed an invite link.
@@ -463,6 +472,7 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
       "id",
       "media_count",
       "name",
+      "removal_media_count",
       "role",
       "username",
     ]);
@@ -495,10 +505,10 @@ test("the roster is the whole memory, and a viewer may read it too", async () =>
  * upload path that writes one is exercised end to end in upload.test.ts. Goes out with the memory
  * — `media_items.memory_id` cascades — so the file's own cleanup already covers it.
  */
-const frame = (memoryId: string, userId: string, status: string) =>
+const frame = (memoryId: string, userId: string, status: string, hidden = false) =>
   sql`
-    insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes)
-    values (${memoryId}, ${userId}, 'photo', ${status}, ${`t12/${randomUUID()}`}, 1)
+    insert into media_items (memory_id, uploaded_by, kind, status, original_key, size_bytes, hidden)
+    values (${memoryId}, ${userId}, 'photo', ${status}, ${`t12/${randomUUID()}`}, 1, ${hidden})
   `;
 
 test("the roster says how many frames each person brought to this memory", async () => {
@@ -541,6 +551,63 @@ test("the roster says how many frames each person brought to this memory", async
     [viewer.id]: 0,
   });
   expect(await counts(elsewhere.id)).toEqual({ [organizer.id]: 2 });
+
+  await app.close();
+});
+
+test("the price of showing somebody out is every frame that goes with them, hidden ones too, told to whoever can do it", async () => {
+  const { app } = buildTestApp();
+  const organizer = await person(app);
+  const mark = await person(app);
+  const anna = await person(app);
+  const created = await createMemory(app, organizer.token);
+  for (const who of [mark, anna]) {
+    const invited = await invite(app, organizer.token, created.id, {
+      username: who.username,
+      role: "contributor",
+    });
+    expect(invited.statusCode).toBe(200);
+  }
+
+  // Two frames of Mark's anybody opens, two he has hidden, and one still on
+  // its way up — not a frame yet, in neither number.
+  await frame(created.id, mark.id, "ready");
+  await frame(created.id, mark.id, "failed");
+  await frame(created.id, mark.id, "ready", true);
+  await frame(created.id, mark.id, "processing", true);
+  await frame(created.id, mark.id, "pending_upload");
+  await frame(created.id, anna.id, "ready");
+
+  const markAs = async (token: string) => {
+    const rows = (await roster(app, token, created.id)).json() as {
+      id: string;
+      media_count: number;
+      removal_media_count: number | null;
+    }[];
+    const row = rows.find((m) => m.id === mark.id);
+    return { seen: row?.media_count, price: row?.removal_media_count };
+  };
+  // The organizer opens two of his, and is told the truth about what «Убрать»
+  // costs: four — a number of its own, not the one beside the status.
+  expect(await markAs(organizer.token)).toEqual({ seen: 2, price: 4 });
+  // Mark, who may walk out: his hidden frames are his, so the two agree.
+  expect(await markAs(mark.token)).toEqual({ seen: 4, price: 4 });
+  // Anna can show nobody out but herself: Mark's price is not hers to read,
+  // and neither is how many he hid.
+  expect(await markAs(anna.token)).toEqual({ seen: 2, price: null });
+
+  // And the price is what actually goes: his frames in the table, before and
+  // after the organizer shows him out.
+  const framesOf = (userId: string) =>
+    sql<{ n: number }[]>`
+      select count(*)::int as n from media_items
+      where memory_id = ${created.id} and uploaded_by = ${userId} and status <> 'pending_upload'
+    `.then((rows) => rows[0]?.n ?? 0);
+  const { price } = await markAs(organizer.token);
+  const before = await framesOf(mark.id);
+  expect((await remove(app, organizer.token, created.id, mark.id)).statusCode).toBe(200);
+  expect(before - (await framesOf(mark.id))).toBe(price);
+  expect(await framesOf(anna.id)).toBe(1);
 
   await app.close();
 });

@@ -731,7 +731,7 @@ test("a hidden frame stays with the one who brought it and leaves everyone else'
   await app.close();
 });
 
-test("a hidden frame is counted for the one who brought it alone: the label, the roster and the sheet say what the gallery opens", async () => {
+test("a hidden frame is counted for the one who brought it alone: the memory's card, the label, the roster and the sheet say what the gallery opens", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
@@ -758,7 +758,8 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
 
   /**
    * Every number a person reads about the frames, next to what the gallery
-   * actually opens for them: the box as a filter, and the person as one.
+   * actually opens for them: the whole of it, the box as a filter, and the
+   * person as one.
    */
   const counted = async (token: string) => {
     const gallery = await app.inject(
@@ -766,6 +767,7 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
     );
     expect(gallery.statusCode).toBe(200);
     const items = gallery.json() as { id: string; uploaded_by: string; label_ids: string[] }[];
+    const home = await app.inject(as(token, { method: "GET", url: "/memories" }));
     const labels = await app.inject(
       as(token, { method: "GET", url: `/memories/${memory.id}/labels` }),
     );
@@ -773,6 +775,9 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
       as(token, { method: "GET", url: `/memories/${memory.id}/members` }),
     );
     return {
+      card: (home.json() as { id: string; media_count: number }[]).find((m) => m.id === memory.id)
+        ?.media_count,
+      gallery: items.length,
       label: (labels.json() as { id: string; media_count: number }[]).find((l) => l.id === best)
         ?.media_count,
       labelFilter: items.filter((item) => item.label_ids.includes(best)).length,
@@ -788,6 +793,8 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
   // hidden frame is in none of their numbers.
   for (const token of [organizer.token, viewer.token]) {
     expect(await counted(token)).toEqual({
+      card: 3,
+      gallery: 3,
       label: 2,
       labelFilter: 2,
       member: 2,
@@ -797,6 +804,8 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
   }
   // The one who hid it still has it in «Мои кадры», and it is counted there.
   expect(await counted(mark.token)).toEqual({
+    card: 4,
+    gallery: 4,
     label: 3,
     labelFilter: 3,
     member: 3,
@@ -806,7 +815,7 @@ test("a hidden frame is counted for the one who brought it alone: the label, the
 
   // Shown again, it is back in everybody's numbers.
   expect((await edit(app, mark.token, memory.id, hidden, { hidden: false })).statusCode).toBe(200);
-  expect(await counted(organizer.token)).toMatchObject({ label: 3, member: 3, sheet: 3 });
+  expect(await counted(organizer.token)).toMatchObject({ card: 4, label: 3, member: 3, sheet: 3 });
 
   await app.close();
 });
