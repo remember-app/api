@@ -33,13 +33,12 @@
 | таблица `montages` | заводит API (миграция) | воркер читает и пишет строку по `id`, как `media.py` уже делает с `media_items` |
 | задача в `jobs`    | таблица montage | тип — ровно `montage`, `ref` — `montages.id` строкой            |
 | `status`           | пишут оба      | API ставит только `queued`; всё дальше — воркера                 |
-| `video_key`, `poster_key`, `duration_seconds`, `error_text` | воркер | API их только читает и подписывает ссылки |
+| `video_key`, `poster_key`, `duration_seconds`, `size_bytes`, `error_text` | воркер | API их только читает и подписывает ссылки; `size_bytes` — размер готового видео в байтах, пишется вместе с `ready` |
 | `params`           | пишет API      | `{"target_seconds": 60, "music_tracks": []}` — эти два есть в каждом новом заказе — плюс `story_text`, `include_media_ids`, `exclude_media_ids`, `music_wishes`, `orientation` — то из них, что назвали. `music_wishes` — `{"<трек>": "<пожелание>"}`, ключ — элемент `music_tracks` того же заказа. Старые строки не переписываются: у заказов старше `music_tracks` поля нет вовсе, и там встречаются `music_track_id` / `music_track_key`, у заказов старше `music_wishes` может лежать `music_note` — одна строка на весь заказ |
 | таблица `music_uploads` | заводит API (миграция) | воркер её не читает: свои треки он берёт из хранилища по ключам `music/…` из `params.music_tracks` |
 | `/internal/montages/:id/ready` | API | воркер дёргает его после того, как записал `ready`               |
 | `montage_journal_entries`, `montage_stages` | заводит API (миграция) | воркер пишет в них рассказ о сборке — `docs/journal.md` |
 | `name`, `template`, таблица `montage_watches` | API | воркер их не читает и не пишет; удалённый посреди сборки ролик воркер отпускает сам («went away mid-assembly») |
-| `size_bytes`       | —              | размер готового видео в байтах; API его только отдаёт. **Сейчас его не пишет никто** — воркер его не заполняет, и поле у всех роликов `null` |
 
 Каталог треков (`bright`, `warm`, `calm`, `night`, `road` — в порядке экрана «Под что монтировать»)
 общий на оба сервиса: здесь по нему проверяется вход в заказ и подписывается ссылка на
@@ -308,7 +307,7 @@
 [{"id":"…","memory_id":"…",
   "ordered_by":{"id":"…","username":"anya","name":"Аня"},"status":"ready","duration_seconds":58.5,
   "params":{"target_seconds":60,"orientation":"portrait"},"error_text":null,
-  "created_at":"…","updated_at":"…","name":"Дача, лето","template":"short_form","size_bytes":null,
+  "created_at":"…","updated_at":"…","name":"Дача, лето","template":"short_form","size_bytes":"18350120",
   "video_url":"http://…&X-Amz-Signature=…","poster_url":"http://…&X-Amz-Signature=…",
   "stages":null,
   "watched_by":[{"id":"…","username":"liza","name":"Лиза"},{"id":"…","username":"mark","name":null}]}]
@@ -325,8 +324,7 @@
 самому». Название карточки приложение берёт из своего словаря по этому `id`.
 
 `size_bytes` — размер готового видео в байтах, строкой, как у кадров (bigint без округления).
-`null` — размер не записан, и **сейчас это у всех роликов**: воркер его пока не пишет (контракт с
-воркером выше).
+`null` — размер не записан: ролик ещё не готов или собран до того, как воркер начал его писать.
 
 `watched_by` — кто из **нынешних** участников уже открывал готовый ролик, в порядке первого
 просмотра: `id`, `username`, `name` — те же три поля, что везде, где отдаётся человек. Отмечает
