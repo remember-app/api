@@ -51,11 +51,11 @@ type FrameRow = {
 
 /**
  * One line of «В роликах»: the video, how long it turned out, and the second
- * this frame stands at. The montage's own name is not here because it has none
- * yet — templates arrive with m-26, and until then the app builds «Ролик на
- * 1:00» out of the length (TASK-191). `duration_seconds` is therefore the
- * video's, as it is in `GET /memories/:memoryId/montages`, and `start_seconds`
- * is this frame's place inside it.
+ * this frame stands at. The video's name is not carried here yet: the list of
+ * montages says it (`view.ts`), and this line still leaves the label to the app,
+ * built out of the length. `duration_seconds` is the video's, as it is in
+ * `GET /memories/:memoryId/montages`, and `start_seconds` is this frame's place
+ * inside it.
  */
 type InMontage = { id: string; duration_seconds: number | null; start_seconds: number };
 

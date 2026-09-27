@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { PublicUser } from "../auth/identity.ts";
 import { sql } from "../db.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import type { Montage } from "./row.ts";
@@ -14,17 +15,15 @@ import type { Montage } from "./row.ts";
  * прямо сейчас», и живёт отметка секунды.
  */
 
-type Watcher = { id: string; username: string | null; name: string | null };
-
 /**
  * Кто смотрел каждый из роликов, одним запросом на весь список — как `stagesFor`.
  * Только нынешние участники: ушедший из воспоминания в «4 из 6» не входит, а
  * строка его остаётся — вернётся, и снова будет среди посмотревших.
  */
 export async function watchersOf(memoryId: string, montageIds: string[]) {
-  const byMontage = new Map<string, Watcher[]>();
+  const byMontage = new Map<string, PublicUser[]>();
   if (montageIds.length === 0) return byMontage;
-  const rows = await sql<({ montage_id: string } & Watcher)[]>`
+  const rows = await sql<({ montage_id: string } & PublicUser)[]>`
     select w.montage_id, u.id, u.username, u.name
     from montage_watches w
     join memory_members m on m.memory_id = ${memoryId} and m.user_id = w.user_id
