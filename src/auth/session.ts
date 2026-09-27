@@ -49,6 +49,9 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 export const bearerToken = (header = "") =>
   header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
 
+/** How long a session lives from its last use: the one term issuing and renewal share. */
+const term = () => sql`make_interval(days => ${sessionTtlDays()})`;
+
 /**
  * Opens a session and returns the raw token — it is not recoverable afterwards.
  *
@@ -60,20 +63,41 @@ export async function issue(userId: string): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   await sql`
     insert into sessions (user_id, token_hash, expires_at)
-    values (${userId}, ${hashToken(token)}, now() + make_interval(days => ${sessionTtlDays()}))
+    values (${userId}, ${hashToken(token)}, now() + ${term()})
   `;
   return token;
 }
 
-/** A live session yields its user; expired, revoked or unknown yields null. */
+/**
+ * A live session yields its user; expired, revoked or unknown yields null.
+ *
+ * Using a session keeps it alive: its term starts over from the moment of use,
+ * so it dies only of a whole term untouched, or of being revoked. The restart
+ * is written at most once an hour, not on every call — this runs on nearly
+ * every request, parallel chunk uploads included, and each write is a row
+ * version and a row lock. The price is that a session may expire up to an hour
+ * short of a full term after its last use. Not «once half the term is left»:
+ * then half a term of disuse could already cost a sign-in by letter.
+ *
+ * The renewal writes `expires_at` alone, so it cannot undo a revocation, and
+ * reaches only a session found live, so it cannot raise an expired one.
+ */
 export async function verify(token: string): Promise<AuthUser | null> {
   const [user] = await sql<AuthUser[]>`
+    with live as (
+      select id, user_id
+      from sessions
+      where token_hash = ${hashToken(token)}
+        and revoked_at is null
+        and expires_at > now()
+    ), renewed as (
+      update sessions set expires_at = now() + ${term()}
+      where id = (select id from live)
+        and expires_at < now() + ${term()} - interval '1 hour'
+    )
     select ${profileColumns}
-    from sessions s
-    join users u on u.id = s.user_id
-    where s.token_hash = ${hashToken(token)}
-      and s.revoked_at is null
-      and s.expires_at > now()
+    from live
+    join users u on u.id = live.user_id
   `;
   return user ?? null;
 }

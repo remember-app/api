@@ -20,7 +20,7 @@ TypeScript + [Fastify](https://fastify.dev/) + Postgres.
 src/app.ts            Fastify-приложение и маршруты (без сети — тестируется через inject)
 src/server.ts         точка входа: проверить базу, слушать порт
 src/db.ts             клиент Postgres из DATABASE_URL
-src/auth/session.ts   выпуск, проверка и отзыв сессий
+src/auth/session.ts   выпуск, проверка с продлением и отзыв сессий
 src/auth/email.ts     вход по коду на email: выпуск кода, попытки, проверка
 src/auth/mail.ts      отправка письма с кодом по SMTP (nodemailer)
 src/auth/providers.ts проверка id-токенов Apple и Google (jose, JWKS)
