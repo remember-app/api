@@ -426,8 +426,8 @@ async function stand(app: App, snap: Snapshot) {
       entryN.set(Number(row.id), e.n);
     }
   };
-  const putLayout = async (montageId: string) => {
-    for (const frame of snap.layout) {
+  const putLayout = async (montageId: string, layout = snap.layout) => {
+    for (const frame of layout) {
       await sql`
         insert into montage_frames (montage_id, media_id, start_seconds, duration_seconds)
         values (${montageId}, ${mediaId(frame.media)}, ${frame.start_seconds}, ${frame.duration_seconds})
@@ -441,14 +441,14 @@ async function stand(app: App, snap: Snapshot) {
       where id = ${montageId}
     `;
   /** Ролик из снимка целиком — как он лежит после сборки. */
-  const built = async (status: string) => {
+  const built = async (status: string, layout = snap.layout) => {
     const id = await montage(status, 1, {
       params: ordered(snap.montage.params),
       created_at: new Date("2025-12-31T12:00:00Z"),
     });
     for (const row of snap.stages) await putStage(id, row);
     await putEntries(id, snap.entries);
-    await putLayout(id);
+    await putLayout(id, layout);
     if (status === "ready") await finish(id);
     return id;
   };
@@ -1007,4 +1007,34 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
 
     await app.close();
   });
+});
+
+test("клип несколькими отрезками: i-я запись «беру» файла — его i-е место в `places`", async () => {
+  const snap = snapshots.find((one) => one.scenario === "director");
+  if (!snap) throw new Error("нет режиссёрского снимка");
+  const { app } = buildTestApp();
+  const s = await stand(app, snap);
+  // Раскладка ложится в базу задом наперёд: порядок мест обязан идти от ролика, а не от того,
+  // как строки легли в таблицу.
+  const id = await s.built("ready", [...snap.layout].reverse());
+  const { body } = await s.ask<Journal>(null, "organizer", s.journalPath(id));
+
+  // Опора сверки — сам снимок: воркер ведёт «беру» и раскладку по одному списку взятых кусков,
+  // так что k-я «беру» ролика стоит на k-м месте раскладки.
+  const takes = [...body.entries].reverse().filter((e) => e.decision === "take");
+  expect(takes.map((e) => s.label(e.media_id ?? ""))).toEqual(snap.layout.map((f) => f.media));
+
+  const clip = body.files.find((f) => f.places.length > 1);
+  if (!clip) throw new Error("в снимке нет файла с несколькими местами — сверять нечего");
+  // Как сопоставляет приложение: i-я «беру» файла — i-е его место в ответе.
+  expect(clip.places).toEqual(
+    takes
+      .filter((e) => e.media_id === clip.id)
+      .map((e) => {
+        const slot = snap.layout[takes.indexOf(e)];
+        return { start_seconds: slot?.start_seconds, duration_seconds: slot?.duration_seconds };
+      }),
+  );
+
+  await app.close();
 });
