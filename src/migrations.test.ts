@@ -5,8 +5,8 @@ import { afterAll, expect, test } from "vitest";
 import { sql } from "./db.ts";
 
 /**
- * Migrations 100 (frame info), 110 (memory cover) and 140 (dates between
- * days): the three promises the
+ * Migrations 100 (frame info), 110 (memory cover), 140 (dates between
+ * days) and 150 (hidden frame, place set by hand): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -294,6 +294,67 @@ test(
     expect([...(await switches()).values()]).toEqual([false, false, false]);
     await db`update users set dates_between_days = true where id = ${early}`;
     expect((await switches()).get(early)).toBe(true);
+  },
+  slow,
+);
+
+test(
+  "150 frame-hidden-and-place: frames start visible, a replay keeps what the owner set, an undo takes the trigger with the columns, a redo brings its rule back",
+  async () => {
+    const { db, apply, shape } = await chain(150);
+    const before = await shape();
+    const { photo } = await seed(db);
+    const early = await photo();
+
+    await apply(150, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    const frame = async () => {
+      const [row] = await db<{ hidden: boolean; latitude: number | null }[]>`
+        select hidden, latitude from media_items where id = ${early}
+      `;
+      return row;
+    };
+    expect(await frame()).toEqual({ hidden: false, latitude: null });
+
+    // The owner hides it and sets the place; the worker writes the camera's over it.
+    const placed = async () => {
+      await db`
+        update media_items set hidden = true, latitude = 59.94, longitude = 30.31,
+          place_edited_at = clock_timestamp()
+        where id = ${early}
+      `;
+      await db`update media_items set latitude = 55.5, longitude = 37.5 where id = ${early}`;
+      return frame();
+    };
+    expect(await placed()).toEqual({ hidden: true, latitude: 59.94 });
+
+    // The replay: same schema, same values, and one trigger rather than two.
+    await apply(150, "do");
+    expect(await shape()).toEqual(after);
+    expect(await frame()).toEqual({ hidden: true, latitude: 59.94 });
+    const triggers = async () => {
+      const [row] = await db<{ n: number }[]>`
+        select count(*)::int as n from pg_trigger where tgname = 'media_items_keep_hand_placed'
+      `;
+      return row?.n;
+    };
+    expect(await triggers()).toBe(1);
+
+    // The undo: the schema as before, no trigger left to hold a column that is
+    // gone, the frame itself kept — and twice over, as a redo script would.
+    await apply(150, "undo");
+    expect(await shape()).toEqual(before);
+    expect(await triggers()).toBe(0);
+    await apply(150, "undo");
+    expect(await shape()).toEqual(before);
+    await db`update media_items set latitude = 55.5 where id = ${early}`;
+
+    // The redo: the same schema, everything visible again, and the rule works.
+    await apply(150, "do");
+    expect(await shape()).toEqual(after);
+    expect(await frame()).toEqual({ hidden: false, latitude: 55.5 });
+    expect(await placed()).toEqual({ hidden: true, latitude: 59.94 });
   },
   slow,
 );

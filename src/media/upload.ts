@@ -59,6 +59,11 @@ export type MediaItem = {
   // null as well for a frame that was kept.
   screening_rejected: boolean | null;
   screening_reason: string | null;
+  // Written by the person who brought the frame (`frame.ts`): hidden from
+  // everyone else and from the montage, and when they last set the place
+  // themselves — null while the place is the camera's (migration 150).
+  hidden: boolean;
+  place_edited_at: Date | null;
   created_at: Date;
 };
 

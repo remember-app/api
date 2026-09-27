@@ -4,6 +4,7 @@ import { afterAll, expect, test } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
 import { sql } from "../db.ts";
 import type { MemberRole } from "../memories/plugin.ts";
+import { materialLeft } from "../montages/material.ts";
 
 /**
  * «Сведения о кадре» (doc-02). Live against the real Postgres, as everything
@@ -602,6 +603,191 @@ test("the sheet hands out no key of the store and no address, and needs no stora
     if (original === undefined) delete process.env.R2_ENDPOINT;
     else process.env.R2_ENDPOINT = original;
   }
+
+  await app.close();
+});
+
+const edit = (app: App, token: string, memoryId: string, mediaId: string, payload: object) =>
+  app.inject(
+    as(token, { method: "PATCH", url: `/memories/${memoryId}/media/${mediaId}`, payload }),
+  );
+
+const galleryIds = async (app: App, token: string, memoryId: string) => {
+  const seen = await app.inject(as(token, { method: "GET", url: `/memories/${memoryId}/media` }));
+  expect(seen.statusCode).toBe(200);
+  return (seen.json() as { id: string }[]).map((item) => item.id);
+};
+
+test("a hidden frame stays with the one who brought it and leaves everyone else's gallery and the montage", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+
+  const hidden = await frame(memory.id, mark.user.id, { captured_at: "2026-09-02T19:00:00+03:00" });
+  const kept = await frame(memory.id, mark.user.id, { captured_at: "2026-09-02T20:00:00+03:00" });
+  const his = await frame(memory.id, organizer.user.id, {
+    captured_at: "2026-09-02T21:00:00+03:00",
+  });
+  await sql`update media_items set thumbnail_key = original_key where memory_id = ${memory.id}`;
+
+  // Nobody but the one who brought it: not the organizer, not a viewer.
+  for (const token of [organizer.token, viewer.token]) {
+    expect((await edit(app, token, memory.id, hidden, { hidden: true })).statusCode).toBe(404);
+  }
+  const hid = await edit(app, mark.token, memory.id, hidden, { hidden: true });
+  expect(hid.statusCode).toBe(200);
+  expect(hid.json()).toMatchObject({ id: hidden, hidden: true });
+
+  // His own gallery still has it, marked; nobody else's has it at all.
+  const own = await app.inject(
+    as(mark.token, { method: "GET", url: `/memories/${memory.id}/media` }),
+  );
+  expect(own.json().map((item: { id: string; hidden: boolean }) => [item.id, item.hidden])).toEqual(
+    [
+      [hidden, true],
+      [kept, false],
+      [his, false],
+    ],
+  );
+  for (const token of [organizer.token, viewer.token]) {
+    expect(await galleryIds(app, token, memory.id)).toEqual([kept, his]);
+    expect((await info(app, token, memory.id, hidden)).statusCode).toBe(404);
+    const download = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/media/${hidden}/download` }),
+    );
+    expect(download.statusCode).toBe(404);
+    const all = await app.inject(
+      as(token, { method: "GET", url: `/memories/${memory.id}/media/download` }),
+    );
+    expect(all.json().map((item: { id: string }) => item.id)).toEqual([kept, his]);
+  }
+  expect((await info(app, mark.token, memory.id, hidden)).statusCode).toBe(200);
+
+  // The card of the memory is the end of the gallery, and reads the same way.
+  const cardOf = async (token: string) => {
+    const listed = await app.inject(as(token, { method: "GET", url: "/memories" }));
+    return (listed.json() as { id: string; recent_thumbnail_urls: string[] }[]).find(
+      (card) => card.id === memory.id,
+    );
+  };
+  expect((await cardOf(organizer.token))?.recent_thumbnail_urls).toHaveLength(2);
+  expect((await cardOf(mark.token))?.recent_thumbnail_urls).toHaveLength(3);
+
+  // Out of the montage's material, even named by the organizer as «включить».
+  expect(await materialLeft(memory.id, [hidden], [])).toMatchObject({ ready: 2, people: 2 });
+
+  // Not a deletion: shown again, it is back where it was for everyone.
+  expect((await edit(app, mark.token, memory.id, hidden, { hidden: false })).statusCode).toBe(200);
+  expect(await galleryIds(app, organizer.token, memory.id)).toEqual([hidden, kept, his]);
+  expect(await materialLeft(memory.id, [], [])).toMatchObject({ ready: 3 });
+
+  await app.close();
+});
+
+test("the one who brought a frame corrects its date and place; the gallery follows the date and the camera does not win the place back", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const elsewhere = await createMemory(app, mark.token);
+
+  const wrong = await frame(memory.id, mark.user.id, {
+    captured_at: "2026-09-02T19:00:00+03:00",
+    latitude: 55.518,
+    longitude: 37.53,
+  });
+  const next = await frame(memory.id, mark.user.id, { captured_at: "2026-09-02T20:00:00+03:00" });
+  expect(await galleryIds(app, mark.token, memory.id)).toEqual([wrong, next]);
+
+  const fixed = await edit(app, mark.token, memory.id, wrong, {
+    captured_at: "2026-09-02T21:30:00+03:00",
+    latitude: 59.94,
+    longitude: 30.31,
+  });
+  expect(fixed.statusCode).toBe(200);
+  expect(fixed.json()).toEqual({
+    id: wrong,
+    hidden: false,
+    captured_at: "2026-09-02T18:30:00.000Z",
+    latitude: 59.94,
+    longitude: 30.31,
+  });
+  // The gallery is ordered by when a frame was shot — now the corrected time.
+  expect(await galleryIds(app, organizer.token, memory.id)).toEqual([next, wrong]);
+
+  // The worker reads the original again — a retry, the daily catch-up — and
+  // writes the whole row as it always does. The size lands; the place stays.
+  const probe = (id: string) => sql`
+    update media_items set width = 4032, height = 3024, latitude = 55.518, longitude = 37.53
+    where id = ${id}
+  `;
+  await probe(wrong);
+  const sheet = (await info(app, organizer.token, memory.id, wrong)).json() as Sheet;
+  expect(sheet).toMatchObject({ width: 4032, latitude: 59.94, longitude: 30.31 });
+
+  // Cleared by hand is kept cleared, just the same.
+  const cleared = await edit(app, mark.token, memory.id, wrong, {
+    latitude: null,
+    longitude: null,
+  });
+  expect(cleared.json()).toMatchObject({ latitude: null, longitude: null });
+  await probe(wrong);
+  expect((await info(app, mark.token, memory.id, wrong)).json()).toMatchObject({
+    latitude: null,
+    longitude: null,
+  });
+  // A frame nobody placed by hand is still the camera's to fill in.
+  await probe(next);
+  expect((await info(app, mark.token, memory.id, next)).json()).toMatchObject({
+    latitude: 55.518,
+    longitude: 37.53,
+  });
+
+  // What is not an edit, or not a whole one.
+  for (const payload of [
+    {},
+    { latitude: 1 },
+    { latitude: null, longitude: 5 },
+    { latitude: 91, longitude: 0 },
+    { captured_at: null },
+    { captured_at: "yesterday" },
+  ]) {
+    expect((await edit(app, mark.token, memory.id, wrong, payload)).statusCode).toBe(400);
+  }
+  // Not a uuid, never existed, and his own frame asked for through another memory.
+  const stray = await frame(elsewhere.id, mark.user.id);
+  for (const id of ["not-a-uuid", randomUUID(), stray]) {
+    const answer = await edit(app, mark.token, memory.id, id, { hidden: true });
+    expect(answer.statusCode).toBe(404);
+    expect(answer.body).toBe('{"error":"not found"}');
+  }
+
+  await app.close();
+});
+
+test("the gallery says which way a frame stands, apart from what kind it is", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const at = (minute: number) => `2026-09-02T19:0${minute}:00+03:00`;
+
+  await frame(memory.id, organizer.user.id, { captured_at: at(1), width: 4032, height: 3024 });
+  await frame(memory.id, organizer.user.id, { captured_at: at(2), width: 3024, height: 4032 });
+  await frame(memory.id, organizer.user.id, { captured_at: at(3), width: 1080, height: 1080 });
+  // Not measured yet.
+  await frame(memory.id, organizer.user.id, { captured_at: at(4) });
+
+  const seen = await app.inject(
+    as(organizer.token, { method: "GET", url: `/memories/${memory.id}/media` }),
+  );
+  expect(seen.json().map((item: { orientation: string | null }) => item.orientation)).toEqual([
+    "landscape",
+    "portrait",
+    "square",
+    null,
+  ]);
 
   await app.close();
 });

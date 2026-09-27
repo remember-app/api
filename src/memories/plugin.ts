@@ -87,6 +87,17 @@ export const mediaIdsSchema = () =>
 export const lowerIds = (ids: string[] = []) => [...new Set(ids.map((id) => id.toLowerCase()))];
 
 /**
+ * Whether this member sees the frame: everyone sees it unless the person who
+ * brought it has hidden it, and that person always does (migration 150).
+ * `frame` is the alias the query reads `media_items` under. One predicate for
+ * every read that shows frames to people — the gallery, both downloads, the
+ * frame sheet, the memory's card — because a copy of a visibility rule is the
+ * one that gets forgotten when the rule changes.
+ */
+export const seenBy = (frame: string, userId: string) =>
+  sql`(not ${sql(frame)}.hidden or ${sql(frame)}.uploaded_by = ${userId})`;
+
+/**
  * What a memory is called and when it happened. One object rather than two
  * copies: the edit route takes the very same fields under the very same rules
  * — «с теми же проверками, что при создании» — and a rule written twice is a
@@ -321,13 +332,16 @@ export async function cards(userId: string, memoryId?: string) {
       -- The chosen frame, joined rather than fetched per card for the reason
       -- the tail below is: one answer holds the whole screen. Null both when
       -- no cover is chosen and — impossible for as long as only a ready frame
-      -- can be chosen — when the one chosen has no derivative.
+      -- can be chosen — when the one chosen has no derivative. Null as well to
+      -- everyone but its owner once the frame is hidden: a cover is shown to
+      -- the whole memory, which is exactly what hiding takes a frame out of.
       cover.thumbnail_key as cover_thumbnail_key,
       array(
         select mi.thumbnail_key from media_items mi
         -- Ready and no earlier: the thumbnail key is the montage worker's to
         -- write, and before it there is nothing behind the column to sign.
         where mi.memory_id = m.id and mi.status = 'ready' and mi.thumbnail_key is not null
+          and ${seenBy("mi", userId)}
         -- The gallery's order (src/media/gallery.ts) read backwards: by when
         -- it was shot, falling back to arrival for a file that carries no
         -- date. «Последние кадры» must mean on the card what it means at the
@@ -337,7 +351,7 @@ export async function cards(userId: string, memoryId?: string) {
       ) as thumbnail_keys
     from memory_members mm
     join memories m on m.id = mm.memory_id
-    left join media_items cover on cover.id = m.cover_media_id
+    left join media_items cover on cover.id = m.cover_media_id and ${seenBy("cover", userId)}
     -- «7 из 9 уже скинули свои кадры» on the card (doc-06): the whole roster
     -- of each memory, counted here rather than asked for per card — the
     -- screen holds every memory one is in, and the roster route

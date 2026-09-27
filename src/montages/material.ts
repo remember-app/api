@@ -65,6 +65,10 @@ const crossfadeSeconds = 0.5;
  * and a `true` with no reason beside it would turn `<>` into `null` and drop a
  * frame the organizer asked for by name.
  *
+ * A frame its owner has hidden is out before any of that, and naming it in the
+ * order does not bring it back: hiding is stronger than «включить», as it is in
+ * the worker (migration 150, TASK-424).
+ *
  * The exclusions go into the `where` rather than being subtracted afterwards:
  * counted apart, a frame deleted between the two reads gives a count that no
  * longer holds every id — and a bare subtraction then puts a negative number in
@@ -83,7 +87,8 @@ export async function materialLeft(memoryId: string, include: string[], exclude:
         case when kind = 'video' then coalesce(duration_seconds, 0) else ${photoSeconds} end
       ), 0)::float8 as seconds
     from media_items
-    where memory_id = ${memoryId} and status = 'ready' and id <> all(${exclude}::uuid[])
+    where memory_id = ${memoryId} and status = 'ready' and not hidden
+      and id <> all(${exclude}::uuid[])
       and (screening_rejected is not true
         or (id = any(${include}::uuid[])
             and screening_reason is distinct from 'unreadable'))
