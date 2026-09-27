@@ -151,7 +151,7 @@ type Journal = {
   files: {
     id: string;
     kind: string;
-    uploaded_by: string;
+    uploaded_by: string | null;
     captured_at: string | null;
     duration_seconds: number | null;
     thumbnail_url: string | null;
@@ -537,6 +537,65 @@ test("ролика без журнала — пустой ответ, а не о
     expect(answer.stages).toHaveLength(1);
     expect(answer.entries.map((e) => e.thought)).toEqual(["Склеиваю"]);
   }
+
+  await app.close();
+});
+
+test("скрытый кадр: запись и место в ролике остаются, а миниатюру и автора видит только хозяин", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+  const hidden = await material(memory.id, mark.user.id);
+  const id = await montage(memory.id, organizer.user.id, "ready");
+  await entry(id, { stage: "directing", media_id: hidden, thought: "беру", decision: "take" });
+  await place(id, hidden, 4, 2);
+
+  const hid = await app.inject(
+    as(mark.token, {
+      method: "PATCH",
+      url: `/memories/${memory.id}/media/${hidden}`,
+      payload: { hidden: true },
+    }),
+  );
+  expect(hid.statusCode).toBe(200);
+  const [key] = await sql<{ thumbnail_key: string }[]>`
+    select thumbnail_key from media_items where id = ${hidden}
+  `;
+
+  // Всем, кроме хозяина, организатору тоже: прошлое не переписано — запись,
+  // её счётчик на этапе и место кадра в ролике на месте, — но лица у кадра нет.
+  for (const token of [organizer.token, viewer.token]) {
+    const answer = await journal(app, token, memory.id, id);
+    expect(answer.entries).toMatchObject([{ media_id: hidden, thought: "беру", decision: "take" }]);
+    expect(answer.files).toEqual([
+      {
+        id: hidden,
+        kind: "video",
+        uploaded_by: null,
+        captured_at: "2026-09-13T13:42:00.000Z",
+        duration_seconds: 12.5,
+        thumbnail_url: null,
+        places: [{ start_seconds: 4, duration_seconds: 2 }],
+      },
+    ]);
+    // Ни ссылкой, ни ключом, ни чьим-то id — нигде в ответе.
+    const body = (await read(app, token, memory.id, id)).body;
+    expect(body).not.toContain(key?.thumbnail_key);
+    expect(body).not.toContain(mark.user.id);
+  }
+
+  // Хозяину — как обычно.
+  const own = await journal(app, mark.token, memory.id, id);
+  expect(own.files[0]).toMatchObject({ id: hidden, uploaded_by: mark.user.id });
+  expect(new URL(own.files[0]?.thumbnail_url ?? "").pathname).toContain(key?.thumbnail_key);
+
+  // Снова показан — лицо вернулось ко всем.
+  await sql`update media_items set hidden = false where id = ${hidden}`;
+  const shown = await journal(app, organizer.token, memory.id, id);
+  expect(shown.files[0]).toMatchObject({ uploaded_by: mark.user.id });
+  expect(shown.files[0]?.thumbnail_url).not.toBeNull();
 
   await app.close();
 });
