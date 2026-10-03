@@ -7,8 +7,8 @@ import { seenBy, uuidPattern } from "../memories/plugin.ts";
 
 /**
  * Как собирался ролик, вживую и потом (doc-03: «Монтаж в прямом эфире» и
- * «Журнал хранится вместе с роликом»). Экраны: design/screens/MontageLive.html,
- * MontageLiveStage.html, SheetLiveFile.html, MontageLiveDone.html.
+ * «Журнал хранится вместе с роликом»). Экраны: design/screens/Film*.html и
+ * Journal*.html — экран ролика и журнал каждого этапа.
  *
  * Тот же уговор, что у `montages.ts`: схема — api, содержание — воркера. Он
  * заводит строку этапа и дописывает записи, api их только читает. Своя строка у
@@ -21,17 +21,11 @@ import { seenBy, uuidPattern } from "../memories/plugin.ts";
  */
 
 /**
- * Пять этапов пайплайна по порядку — тот же список, что в CHECK миграции 130,
+ * Пять этапов пайплайна по порядку — тот же список, что в CHECK миграции 180,
  * и порядок здесь и есть «этап 3 из 5» на экране. Коды, а не фразы: названия
  * приложение показывает на своём языке.
  */
-export const montageStages = [
-  "screening",
-  "understanding",
-  "directing",
-  "rhythm",
-  "assembly",
-] as const;
+export const montageStages = ["prep", "analysis", "directing", "music", "assembly"] as const;
 
 type StageKey = (typeof montageStages)[number];
 
@@ -49,6 +43,10 @@ export type StageRow = {
   taken_count: number;
   skipped_count: number;
   thought_count: number;
+  /** «Похожий уже есть 98» — сколько «мимо» по каждому коду причины. */
+  skipped_by_reason: Record<string, number>;
+  /** «Часть 2 — 19 кадров» — сколько «беру» в каждой части истории, по её номеру. */
+  taken_by_part: Record<string, number>;
 };
 
 type State = StageRow["state"];
@@ -68,6 +66,7 @@ type EntryRow = {
   source_from_seconds: number | null;
   source_to_seconds: number | null;
   labels: string[] | null;
+  details: Record<string, unknown> | null;
   focus_x: number | null;
   focus_y: number | null;
   focus_w: number | null;
@@ -221,7 +220,7 @@ export function journalRoutes(app: FastifyInstance) {
       // Куда идёт курсор — и это единственное, чем два направления
       // отличаются. Вперёд берётся порция, **ближайшая к курсору**, то есть
       // самые старые из новых: между двумя опросами может лечь больше записей,
-      // чем лимит (этап «разбор кадров» пишет по записи на файл разом), и
+      // чем лимит (анализ пишет по записи на файл разом), и
       // «самые новые 200» оставили бы посередине дыру, про которую клиенту
       // нечем узнать — он двигает курсор на наибольший отданный id, и всё, что
       // ниже, уже не запросит никогда. Назад и первая загрузка идут от свежих:
@@ -229,25 +228,37 @@ export function journalRoutes(app: FastifyInstance) {
       const forward = after !== undefined;
       const [stages, rows, viewers] = await Promise.all([
         // Пять строк на ролик: воркер заводит их разом, в `pending`, когда
-        // берёт ролик, а до того их нет вовсе. Счётчики «взял / мимо / мысли»
-        // api считает сам, по записям: воркер и так пишет каждую из них, а
-        // второй его счёт мог бы разойтись с первым.
+        // берёт ролик, а до того их нет вовсе. Счётчики «взял / мимо / мысли»,
+        // «мимо» по причинам и «взял» по частям истории api считает сам, по
+        // записям: воркер и так пишет каждую из них, а второй его счёт мог бы
+        // разойтись с первым. Записи ролика читаются одним проходом, дальше
+        // складывается их сводка.
         sql<StageRow[]>`
-          select s.stage, s.state, s.started_at, s.finished_at, s.eta_seconds,
-            s.done_count, s.total_count, s.outcome, s.updated_at,
-            coalesce(c.taken_count, 0) as taken_count,
-            coalesce(c.skipped_count, 0) as skipped_count,
-            coalesce(c.thought_count, 0) as thought_count
-          from montage_stages s
-          left join (
-            select stage,
-              count(*) filter (where decision = 'take')::int as taken_count,
-              count(*) filter (where decision = 'skip')::int as skipped_count,
-              count(*) filter (where decision is null)::int as thought_count
+          with counted as (
+            select stage, decision, reason, story_part, count(*)::int as n
             from montage_journal_entries
             where montage_id = ${montage.id}
-            group by stage
-          ) c on c.stage = s.stage
+            group by stage, decision, reason, story_part
+          )
+          select s.stage, s.state, s.started_at, s.finished_at, s.eta_seconds,
+            s.done_count, s.total_count, s.outcome, s.updated_at,
+            (select coalesce(sum(n), 0)::int from counted c
+              where c.stage = s.stage and c.decision = 'take') as taken_count,
+            (select coalesce(sum(n), 0)::int from counted c
+              where c.stage = s.stage and c.decision = 'skip') as skipped_count,
+            (select coalesce(sum(n), 0)::int from counted c
+              where c.stage = s.stage and c.decision is null) as thought_count,
+            (select coalesce(jsonb_object_agg(reason, n), '{}') from (
+              select reason, sum(n)::int as n from counted c
+              where c.stage = s.stage and c.decision = 'skip' and c.reason is not null
+              group by reason
+            ) r) as skipped_by_reason,
+            (select coalesce(jsonb_object_agg(story_part, n), '{}') from (
+              select story_part, sum(n)::int as n from counted c
+              where c.stage = s.stage and c.decision = 'take' and c.story_part is not null
+              group by story_part
+            ) p) as taken_by_part
+          from montage_stages s
           where s.montage_id = ${montage.id}
         `,
         // Порция от курсора. Лишняя запись сверх лимита — это и есть ответ на
@@ -256,7 +267,7 @@ export function journalRoutes(app: FastifyInstance) {
         // таблицу пишет воркер, а наружу уходит только контракт.
         sql<EntryRow[]>`
           select id, stage, media_id, thought, decision, reason, series_size, story_part,
-            story_part_title, source_from_seconds, source_to_seconds, labels,
+            story_part_title, source_from_seconds, source_to_seconds, labels, details,
             focus_x, focus_y, focus_w, focus_h, created_at
           from montage_journal_entries
           where montage_id = ${montage.id}
@@ -293,14 +304,15 @@ export function journalRoutes(app: FastifyInstance) {
       //
       // Кадр, который хозяин скрыл, из журнала не вычёркивается — ролик и
       // правда собран из него, и запись с местом в ролике остаётся. Но лица у
-      // него для остальных нет: ни миниатюры, ни того, кто его принёс, — по тому
-      // же `seenBy`, по которому его нет в их галерее. Хозяин видит свой кадр
-      // как обычно.
+      // него для остальных нет: ни миниатюры, ни имени файла, ни того, кто его
+      // принёс, — по тому же `seenBy`, по которому его нет в их галерее. Хозяин
+      // видит свой кадр как обычно.
       const mediaIds = [...new Set(entries.map((e) => e.media_id).filter((id) => id !== null))];
       const seen = seenBy("media_items", request.user.id);
       type File = {
         id: string;
         kind: "photo" | "video";
+        file_name: string | null;
         uploaded_by: string | null;
         captured_at: Date | null;
         duration_seconds: number | null;
@@ -326,7 +338,8 @@ export function journalRoutes(app: FastifyInstance) {
         mediaIds.length > 0
           ? await Promise.all([
               sql<File[]>`
-                select id, kind, case when ${seen} then uploaded_by end as uploaded_by,
+                select id, kind, case when ${seen} then file_name end as file_name,
+                  case when ${seen} then uploaded_by end as uploaded_by,
                   captured_at, duration_seconds,
                   case when ${seen} then thumbnail_key end as thumbnail_key
                 from media_items
@@ -354,10 +367,14 @@ export function journalRoutes(app: FastifyInstance) {
           ...file,
           thumbnail_url: configured && thumbnail_key ? await downloadUrl(thumbnail_key, ttl) : null,
           // Раскладки ещё нет или кадр в ролик не вошёл — пустой список, а не
-          // ошибка: пока идёт отсев, места нет ни у одного файла.
+          // ошибка: пока идут подготовка и анализ, места нет ни у одного файла.
           places: places
             .filter((place) => place.media_id === file.id)
             .map(({ start_seconds, duration_seconds }) => ({ start_seconds, duration_seconds })),
+          // Комментарии участников к кадру (doc-14, m-32) — свойство кадра, а
+          // не записи: живут и уходят вместе с ним, поэтому присоединяются здесь,
+          // как места. Хранилища у них ещё нет — список пуст у всех.
+          comments: [],
         })),
       );
 

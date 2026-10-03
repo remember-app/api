@@ -142,21 +142,21 @@ test("a montage still being assembled carries its five stages in the list", asyn
   // Assembled, and its journal stays beside it — «как собирался» is opened from
   // the journal route long after. The card on the feed still shows no scale.
   await assembled(done.id);
-  for (const key of ["screening", "understanding", "directing", "rhythm", "assembly"]) {
+  for (const key of ["prep", "analysis", "directing", "music", "assembly"]) {
     await stage(done.id, key, "done");
   }
 
   // Fell over on the third stage, which is the one the card paints red.
-  await stage(broken.id, "screening", "done");
-  await stage(broken.id, "understanding", "done");
+  await stage(broken.id, "prep", "done");
+  await stage(broken.id, "analysis", "done");
   await stage(broken.id, "directing", "failed");
   await fell(broken.id);
 
   // At it right now: two behind, one running — «2 из 5» on the feed. The last
   // two stages have no row yet; the worker writes each as it reaches it.
   await running(live.id);
-  await stage(live.id, "screening", "done");
-  await stage(live.id, "understanding", "done");
+  await stage(live.id, "prep", "done");
+  await stage(live.id, "analysis", "done");
   await stage(live.id, "directing", "running");
 
   // `fresh` is left as the order route left it: queued, and not picked up.
@@ -175,17 +175,17 @@ test("a montage still being assembled carries its five stages in the list", asyn
   // them; a stage with no row yet is `pending`, so the scale is five bars from
   // the very first second the worker is at it.
   expect(byId.get(live.id)?.stages).toEqual([
-    { stage: "screening", state: "done" },
-    { stage: "understanding", state: "done" },
+    { stage: "prep", state: "done" },
+    { stage: "analysis", state: "done" },
     { stage: "directing", state: "running" },
-    { stage: "rhythm", state: "pending" },
+    { stage: "music", state: "pending" },
     { stage: "assembly", state: "pending" },
   ]);
   expect(byId.get(broken.id)?.stages).toEqual([
-    { stage: "screening", state: "done" },
-    { stage: "understanding", state: "done" },
+    { stage: "prep", state: "done" },
+    { stage: "analysis", state: "done" },
     { stage: "directing", state: "failed" },
-    { stage: "rhythm", state: "pending" },
+    { stage: "music", state: "pending" },
     { stage: "assembly", state: "pending" },
   ]);
   // Ready — nothing to draw, even with all five rows standing behind it. Not
@@ -209,9 +209,12 @@ test("a montage still being assembled carries its five stages in the list", asyn
     "name",
     "template",
     "size_bytes",
+    "photos",
+    "videos",
     "video_url",
     "poster_url",
     "stages",
+    "queue",
     "watched_by",
   ]);
   expect(byId.get(done.id)).toMatchObject({ status: "ready", duration_seconds: 58.5 });
@@ -223,6 +226,75 @@ test("a montage still being assembled carries its five stages in the list", asyn
   for (const id of [live.id, broken.id, done.id, fresh.id]) {
     expect(await watching(id)).toBe(0);
   }
+
+  await app.close();
+});
+
+test("a queued montage says what was ordered, how many montages are ahead of it and how long the wait is", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  await material(memory.id, organizer.user.id, 2, "ready", "photo");
+  await material(memory.id, organizer.user.id, 3);
+
+  // What the order counted is on the row from the start — the numbers the
+  // summary showed — and the 60 seconds nobody asked for are its length.
+  const building = (await order(app, organizer.token, memory.id, {})).json();
+  expect(building).toMatchObject({ photos: 2, videos: 3, params: { target_seconds: 60 } });
+  const next = (await order(app, organizer.token, memory.id, {})).json();
+  const last = (await order(app, organizer.token, memory.id, {})).json();
+  const done = (await order(app, organizer.token, memory.id, {})).json();
+  await assembled(done.id);
+
+  // The worker is at the first one, and its journal says what is left: 3 min.
+  await running(building.id);
+  await sql`update jobs set status = 'running' where type = 'montage' and ref = ${building.id}`;
+  for (const [key, state, eta] of [
+    ["prep", "done", 0],
+    ["analysis", "running", 60],
+    ["directing", "pending", 30],
+    ["music", "pending", null],
+    ["assembly", "pending", 90],
+  ] as const) {
+    await sql`
+      insert into montage_stages (montage_id, stage, state, eta_seconds)
+      values (${building.id}, ${key}, ${state}, ${eta})
+    `;
+  }
+  // The other two wait at the very front of the queue — ahead of whatever the
+  // test files beside this one have queued since — and `next` was repeated: it
+  // has a second job, which is still one montage ahead of `last`, not two.
+  await sql`update jobs set run_after = '2000-01-01' where type = 'montage' and ref = ${next.id}`;
+  await sql`update jobs set run_after = '2000-01-02' where type = 'montage' and ref = ${last.id}`;
+  await sql`insert into jobs (type, ref, run_after) values ('montage', ${next.id}, '2000-01-03')`;
+
+  const items = (await list(app, organizer.token, memory.id)).json() as {
+    id: string;
+    queue: { ahead: number; starts_in_minutes: number; estimate_minutes: number | null } | null;
+  }[];
+  const queueOf = (id: string) => items.find((item) => item.id === id)?.queue;
+  // Five frames on a minute is 5 × 3 s + 60 × 1.5 s = 105 s — «около 2 минут»,
+  // the summary's own guess (`estimateMinutes`).
+  expect(queueOf(next.id)).toEqual({ ahead: 1, starts_in_minutes: 3, estimate_minutes: 2 });
+  // Behind the running one's 180 s and `next`'s 105 s: 285 s, up to 5 minutes.
+  expect(queueOf(last.id)).toEqual({ ahead: 2, starts_in_minutes: 5, estimate_minutes: 2 });
+  // Not waiting, nothing to say.
+  expect(queueOf(building.id)).toBeNull();
+  expect(queueOf(done.id)).toBeNull();
+
+  // A queued row with no job at all, ordered before the counts were written:
+  // no place in the queue to name, and no guess about what nobody counted.
+  const [orphan] = await sql<{ id: string }[]>`
+    insert into montages (memory_id, ordered_by, params)
+    values (${memory.id}, ${organizer.user.id}, ${sql.json({ target_seconds: 60 })})
+    returning id
+  `;
+  const again = (await list(app, organizer.token, memory.id)).json() as typeof items;
+  expect(again.find((item) => item.id === orphan?.id)).toMatchObject({
+    photos: null,
+    videos: null,
+    queue: null,
+  });
 
   await app.close();
 });
@@ -334,10 +406,10 @@ test("repeating a montage that fell starts its journal from a clean sheet", asyn
 
   // The worker's half of the failed attempt, on both.
   for (const id of [montage.id, neighbour.id]) {
-    await stage(id, "screening", "done");
-    await stage(id, "understanding", "failed");
-    await said(id, "screening", "212 из 214 годятся");
-    await said(id, "understanding", "не разобрал, кто в кадре");
+    await stage(id, "prep", "done");
+    await stage(id, "analysis", "failed");
+    await said(id, "prep", "214 кадров скачаны");
+    await said(id, "analysis", "не разобрал, кто в кадре");
     await fell(id);
   }
 
@@ -372,10 +444,10 @@ test("repeating a montage that fell starts its journal from a clean sheet", asyn
   const byId = new Map(items.map((item) => [item.id, item]));
   expect(byId.get(montage.id)?.stages).toBeNull();
   expect(byId.get(neighbour.id)?.stages).toEqual([
-    { stage: "screening", state: "done" },
-    { stage: "understanding", state: "failed" },
+    { stage: "prep", state: "done" },
+    { stage: "analysis", state: "failed" },
     { stage: "directing", state: "pending" },
-    { stage: "rhythm", state: "pending" },
+    { stage: "music", state: "pending" },
     { stage: "assembly", state: "pending" },
   ]);
 
@@ -383,8 +455,8 @@ test("repeating a montage that fell starts its journal from a clean sheet", asyn
   // over that is the old `409`, and it wipes nothing — a stray tap on the
   // button must not erase a montage that is being assembled right now.
   await running(montage.id);
-  await stage(montage.id, "screening", "running");
-  await said(montage.id, "screening", "беру всё заново");
+  await stage(montage.id, "prep", "running");
+  await said(montage.id, "prep", "беру всё заново");
   const refused = await retry(app, organizer.token, memory.id, montage.id);
   expect(refused.statusCode).toBe(409);
   expect(refused.json()).toEqual({ error: "montage has not failed", status: "processing" });

@@ -20,6 +20,13 @@ export type Montage = {
   duration_seconds: number | null;
   /** Bytes in the finished video. A string: postgres.js hands bigints over without rounding them. */
   size_bytes: string | null;
+  /**
+   * What the order counted — the photos and videos «итог перед монтажом» showed
+   * (`materialLeft`). Written by the order and by nothing else; null on a row
+   * ordered before it was (migration 180).
+   */
+  photos: number | null;
+  videos: number | null;
   params: {
     target_seconds?: number;
     /** What the organizer said the video is about, in their own words (doc-03). */

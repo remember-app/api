@@ -158,10 +158,10 @@ async function fill(memoryId: string, organizerId: string, contributorId: string
   if (!montage) throw new Error("the fixture wrote no montage row");
   await sql`
     insert into montage_journal_entries (montage_id, stage, media_id, thought, decision)
-    values (${montage.id}, 'screening', ${kept}, 'Беру: на нём все', 'take')
+    values (${montage.id}, 'prep', ${kept}, 'Беру: на нём все', 'take')
   `;
   await sql`
-    insert into montage_stages (montage_id, stage, state) values (${montage.id}, 'screening', 'done')
+    insert into montage_stages (montage_id, stage, state) values (${montage.id}, 'prep', 'done')
   `;
   await sql`
     insert into montage_viewers (montage_id, user_id) values (${montage.id}, ${contributorId})

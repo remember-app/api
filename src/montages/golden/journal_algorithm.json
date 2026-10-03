@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 2,
   "scenario": "algorithm",
   "montage": {
     "status": "ready",
@@ -99,121 +99,104 @@
   ],
   "stages": [
     {
-      "stage": "screening",
+      "stage": "prep",
       "state": "done",
       "started_at": "2026-01-01T00:00:00Z",
-      "finished_at": "2026-01-01T00:00:05Z",
+      "finished_at": "2026-01-01T00:00:04Z",
       "eta_seconds": 0,
-      "done_count": 12,
-      "total_count": 12,
+      "done_count": 11,
+      "total_count": 11,
       "outcome": {
-        "of": 12,
-        "kept": 8,
-        "reasons": {
-          "blur": 1,
-          "exposure": 2,
-          "unreadable": 1
+        "photos": 10,
+        "videos": 1,
+        "photos_done": 9,
+        "videos_done": 1,
+        "video_seconds": 8.0,
+        "bytes": 45056,
+        "senders": {
+          "u1": 11
         }
       },
-      "updated_at": "2026-01-01T00:00:05Z"
+      "updated_at": "2026-01-01T00:00:04Z"
     },
     {
-      "stage": "understanding",
+      "stage": "analysis",
       "state": "done",
-      "started_at": "2026-01-01T00:00:06Z",
-      "finished_at": "2026-01-01T00:00:14Z",
+      "started_at": "2026-01-01T00:00:05Z",
+      "finished_at": "2026-01-01T00:00:12Z",
       "eta_seconds": 0,
-      "done_count": 12,
-      "total_count": 12,
+      "done_count": 0,
+      "total_count": 0,
       "outcome": {
-        "of": 12,
-        "faces": 7,
-        "people": 3,
-        "animals": 1,
-        "described": 7
+        "described": 0,
+        "earlier": 6,
+        "people": 2
       },
-      "updated_at": "2026-01-01T00:00:14Z"
+      "updated_at": "2026-01-01T00:00:12Z"
     },
     {
       "stage": "directing",
       "state": "done",
-      "started_at": "2026-01-01T00:00:15Z",
-      "finished_at": "2026-01-01T00:00:25Z",
+      "started_at": "2026-01-01T00:00:13Z",
+      "finished_at": "2026-01-01T00:00:24Z",
       "eta_seconds": 0,
-      "done_count": 12,
-      "total_count": 12,
-      "outcome": {
-        "of": 12,
-        "frames": 4
-      },
-      "updated_at": "2026-01-01T00:00:25Z"
+      "done_count": 10,
+      "total_count": 10,
+      "outcome": {},
+      "updated_at": "2026-01-01T00:00:24Z"
     },
     {
-      "stage": "rhythm",
+      "stage": "music",
       "state": "done",
-      "started_at": "2026-01-01T00:00:26Z",
-      "finished_at": "2026-01-01T00:00:27Z",
+      "started_at": "2026-01-01T00:00:25Z",
+      "finished_at": "2026-01-01T00:00:26Z",
       "eta_seconds": 0,
-      "done_count": 4,
-      "total_count": 4,
+      "done_count": 3,
+      "total_count": 3,
       "outcome": {
+        "tracks": ["warm"],
         "bpm": 81,
-        "cuts": 3,
-        "track": ["warm"]
+        "cut_seconds": [2.03, 4.23, 7.23]
       },
-      "updated_at": "2026-01-01T00:00:27Z"
+      "updated_at": "2026-01-01T00:00:26Z"
     },
     {
       "stage": "assembly",
       "state": "done",
-      "started_at": "2026-01-01T00:00:28Z",
-      "finished_at": "2026-01-01T00:00:29Z",
+      "started_at": "2026-01-01T00:00:27Z",
+      "finished_at": "2026-01-01T00:00:28Z",
       "eta_seconds": 0,
       "done_count": 4,
       "total_count": 4,
       "outcome": {
-        "cuts": 3,
+        "percent": 100,
+        "steps": [
+          {
+            "step": "clips",
+            "state": "done"
+          },
+          {
+            "step": "sound",
+            "state": "done"
+          },
+          {
+            "step": "cover",
+            "state": "done"
+          },
+          {
+            "step": "file",
+            "state": "done"
+          }
+        ],
         "seconds": 10.1
       },
-      "updated_at": "2026-01-01T00:00:29Z"
+      "updated_at": "2026-01-01T00:00:28Z"
     }
   ],
   "entries": [
     {
       "n": 1,
-      "stage": "screening",
-      "media": "f9",
-      "thought": null,
-      "decision": "skip",
-      "reason": "exposure",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:01Z"
-    },
-    {
-      "n": 2,
-      "stage": "screening",
-      "media": "f10",
-      "thought": null,
-      "decision": "skip",
-      "reason": "exposure",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:02Z"
-    },
-    {
-      "n": 3,
-      "stage": "screening",
+      "stage": "prep",
       "media": "f11",
       "thought": null,
       "decision": "skip",
@@ -224,28 +207,13 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:03Z"
+      "created_at": "2026-01-01T00:00:02Z"
     },
     {
-      "n": 4,
-      "stage": "screening",
-      "media": "f12",
-      "thought": null,
-      "decision": "skip",
-      "reason": "blur",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:04Z"
-    },
-    {
-      "n": 5,
-      "stage": "understanding",
+      "n": 2,
+      "stage": "analysis",
       "media": "f1",
       "thought": "Бабушка смеётся",
       "decision": null,
@@ -256,12 +224,18 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-1"],
+      "details": {
+        "earlier": true,
+        "people": 1,
+        "mood": "Весело",
+        "shot": "Крупный"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:07Z"
+      "created_at": "2026-01-01T00:00:06Z"
     },
     {
-      "n": 6,
-      "stage": "understanding",
+      "n": 3,
+      "stage": "analysis",
       "media": "f2",
       "thought": "Бабушка смеётся, Лиза рядом",
       "decision": null,
@@ -272,12 +246,18 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-1", "человек-2"],
+      "details": {
+        "earlier": true,
+        "people": 2,
+        "mood": "Весело",
+        "shot": "Средний"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:08Z"
+      "created_at": "2026-01-01T00:00:07Z"
     },
     {
-      "n": 7,
-      "stage": "understanding",
+      "n": 4,
+      "stage": "analysis",
       "media": "f3",
       "thought": "Лиза обнимает бабушку",
       "decision": null,
@@ -288,12 +268,18 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-1", "человек-2"],
+      "details": {
+        "earlier": true,
+        "people": 2,
+        "mood": "Нежно",
+        "shot": "Средний"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:09Z"
+      "created_at": "2026-01-01T00:00:08Z"
     },
     {
-      "n": 8,
-      "stage": "understanding",
+      "n": 5,
+      "stage": "analysis",
       "media": "f4",
       "thought": "стол",
       "decision": null,
@@ -304,12 +290,17 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": {
+        "earlier": true,
+        "people": 0,
+        "shot": "Общий"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:10Z"
+      "created_at": "2026-01-01T00:00:09Z"
     },
     {
-      "n": 9,
-      "stage": "understanding",
+      "n": 6,
+      "stage": "analysis",
       "media": "f5",
       "thought": "тост",
       "decision": null,
@@ -320,28 +311,19 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-2", "животное-1"],
+      "details": {
+        "earlier": true,
+        "people": 1,
+        "mood": "Празднично",
+        "shot": "Средний",
+        "speech": "Тост"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:11Z"
+      "created_at": "2026-01-01T00:00:10Z"
     },
     {
-      "n": 10,
-      "stage": "understanding",
-      "media": "f8",
-      "thought": "чужой человек в кадре",
-      "decision": null,
-      "reason": null,
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": ["человек-3"],
-      "focus": null,
-      "created_at": "2026-01-01T00:00:12Z"
-    },
-    {
-      "n": 11,
-      "stage": "understanding",
+      "n": 7,
+      "stage": "analysis",
       "media": "f9",
       "thought": "тёмный кадр",
       "decision": null,
@@ -352,11 +334,16 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": {
+        "earlier": true,
+        "people": 0,
+        "light": "Темно"
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:13Z"
+      "created_at": "2026-01-01T00:00:11Z"
     },
     {
-      "n": 12,
+      "n": 8,
       "stage": "directing",
       "media": "f1",
       "thought": null,
@@ -368,11 +355,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:16Z"
+      "created_at": "2026-01-01T00:00:14Z"
     },
     {
-      "n": 13,
+      "n": 9,
       "stage": "directing",
       "media": "f4",
       "thought": null,
@@ -384,11 +372,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:17Z"
+      "created_at": "2026-01-01T00:00:15Z"
     },
     {
-      "n": 14,
+      "n": 10,
       "stage": "directing",
       "media": "f5",
       "thought": null,
@@ -400,43 +389,29 @@
       "source_from_seconds": 2.0,
       "source_to_seconds": 6.0,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:18Z"
+      "created_at": "2026-01-01T00:00:16Z"
     },
     {
-      "n": 15,
+      "n": 11,
       "stage": "directing",
       "media": "f9",
       "thought": null,
       "decision": "take",
-      "reason": "included",
+      "reason": null,
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:19Z"
+      "created_at": "2026-01-01T00:00:17Z"
     },
     {
-      "n": 16,
-      "stage": "directing",
-      "media": "f8",
-      "thought": null,
-      "decision": "skip",
-      "reason": "excluded",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:20Z"
-    },
-    {
-      "n": 17,
+      "n": 12,
       "stage": "directing",
       "media": "f2",
       "thought": null,
@@ -448,11 +423,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:21Z"
+      "created_at": "2026-01-01T00:00:18Z"
     },
     {
-      "n": 18,
+      "n": 13,
       "stage": "directing",
       "media": "f3",
       "thought": null,
@@ -464,40 +440,77 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:22Z"
+      "created_at": "2026-01-01T00:00:19Z"
     },
     {
-      "n": 19,
+      "n": 14,
       "stage": "directing",
       "media": "f6",
       "thought": null,
       "decision": "skip",
-      "reason": "no_room",
+      "reason": "left_out",
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:23Z"
+      "created_at": "2026-01-01T00:00:20Z"
     },
     {
-      "n": 20,
+      "n": 15,
       "stage": "directing",
       "media": "f7",
       "thought": null,
       "decision": "skip",
-      "reason": "no_room",
+      "reason": "left_out",
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:24Z"
+      "created_at": "2026-01-01T00:00:21Z"
+    },
+    {
+      "n": 16,
+      "stage": "directing",
+      "media": "f10",
+      "thought": null,
+      "decision": "skip",
+      "reason": "left_out",
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:22Z"
+    },
+    {
+      "n": 17,
+      "stage": "directing",
+      "media": "f12",
+      "thought": null,
+      "decision": "skip",
+      "reason": "left_out",
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:23Z"
     }
   ],
   "layout": [

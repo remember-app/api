@@ -19,15 +19,15 @@ import type { Order } from "./order.ts";
  * the worker to it: the queue may be busy, a neural network may be slow, a
  * montage may fall over outright. The two rates are the worker's own per-stage
  * estimates summed (`journal.py`, `ESTIMATE`), so this and the wait its journal
- * first shows agree — they move together or not at all.
+ * first shows agree — they move together or not at all. The queue
+ * (`queue.ts`) counts the montages ahead with the same guess.
  */
 const secondsPerFrame = 3;
 const secondsPerRenderedSecond = 1.5;
-const estimateMinutes = (frames: number, targetSeconds: number) =>
-  Math.max(
-    1,
-    Math.ceil((frames * secondsPerFrame + targetSeconds * secondsPerRenderedSecond) / 60),
-  );
+export const estimateSeconds = (frames: number, targetSeconds: number) =>
+  frames * secondsPerFrame + targetSeconds * secondsPerRenderedSecond;
+export const estimateMinutes = (frames: number, targetSeconds: number) =>
+  Math.max(1, Math.ceil(estimateSeconds(frames, targetSeconds) / 60));
 
 /** The same order, weighed and answered without being placed. */
 export const orderSummary = ({ params, left }: Order) => ({
