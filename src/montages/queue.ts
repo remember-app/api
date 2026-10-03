@@ -36,6 +36,9 @@ export async function queueFor(montageIds: string[]) {
   >`
     select m.id, m.photos + m.videos as frames,
       coalesce((m.params->>'target_seconds')::float8, 0) as target_seconds,
+      -- having count(*) > 0, а не только coalesce: у ролика, до которого воркер
+      -- не дошёл, строк этапа нет вовсе, и без него он ждал бы ноль — то есть
+      -- «начинайся сейчас». Пусто значит «оценки нет», и wait ниже берёт прикидку.
       (select coalesce(sum(s.eta_seconds) filter (where s.state <> 'done'), 0)::float8
          from montage_stages s where s.montage_id = m.id
          having count(*) > 0) as left_seconds
