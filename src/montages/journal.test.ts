@@ -72,11 +72,11 @@ async function material(memoryId: string, uploadedBy: string) {
   const [row] = await sql<{ id: string }[]>`
     insert into media_items (
       memory_id, uploaded_by, kind, status, original_key, thumbnail_key,
-      size_bytes, captured_at, duration_seconds
+      size_bytes, captured_at, duration_seconds, file_name
     )
     values (
       ${memoryId}, ${uploadedBy}, 'video', 'ready', ${`originals/${randomUUID()}`},
-      ${`thumbs/${randomUUID()}.jpg`}, 4096, '2026-09-13T16:42:00+03:00', 12.5
+      ${`thumbs/${randomUUID()}.jpg`}, 4096, '2026-09-13T16:42:00+03:00', 12.5, 'VID_0412.MOV'
     )
     returning id
   `;
@@ -131,6 +131,8 @@ type Journal = {
     taken_count: number;
     skipped_count: number;
     thought_count: number;
+    skipped_by_reason: Record<string, number>;
+    taken_by_part: Record<string, number>;
   }[];
   entries: {
     id: number;
@@ -145,17 +147,20 @@ type Journal = {
     source_from_seconds: number | null;
     source_to_seconds: number | null;
     labels: string[] | null;
+    details: Record<string, unknown> | null;
     focus: { x: number; y: number; w: number; h: number } | null;
   }[];
   has_more: boolean;
   files: {
     id: string;
     kind: string;
+    file_name: string | null;
     uploaded_by: string | null;
     captured_at: string | null;
     duration_seconds: number | null;
     thumbnail_url: string | null;
     places: { start_seconds: number; duration_seconds: number }[];
+    comments: unknown[];
   }[];
   viewers: { id: string; username: string | null }[];
 };
@@ -183,8 +188,8 @@ test("любой участник читает журнал; чужой и не�
   const stranger = await signIn(app, email());
 
   const id = await montage(memory.id, organizer.user.id);
-  await stage(id, "screening", { state: "done", done_count: 214, total_count: 214 });
-  await entry(id, { stage: "screening", thought: "Смотрю материал" });
+  await stage(id, "prep", { state: "done", done_count: 214, total_count: 214 });
+  await entry(id, { stage: "prep", thought: "Смотрю материал" });
 
   // Зритель читает наравне с организатором: матрица даёт ему «смотреть ролики».
   for (const token of [organizer.token, contributor.token, viewer.token]) {
@@ -221,49 +226,74 @@ test("этапы идут по порядку пайплайна, со свои�
   const memory = await createMemory(app, organizer.token);
   const id = await montage(memory.id, organizer.user.id);
 
-  // Заведены вразнобой — порядок в ответе задаёт пайплайн, а не воркер.
+  // Заведены вразнобой — порядок в ответе задаёт пайплайн, а не воркер. Итог
+  // идущего этапа воркер пишет по ходу, и он уходит как есть.
+  const parts = [
+    { title: "Сборы", from_seconds: 0, to_seconds: 24 },
+    { title: "Церемония", from_seconds: 24, to_seconds: 58 },
+  ];
   await stage(id, "directing", {
     state: "running",
     eta_seconds: 480,
     done_count: 61,
     total_count: 212,
-    outcome: sql.json({ parts: 3 }),
+    outcome: sql.json({ parts }),
   });
-  await stage(id, "screening", {
+  const prepared = { photos: 168, videos: 46, photos_done: 168, videos_done: 45 };
+  await stage(id, "prep", {
     state: "done",
-    done_count: 214,
+    done_count: 213,
     total_count: 214,
-    outcome: sql.json({ kept: 212, of: 214 }),
+    outcome: sql.json(prepared),
   });
+  // Остановился — с причиной кодом.
+  await stage(id, "music", { state: "failed", outcome: sql.json({ stopped: "track_unreadable" }) });
 
-  await entry(id, { stage: "screening", decision: "skip", reason: "blur" });
+  await entry(id, { stage: "prep", decision: "skip", reason: "unreadable" });
   await entry(id, { stage: "directing", decision: "take", story_part: 2 });
-  await entry(id, { stage: "directing", decision: "take", series_size: 4 });
+  await entry(id, { stage: "directing", decision: "take", story_part: 2, series_size: 4 });
+  await entry(id, { stage: "directing", decision: "take", story_part: 1 });
+  await entry(id, { stage: "directing", decision: "take" });
+  await entry(id, { stage: "directing", decision: "skip", reason: "duplicate", story_part: 2 });
   await entry(id, { stage: "directing", decision: "skip", reason: "duplicate" });
-  await entry(id, { stage: "directing", thought: "План: три части" });
+  await entry(id, { stage: "directing", decision: "skip", reason: "left_out" });
+  await entry(id, { stage: "directing", decision: "skip" });
+  await entry(id, { stage: "directing", thought: "План: две части", story_part: 1 });
 
   const answer = await journal(app, organizer.token, memory.id, id);
-  expect(answer.stages.map((s) => s.stage)).toEqual(["screening", "directing"]);
+  expect(answer.stages.map((s) => s.stage)).toEqual(["prep", "directing", "music"]);
   expect(answer.stages[0]).toMatchObject({
     state: "done",
-    done_count: 214,
+    done_count: 213,
     total_count: 214,
-    outcome: { kept: 212, of: 214 },
+    outcome: prepared,
     taken_count: 0,
     skipped_count: 1,
     thought_count: 0,
+    skipped_by_reason: { unreadable: 1 },
+    taken_by_part: {},
   });
   // «Взял / мимо / мысли» считает api по записям: чистая мысль — та, у которой
-  // решения нет вовсе.
+  // решения нет вовсе. По причинам — только «мимо» с причиной, по частям —
+  // только «беру» с частью: мысль о части и «мимо» из части туда не идут.
   expect(answer.stages[1]).toMatchObject({
     state: "running",
     eta_seconds: 480,
     done_count: 61,
     total_count: 212,
-    outcome: { parts: 3 },
-    taken_count: 2,
-    skipped_count: 1,
+    outcome: { parts },
+    taken_count: 4,
+    skipped_count: 4,
     thought_count: 1,
+    skipped_by_reason: { duplicate: 2, left_out: 1 },
+    taken_by_part: { "1": 1, "2": 2 },
+  });
+  expect(answer.stages[2]).toMatchObject({
+    state: "failed",
+    outcome: { stopped: "track_unreadable" },
+    taken_count: 0,
+    skipped_by_reason: {},
+    taken_by_part: {},
   });
 
   await app.close();
@@ -280,7 +310,7 @@ test("записи идут порциями от курсора, свежие �
   for (let n = 0; n < 7; n++) {
     ids.push(
       await entry(id, {
-        stage: n < 3 ? "screening" : "directing",
+        stage: n < 3 ? "prep" : "directing",
         thought: `мысль ${n}`,
         ...(n === 6 ? { media_id: mediaId } : {}),
       }),
@@ -338,7 +368,7 @@ test("записи идут порциями от курсора, свежие �
     organizer.token,
     memory.id,
     id,
-    `?after=${ids[0]}&stage=screening&limit=1`,
+    `?after=${ids[0]}&stage=prep&limit=1`,
   );
   expect(staged.entries.map((e) => e.id)).toEqual([ids[1]]);
   expect(staged.has_more).toBe(true);
@@ -347,13 +377,13 @@ test("записи идут порциями от курсора, свежие �
     organizer.token,
     memory.id,
     id,
-    `?after=${ids[1]}&stage=screening&limit=1`,
+    `?after=${ids[1]}&stage=prep&limit=1`,
   );
   expect(stagedNext.entries.map((e) => e.id)).toEqual([ids[2]]);
   expect(stagedNext.has_more).toBe(false);
 
   // Сужения: один этап и один файл.
-  const stageOnly = await journal(app, organizer.token, memory.id, id, "?stage=screening");
+  const stageOnly = await journal(app, organizer.token, memory.id, id, "?stage=prep");
   expect(stageOnly.entries.map((e) => e.id)).toEqual([ids[2], ids[1], ids[0]]);
   const fileOnly = await journal(app, organizer.token, memory.id, id, `?media_id=${mediaId}`);
   expect(fileOnly.entries.map((e) => e.id)).toEqual([ids[6]]);
@@ -411,14 +441,17 @@ test("запись несёт всё, что режиссёр сказал, а �
   // Ровно контракт: ролик, про который и так спросили, в каждой записи не едет.
   expect(answer.entries[0]).not.toHaveProperty("montage_id");
 
-  // Только файл из отданной порции — второй в неё не попал.
+  // Только файл из отданной порции — второй в неё не попал. Комментариев к
+  // кадрам ещё нет (m-32), но поле есть всегда.
   expect(answer.files).toHaveLength(1);
   const [file] = answer.files;
   expect(file).toMatchObject({
     id: shown,
     kind: "video",
+    file_name: "VID_0412.MOV",
     uploaded_by: organizer.user.id,
     duration_seconds: 12.5,
+    comments: [],
   });
   expect(file?.captured_at).toBe("2026-09-13T13:42:00.000Z");
   // Миниатюра уходит подписанной ссылкой, как в галерее, и никогда ключом.
@@ -429,6 +462,58 @@ test("запись несёт всё, что режиссёр сказал, а �
   expect(url.pathname).toContain(key?.thumbnail_key);
   expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
   expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+
+  await app.close();
+});
+
+test("описание кадра и звук части лежат в `details` записи и уходят как есть", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const clip = await material(memory.id, organizer.user.id);
+  const id = await montage(memory.id, organizer.user.id);
+
+  const described = {
+    earlier: true,
+    people: 2,
+    place: "Банкетный зал",
+    light: "Вечер, тёплые гирлянды",
+    mood: "Нежно, торжественно",
+    shot: "Общий → средний",
+    camera: "Плавно обходит пару по кругу",
+    speech: "Почти нет: музыка зала, смех",
+    moments: [{ seconds: 7, text: "Пару поднимают на руки" }],
+    text: "Первый танец: пара медленно кружится в центре зала, гости стоят по кругу.",
+  };
+  await entry(id, {
+    stage: "analysis",
+    media_id: clip,
+    thought: "Первый танец в центре зала",
+    labels: ["человек-1", "человек-2"],
+    details: sql.json(described),
+  });
+  await entry(id, {
+    stage: "music",
+    story_part: 2,
+    story_part_title: "Церемония",
+    thought: "Здесь говорят клятвы — музыка тише",
+    details: sql.json({ music: 0.3, live: 0.75 }),
+  });
+  await entry(id, { stage: "directing", media_id: clip, decision: "take" });
+
+  const answer = await journal(app, organizer.token, memory.id, id);
+  expect(answer.entries.map((e) => e.details)).toEqual([
+    null,
+    { music: 0.3, live: 0.75 },
+    described,
+  ]);
+
+  // Не объект или больше потолка — база не примет: обрезать по контракту — дело воркера.
+  for (const details of [[1, 2], { text: "я".repeat(4001) }]) {
+    await expect(
+      entry(id, { stage: "analysis", media_id: clip, details: sql.json(details) }),
+    ).rejects.toThrow(/montage_journal_entries_details_check/);
+  }
 
   await app.close();
 });
@@ -445,7 +530,7 @@ test("у файла видно, где он лёг в ролике; не вош�
 
   for (const mediaId of [twice, once, cut]) {
     await entry(id, {
-      stage: "rhythm",
+      stage: "directing",
       media_id: mediaId,
       decision: mediaId === cut ? "skip" : "take",
     });
@@ -471,7 +556,7 @@ test("у файла видно, где он лёг в ролике; не вош�
   // Раскладки ещё нет вовсе — то же пустое поле: отсев идёт раньше, чем ролик
   // разложен, и сведения о файле читаются и без мест.
   const fresh = await montage(memory.id, organizer.user.id);
-  await entry(fresh, { stage: "screening", media_id: twice, decision: "take" });
+  await entry(fresh, { stage: "prep", media_id: twice, decision: "take" });
   expect((await journal(app, organizer.token, memory.id, fresh)).files[0]).toMatchObject({
     id: twice,
     places: [],
@@ -573,11 +658,13 @@ test("скрытый кадр: запись и место в ролике ост
       {
         id: hidden,
         kind: "video",
+        file_name: null,
         uploaded_by: null,
         captured_at: "2026-09-13T13:42:00.000Z",
         duration_seconds: 12.5,
         thumbnail_url: null,
         places: [{ start_seconds: 4, duration_seconds: 2 }],
+        comments: [],
       },
     ]);
     // Ни ссылкой, ни ключом, ни чьим-то id — нигде в ответе.
@@ -588,7 +675,11 @@ test("скрытый кадр: запись и место в ролике ост
 
   // Хозяину — как обычно.
   const own = await journal(app, mark.token, memory.id, id);
-  expect(own.files[0]).toMatchObject({ id: hidden, uploaded_by: mark.user.id });
+  expect(own.files[0]).toMatchObject({
+    id: hidden,
+    file_name: "VID_0412.MOV",
+    uploaded_by: mark.user.id,
+  });
   expect(new URL(own.files[0]?.thumbnail_url ?? "").pathname).toContain(key?.thumbnail_key);
 
   // Снова показан — лицо вернулось ко всем.
@@ -606,8 +697,8 @@ test("ушёл ролик — ушёл журнал; ушёл кадр — за�
   const memory = await createMemory(app, organizer.token);
   const mediaId = await material(memory.id, organizer.user.id);
   const id = await montage(memory.id, organizer.user.id);
-  await stage(id, "screening", { state: "done" });
-  await entry(id, { stage: "screening", media_id: mediaId, decision: "take" });
+  await stage(id, "prep", { state: "done" });
+  await entry(id, { stage: "prep", media_id: mediaId, decision: "take" });
 
   // Кадр удалён обычным путём — запись о нём остаётся, просто без сведений.
   const deleted = await app.inject(

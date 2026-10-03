@@ -73,7 +73,7 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -84,10 +84,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -98,7 +100,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -112,10 +116,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -126,7 +132,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -140,7 +148,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -175,21 +185,25 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "running",
               "started_at": "2026-01-01T00:00:00.000Z",
               "finished_at": null,
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "eta_seconds": 18,
+              "done_count": 0,
+              "total_count": 11,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:04.000Z",
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -200,7 +214,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -214,10 +230,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -228,7 +246,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -242,28 +262,14 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000012",
-              "thought": null,
-              "decision": "skip",
-              "reason": "blur",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:04.000Z",
-              "id": 4,
-              "focus": null
-            },
-            {
-              "stage": "screening",
+              "stage": "prep",
               "media_id": "00000000-0000-4000-8000-f00000000011",
               "thought": null,
               "decision": "skip",
@@ -274,39 +280,8 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:03.000Z",
-              "id": 3,
-              "focus": null
-            },
-            {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000010",
-              "thought": null,
-              "decision": "skip",
-              "reason": "exposure",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
+              "details": null,
               "created_at": "2026-01-01T00:00:02.000Z",
-              "id": 2,
-              "focus": null
-            },
-            {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000009",
-              "thought": null,
-              "decision": "skip",
-              "reason": "exposure",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:01.000Z",
               "id": 1,
               "focus": null
             }
@@ -314,40 +289,15 @@
           "has_more": false,
           "files": [
             {
-              "id": "00000000-0000-4000-8000-f00000000009",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:06:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000010",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:07:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000010.jpg?signed",
-              "places": []
-            },
-            {
               "id": "00000000-0000-4000-8000-f00000000011",
               "kind": "photo",
+              "file_name": "f11.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:08:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000011.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000012",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:09:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000012.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             }
           ],
           "viewers": [
@@ -366,7 +316,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 4,
+          "after": 1,
           "limit": 4
         }
       },
@@ -379,29 +329,25 @@
           },
           "stages": [
             {
-              "stage": "screening",
-              "state": "done",
+              "stage": "prep",
+              "state": "running",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
-              },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": null,
+              "eta_seconds": 2,
+              "done_count": 5,
+              "total_count": 11,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:01.818Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -412,7 +358,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -426,10 +374,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -440,7 +390,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -454,7 +406,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -476,7 +430,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 4,
+          "after": 1,
           "limit": 4
         }
       },
@@ -489,40 +443,48 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
-              "state": "running",
-              "started_at": "2026-01-01T00:00:06.000Z",
+              "stage": "analysis",
+              "state": "pending",
+              "started_at": null,
               "finished_at": null,
               "eta_seconds": 10,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": null,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:06.000Z",
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 5
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -536,10 +498,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -550,7 +514,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -564,114 +530,14 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
-          "entries": [
-            {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000004",
-              "thought": "стол",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:10.000Z",
-              "id": 8,
-              "focus": null
-            },
-            {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000003",
-              "thought": "Лиза обнимает бабушку",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": ["человек-1", "человек-2"],
-              "created_at": "2026-01-01T00:00:09.000Z",
-              "id": 7,
-              "focus": null
-            },
-            {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000002",
-              "thought": "Бабушка смеётся, Лиза рядом",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": ["человек-1", "человек-2"],
-              "created_at": "2026-01-01T00:00:08.000Z",
-              "id": 6,
-              "focus": null
-            },
-            {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000001",
-              "thought": "Бабушка смеётся",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": ["человек-1"],
-              "created_at": "2026-01-01T00:00:07.000Z",
-              "id": 5,
-              "focus": null
-            }
-          ],
-          "has_more": true,
-          "files": [
-            {
-              "id": "00000000-0000-4000-8000-f00000000001",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:00:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000001.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000002",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:00:01.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000003",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:00:02.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000003.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000004",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:01:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000004.jpg?signed",
-              "places": []
-            }
-          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
           "viewers": [
             {
               "id": "00000000-0000-4000-8000-c00000000001",
@@ -688,7 +554,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 8,
+          "after": 1,
           "limit": 4
         }
       },
@@ -701,40 +567,48 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "running",
-              "started_at": "2026-01-01T00:00:06.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
               "finished_at": null,
               "eta_seconds": 10,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": 0,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:06.000Z",
+              "updated_at": "2026-01-01T00:00:05.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 5
+              "thought_count": 5,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -748,10 +622,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -762,7 +638,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -776,12 +654,271 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
-              "stage": "understanding",
+              "stage": "analysis",
+              "media_id": "00000000-0000-4000-8000-f00000000004",
+              "thought": "стол",
+              "decision": null,
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": {
+                "shot": "Общий",
+                "people": 0,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:09.000Z",
+              "id": 5,
+              "focus": null
+            },
+            {
+              "stage": "analysis",
+              "media_id": "00000000-0000-4000-8000-f00000000003",
+              "thought": "Лиза обнимает бабушку",
+              "decision": null,
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": ["человек-1", "человек-2"],
+              "details": {
+                "mood": "Нежно",
+                "shot": "Средний",
+                "people": 2,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:08.000Z",
+              "id": 4,
+              "focus": null
+            },
+            {
+              "stage": "analysis",
+              "media_id": "00000000-0000-4000-8000-f00000000002",
+              "thought": "Бабушка смеётся, Лиза рядом",
+              "decision": null,
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": ["человек-1", "человек-2"],
+              "details": {
+                "mood": "Весело",
+                "shot": "Средний",
+                "people": 2,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:07.000Z",
+              "id": 3,
+              "focus": null
+            },
+            {
+              "stage": "analysis",
+              "media_id": "00000000-0000-4000-8000-f00000000001",
+              "thought": "Бабушка смеётся",
+              "decision": null,
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": ["человек-1"],
+              "details": {
+                "mood": "Весело",
+                "shot": "Крупный",
+                "people": 1,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:06.000Z",
+              "id": 2,
+              "focus": null
+            }
+          ],
+          "has_more": true,
+          "files": [
+            {
+              "id": "00000000-0000-4000-8000-f00000000001",
+              "kind": "photo",
+              "file_name": "f1.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
+              "captured_at": "2025-12-31T18:00:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000001.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000002",
+              "kind": "photo",
+              "file_name": "f2.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:00:01.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000003",
+              "kind": "photo",
+              "file_name": "f3.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
+              "captured_at": "2025-12-31T18:00:02.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000003.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000004",
+              "kind": "photo",
+              "file_name": "f4.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:01:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000004.jpg?signed",
+              "places": [],
+              "comments": []
+            }
+          ],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_5",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 5,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "prep",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
+              "eta_seconds": 0,
+              "done_count": 11,
+              "total_count": 11,
+              "outcome": {
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
+              },
+              "updated_at": "2026-01-01T00:00:04.000Z",
+              "taken_count": 0,
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "analysis",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": null,
+              "eta_seconds": 10,
+              "done_count": 0,
+              "total_count": 0,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:05.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 5,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "directing",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "music",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 3,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 14,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            }
+          ],
+          "entries": [
+            {
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000005",
               "thought": "тост",
               "decision": null,
@@ -792,8 +929,15 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-2", "животное-1"],
-              "created_at": "2026-01-01T00:00:11.000Z",
-              "id": 9,
+              "details": {
+                "mood": "Празднично",
+                "shot": "Средний",
+                "people": 1,
+                "speech": "Тост",
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:10.000Z",
+              "id": 6,
               "focus": null
             }
           ],
@@ -802,11 +946,13 @@
             {
               "id": "00000000-0000-4000-8000-f00000000005",
               "kind": "video",
+              "file_name": "f5.mov",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:02:00.000Z",
               "duration_seconds": 8,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000005.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             }
           ],
           "viewers": [
@@ -846,9 +992,12 @@
             "name": "Ролик на 0:00",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": null,
             "poster_url": null,
             "stages": null,
+            "queue": null,
             "watched_by": []
           },
           {
@@ -873,15 +1022,17 @@
             "name": "Ролик на 0:10",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": null,
             "poster_url": null,
             "stages": [
               {
-                "stage": "screening",
+                "stage": "prep",
                 "state": "done"
               },
               {
-                "stage": "understanding",
+                "stage": "analysis",
                 "state": "running"
               },
               {
@@ -889,7 +1040,7 @@
                 "state": "pending"
               },
               {
-                "stage": "rhythm",
+                "stage": "music",
                 "state": "pending"
               },
               {
@@ -897,6 +1048,7 @@
                 "state": "pending"
               }
             ],
+            "queue": null,
             "watched_by": []
           },
           {
@@ -918,22 +1070,25 @@
             "name": "Ролик на 0:30",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": "http://recorded.test:9000/recorded/videos/old.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/old.jpg?signed",
             "stages": null,
+            "queue": null,
             "watched_by": []
           }
         ]
       }
     },
     {
-      "name": "live_poll_5",
+      "name": "live_poll_6",
       "request": {
         "as": "organizer",
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 9,
+          "after": 6,
           "limit": 4
         }
       },
@@ -946,40 +1101,48 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "running",
-              "started_at": "2026-01-01T00:00:06.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
               "finished_at": null,
               "eta_seconds": 10,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": 0,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:06.000Z",
+              "updated_at": "2026-01-01T00:00:05.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
@@ -993,10 +1156,12 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -1007,7 +1172,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -1021,12 +1188,14 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000009",
               "thought": "тёмный кадр",
               "decision": null,
@@ -1037,164 +1206,30 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:13.000Z",
-              "id": 11,
-              "focus": null
-            },
-            {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000008",
-              "thought": "чужой человек в кадре",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": ["человек-3"],
-              "created_at": "2026-01-01T00:00:12.000Z",
-              "id": 10,
+              "details": {
+                "light": "Темно",
+                "people": 0,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:11.000Z",
+              "id": 7,
               "focus": null
             }
           ],
           "has_more": false,
           "files": [
             {
-              "id": "00000000-0000-4000-8000-f00000000008",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:05:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000008.jpg?signed",
-              "places": []
-            },
-            {
               "id": "00000000-0000-4000-8000-f00000000009",
               "kind": "photo",
+              "file_name": "f9.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:06:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             }
           ],
-          "viewers": [
-            {
-              "id": "00000000-0000-4000-8000-c00000000001",
-              "username": "anya"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "live_poll_6",
-      "request": {
-        "as": "organizer",
-        "method": "GET",
-        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
-        "query": {
-          "after": 11,
-          "limit": 4
-        }
-      },
-      "response": {
-        "status": 200,
-        "body": {
-          "montage": {
-            "id": "00000000-0000-4000-8000-b00000000001",
-            "status": "processing"
-          },
-          "stages": [
-            {
-              "stage": "screening",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
-              },
-              "updated_at": "2026-01-01T00:00:05.000Z",
-              "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
-            },
-            {
-              "stage": "understanding",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
-              },
-              "updated_at": "2026-01-01T00:00:14.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 7
-            },
-            {
-              "stage": "directing",
-              "state": "pending",
-              "started_at": null,
-              "finished_at": null,
-              "eta_seconds": 6,
-              "done_count": 0,
-              "total_count": null,
-              "outcome": {},
-              "updated_at": "2026-01-01T00:00:00.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 0
-            },
-            {
-              "stage": "rhythm",
-              "state": "pending",
-              "started_at": null,
-              "finished_at": null,
-              "eta_seconds": 3,
-              "done_count": 0,
-              "total_count": null,
-              "outcome": {},
-              "updated_at": "2026-01-01T00:00:00.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 0
-            },
-            {
-              "stage": "assembly",
-              "state": "pending",
-              "started_at": null,
-              "finished_at": null,
-              "eta_seconds": 14,
-              "done_count": 0,
-              "total_count": null,
-              "outcome": {},
-              "updated_at": "2026-01-01T00:00:00.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 0
-            }
-          ],
-          "entries": [],
-          "has_more": false,
-          "files": [],
           "viewers": [
             {
               "id": "00000000-0000-4000-8000-c00000000001",
@@ -1211,7 +1246,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 11,
+          "after": 7,
           "limit": 4
         }
       },
@@ -1224,63 +1259,71 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
-              "state": "running",
-              "started_at": "2026-01-01T00:00:15.000Z",
+              "state": "pending",
+              "started_at": null,
               "finished_at": null,
               "eta_seconds": 6,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": null,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:15.000Z",
-              "taken_count": 4,
-              "skipped_count": 1,
-              "thought_count": 0
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -1291,7 +1334,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -1305,114 +1350,14 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
-          "entries": [
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000009",
-              "thought": null,
-              "decision": "take",
-              "reason": "included",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:19.000Z",
-              "id": 15,
-              "focus": null
-            },
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000005",
-              "thought": null,
-              "decision": "take",
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": 2,
-              "source_to_seconds": 6,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:18.000Z",
-              "id": 14,
-              "focus": null
-            },
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000004",
-              "thought": null,
-              "decision": "take",
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:17.000Z",
-              "id": 13,
-              "focus": null
-            },
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000001",
-              "thought": null,
-              "decision": "take",
-              "reason": null,
-              "series_size": 3,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:16.000Z",
-              "id": 12,
-              "focus": null
-            }
-          ],
-          "has_more": true,
-          "files": [
-            {
-              "id": "00000000-0000-4000-8000-f00000000001",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:00:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000001.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000004",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:01:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000004.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000005",
-              "kind": "video",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:02:00.000Z",
-              "duration_seconds": 8,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000005.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000009",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
-              "captured_at": "2025-12-31T18:06:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
-              "places": []
-            }
-          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
           "viewers": [
             {
               "id": "00000000-0000-4000-8000-c00000000001",
@@ -1429,7 +1374,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 15,
+          "after": 7,
           "limit": 4
         }
       },
@@ -1442,63 +1387,73 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "running",
-              "started_at": "2026-01-01T00:00:15.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
               "finished_at": null,
               "eta_seconds": 6,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": 10,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:15.000Z",
+              "updated_at": "2026-01-01T00:00:13.000Z",
               "taken_count": 4,
               "skipped_count": 1,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "duplicate": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -1509,7 +1464,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -1523,37 +1480,286 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
               "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000008",
+              "media_id": "00000000-0000-4000-8000-f00000000009",
               "thought": null,
-              "decision": "skip",
-              "reason": "excluded",
+              "decision": "take",
+              "reason": null,
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:20.000Z",
-              "id": 16,
+              "details": null,
+              "created_at": "2026-01-01T00:00:17.000Z",
+              "id": 11,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000005",
+              "thought": null,
+              "decision": "take",
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": 2,
+              "source_to_seconds": 6,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:16.000Z",
+              "id": 10,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000004",
+              "thought": null,
+              "decision": "take",
+              "reason": null,
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:15.000Z",
+              "id": 9,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000001",
+              "thought": null,
+              "decision": "take",
+              "reason": null,
+              "series_size": 3,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:14.000Z",
+              "id": 8,
+              "focus": null
+            }
+          ],
+          "has_more": true,
+          "files": [
+            {
+              "id": "00000000-0000-4000-8000-f00000000001",
+              "kind": "photo",
+              "file_name": "f1.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
+              "captured_at": "2025-12-31T18:00:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000001.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000004",
+              "kind": "photo",
+              "file_name": "f4.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:01:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000004.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000005",
+              "kind": "video",
+              "file_name": "f5.mov",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
+              "captured_at": "2025-12-31T18:02:00.000Z",
+              "duration_seconds": 8,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000005.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000009",
+              "kind": "photo",
+              "file_name": "f9.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000001",
+              "captured_at": "2025-12-31T18:06:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
+              "places": [],
+              "comments": []
+            }
+          ],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_9",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 11,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "prep",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
+              "eta_seconds": 0,
+              "done_count": 11,
+              "total_count": 11,
+              "outcome": {
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
+              },
+              "updated_at": "2026-01-01T00:00:04.000Z",
+              "taken_count": 0,
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "analysis",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
+              "eta_seconds": 0,
+              "done_count": 0,
+              "total_count": 0,
+              "outcome": {
+                "people": 2,
+                "earlier": 6,
+                "described": 0
+              },
+              "updated_at": "2026-01-01T00:00:12.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "directing",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:13.000Z",
+              "taken_count": 4,
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "duplicate": 1
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "music",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 3,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "assembly",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 14,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            }
+          ],
+          "entries": [
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000002",
+              "thought": null,
+              "decision": "skip",
+              "reason": "duplicate",
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:18.000Z",
+              "id": 12,
               "focus": null
             }
           ],
           "has_more": false,
           "files": [
             {
-              "id": "00000000-0000-4000-8000-f00000000008",
+              "id": "00000000-0000-4000-8000-f00000000002",
               "kind": "photo",
+              "file_name": "f2.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:05:00.000Z",
+              "captured_at": "2025-12-31T18:00:01.000Z",
               "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000008.jpg?signed",
-              "places": []
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
+              "places": [],
+              "comments": []
             }
           ],
           "viewers": [
@@ -1584,63 +1790,73 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "running",
-              "started_at": "2026-01-01T00:00:15.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
               "finished_at": null,
               "eta_seconds": 6,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": 10,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:15.000Z",
+              "updated_at": "2026-01-01T00:00:13.000Z",
               "taken_count": 4,
               "skipped_count": 1,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "duplicate": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -1651,7 +1867,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -1665,24 +1883,27 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
               "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000008",
+              "media_id": "00000000-0000-4000-8000-f00000000002",
               "thought": null,
               "decision": "skip",
-              "reason": "excluded",
+              "reason": "duplicate",
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:20.000Z",
-              "id": 16,
+              "details": null,
+              "created_at": "2026-01-01T00:00:18.000Z",
+              "id": 12,
               "focus": null
             },
             {
@@ -1690,15 +1911,16 @@
               "media_id": "00000000-0000-4000-8000-f00000000009",
               "thought": null,
               "decision": "take",
-              "reason": "included",
+              "reason": null,
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:19.000Z",
-              "id": 15,
+              "details": null,
+              "created_at": "2026-01-01T00:00:17.000Z",
+              "id": 11,
               "focus": null
             },
             {
@@ -1713,8 +1935,9 @@
               "source_from_seconds": 2,
               "source_to_seconds": 6,
               "labels": null,
-              "created_at": "2026-01-01T00:00:18.000Z",
-              "id": 14,
+              "details": null,
+              "created_at": "2026-01-01T00:00:16.000Z",
+              "id": 10,
               "focus": null
             },
             {
@@ -1729,48 +1952,57 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:17.000Z",
-              "id": 13,
+              "details": null,
+              "created_at": "2026-01-01T00:00:15.000Z",
+              "id": 9,
               "focus": null
             }
           ],
           "has_more": true,
           "files": [
             {
+              "id": "00000000-0000-4000-8000-f00000000002",
+              "kind": "photo",
+              "file_name": "f2.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:00:01.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
+              "places": [],
+              "comments": []
+            },
+            {
               "id": "00000000-0000-4000-8000-f00000000004",
               "kind": "photo",
+              "file_name": "f4.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:01:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000004.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000005",
               "kind": "video",
+              "file_name": "f5.mov",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:02:00.000Z",
               "duration_seconds": 8,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000005.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000008",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:05:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000008.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000009",
               "kind": "photo",
+              "file_name": "f9.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:06:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000009.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             }
           ],
           "viewers": [
@@ -1787,13 +2019,13 @@
       }
     },
     {
-      "name": "live_poll_9",
+      "name": "live_poll_10",
       "request": {
         "as": "organizer",
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 16,
+          "after": 12,
           "limit": 4
         }
       },
@@ -1806,63 +2038,74 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "running",
-              "started_at": "2026-01-01T00:00:15.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
               "finished_at": null,
               "eta_seconds": 6,
               "done_count": 0,
-              "total_count": 12,
+              "total_count": 10,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:15.000Z",
+              "updated_at": "2026-01-01T00:00:13.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "pending",
               "started_at": null,
               "finished_at": null,
@@ -1873,7 +2116,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -1887,24 +2132,44 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
               "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000007",
+              "media_id": "00000000-0000-4000-8000-f00000000010",
               "thought": null,
               "decision": "skip",
-              "reason": "no_room",
+              "reason": "left_out",
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:24.000Z",
-              "id": 20,
+              "details": null,
+              "created_at": "2026-01-01T00:00:22.000Z",
+              "id": 16,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000007",
+              "thought": null,
+              "decision": "skip",
+              "reason": "left_out",
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:21.000Z",
+              "id": 15,
               "focus": null
             },
             {
@@ -1912,15 +2177,16 @@
               "media_id": "00000000-0000-4000-8000-f00000000006",
               "thought": null,
               "decision": "skip",
-              "reason": "no_room",
+              "reason": "left_out",
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:23.000Z",
-              "id": 19,
+              "details": null,
+              "created_at": "2026-01-01T00:00:20.000Z",
+              "id": 14,
               "focus": null
             },
             {
@@ -1935,189 +2201,59 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:22.000Z",
-              "id": 18,
-              "focus": null
-            },
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000002",
-              "thought": null,
-              "decision": "skip",
-              "reason": "duplicate",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:21.000Z",
-              "id": 17,
+              "details": null,
+              "created_at": "2026-01-01T00:00:19.000Z",
+              "id": 13,
               "focus": null
             }
           ],
-          "has_more": false,
+          "has_more": true,
           "files": [
-            {
-              "id": "00000000-0000-4000-8000-f00000000002",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:00:01.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
-              "places": []
-            },
             {
               "id": "00000000-0000-4000-8000-f00000000003",
               "kind": "photo",
+              "file_name": "f3.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:00:02.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000003.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000006",
               "kind": "photo",
+              "file_name": "f6.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:03:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000006.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000007",
               "kind": "photo",
+              "file_name": "f7.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:04:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000007.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
+            },
+            {
+              "id": "00000000-0000-4000-8000-f00000000010",
+              "kind": "photo",
+              "file_name": "f10.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:07:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000010.jpg?signed",
+              "places": [],
+              "comments": []
             }
           ],
-          "viewers": [
-            {
-              "id": "00000000-0000-4000-8000-c00000000001",
-              "username": "anya"
-            },
-            {
-              "id": "00000000-0000-4000-8000-c00000000003",
-              "username": "lena"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "live_poll_10",
-      "request": {
-        "as": "organizer",
-        "method": "GET",
-        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
-        "query": {
-          "after": 20,
-          "limit": 4
-        }
-      },
-      "response": {
-        "status": 200,
-        "body": {
-          "montage": {
-            "id": "00000000-0000-4000-8000-b00000000001",
-            "status": "processing"
-          },
-          "stages": [
-            {
-              "stage": "screening",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
-              },
-              "updated_at": "2026-01-01T00:00:05.000Z",
-              "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
-            },
-            {
-              "stage": "understanding",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
-              },
-              "updated_at": "2026-01-01T00:00:14.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 7
-            },
-            {
-              "stage": "directing",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
-              "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
-            },
-            {
-              "stage": "rhythm",
-              "state": "pending",
-              "started_at": null,
-              "finished_at": null,
-              "eta_seconds": 3,
-              "done_count": 0,
-              "total_count": null,
-              "outcome": {},
-              "updated_at": "2026-01-01T00:00:00.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 0
-            },
-            {
-              "stage": "assembly",
-              "state": "pending",
-              "started_at": null,
-              "finished_at": null,
-              "eta_seconds": 14,
-              "done_count": 0,
-              "total_count": null,
-              "outcome": {},
-              "updated_at": "2026-01-01T00:00:00.000Z",
-              "taken_count": 0,
-              "skipped_count": 0,
-              "thought_count": 0
-            }
-          ],
-          "entries": [],
-          "has_more": false,
-          "files": [],
           "viewers": [
             {
               "id": "00000000-0000-4000-8000-c00000000001",
@@ -2138,7 +2274,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 16,
           "limit": 4
         }
       },
@@ -2151,77 +2287,87 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
-              "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": null,
+              "eta_seconds": 6,
+              "done_count": 0,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:13.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
-              "state": "running",
-              "started_at": "2026-01-01T00:00:26.000Z",
+              "stage": "music",
+              "state": "pending",
+              "started_at": null,
               "finished_at": null,
               "eta_seconds": 3,
               "done_count": 0,
-              "total_count": 4,
+              "total_count": null,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:26.000Z",
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -2235,12 +2381,44 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
-          "entries": [],
+          "entries": [
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000012",
+              "thought": null,
+              "decision": "skip",
+              "reason": "left_out",
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:23.000Z",
+              "id": 17,
+              "focus": null
+            }
+          ],
           "has_more": false,
-          "files": [],
+          "files": [
+            {
+              "id": "00000000-0000-4000-8000-f00000000012",
+              "kind": "photo",
+              "file_name": "f12.jpg",
+              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
+              "captured_at": "2025-12-31T18:09:00.000Z",
+              "duration_seconds": null,
+              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000012.jpg?signed",
+              "places": [],
+              "comments": []
+            }
+          ],
           "viewers": [
             {
               "id": "00000000-0000-4000-8000-c00000000001",
@@ -2261,7 +2439,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 17,
           "limit": 4
         }
       },
@@ -2274,81 +2452,87 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
-              "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
-              "outcome": {
-                "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
-              },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "stage": "music",
+              "state": "pending",
+              "started_at": null,
+              "finished_at": null,
+              "eta_seconds": 3,
+              "done_count": 0,
+              "total_count": null,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
@@ -2362,7 +2546,9 @@
               "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -2388,7 +2574,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 17,
           "limit": 4
         }
       },
@@ -2401,95 +2587,103 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
-              "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
-              "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
-              "outcome": {
-                "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
-              },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "stage": "music",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": null,
+              "eta_seconds": 3,
+              "done_count": 0,
+              "total_count": 3,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:25.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
-              "state": "running",
-              "started_at": "2026-01-01T00:00:28.000Z",
+              "state": "pending",
+              "started_at": null,
               "finished_at": null,
               "eta_seconds": 14,
               "done_count": 0,
-              "total_count": 4,
+              "total_count": null,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:28.000Z",
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -2515,7 +2709,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 17,
           "limit": 4
         }
       },
@@ -2528,95 +2722,107 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
               "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
+              "done_count": 3,
+              "total_count": 3,
               "outcome": {
                 "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
               },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "updated_at": "2026-01-01T00:00:26.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
-              "state": "running",
-              "started_at": "2026-01-01T00:00:28.000Z",
+              "state": "pending",
+              "started_at": null,
               "finished_at": null,
-              "eta_seconds": 1,
-              "done_count": 2,
-              "total_count": 4,
+              "eta_seconds": 14,
+              "done_count": 0,
+              "total_count": null,
               "outcome": {},
-              "updated_at": "2026-01-01T00:00:28.500Z",
+              "updated_at": "2026-01-01T00:00:00.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -2642,7 +2848,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 17,
           "limit": 4
         }
       },
@@ -2655,98 +2861,406 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
               "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
+              "done_count": 3,
+              "total_count": 3,
               "outcome": {
                 "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
               },
+              "updated_at": "2026-01-01T00:00:26.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "assembly",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": null,
+              "eta_seconds": 14,
+              "done_count": 0,
+              "total_count": 4,
+              "outcome": {},
               "updated_at": "2026-01-01T00:00:27.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            }
+          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            },
+            {
+              "id": "00000000-0000-4000-8000-c00000000003",
+              "username": "lena"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_16",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 17,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "prep",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
+              "eta_seconds": 0,
+              "done_count": 11,
+              "total_count": 11,
+              "outcome": {
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
+              },
+              "updated_at": "2026-01-01T00:00:04.000Z",
+              "taken_count": 0,
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "analysis",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
+              "eta_seconds": 0,
+              "done_count": 0,
+              "total_count": 0,
+              "outcome": {
+                "people": 2,
+                "earlier": 6,
+                "described": 0
+              },
+              "updated_at": "2026-01-01T00:00:12.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "directing",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
+              "eta_seconds": 0,
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
+              "taken_count": 4,
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "music",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
+              "eta_seconds": 0,
+              "done_count": 3,
+              "total_count": 3,
+              "outcome": {
+                "bpm": 81,
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
+              },
+              "updated_at": "2026-01-01T00:00:26.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "assembly",
+              "state": "running",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": null,
+              "eta_seconds": 1,
+              "done_count": 2,
+              "total_count": 4,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:27.500Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            }
+          ],
+          "entries": [],
+          "has_more": false,
+          "files": [],
+          "viewers": [
+            {
+              "id": "00000000-0000-4000-8000-c00000000001",
+              "username": "anya"
+            },
+            {
+              "id": "00000000-0000-4000-8000-c00000000003",
+              "username": "lena"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "live_poll_17",
+      "request": {
+        "as": "organizer",
+        "method": "GET",
+        "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
+        "query": {
+          "after": 17,
+          "limit": 4
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "montage": {
+            "id": "00000000-0000-4000-8000-b00000000001",
+            "status": "processing"
+          },
+          "stages": [
+            {
+              "stage": "prep",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:00.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
+              "eta_seconds": 0,
+              "done_count": 11,
+              "total_count": 11,
+              "outcome": {
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
+              },
+              "updated_at": "2026-01-01T00:00:04.000Z",
+              "taken_count": 0,
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "analysis",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
+              "eta_seconds": 0,
+              "done_count": 0,
+              "total_count": 0,
+              "outcome": {
+                "people": 2,
+                "earlier": 6,
+                "described": 0
+              },
+              "updated_at": "2026-01-01T00:00:12.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
+            },
+            {
+              "stage": "directing",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
+              "eta_seconds": 0,
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
+              "taken_count": 4,
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
+            },
+            {
+              "stage": "music",
+              "state": "done",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
+              "eta_seconds": 0,
+              "done_count": 3,
+              "total_count": 3,
+              "outcome": {
+                "bpm": 81,
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
+              },
+              "updated_at": "2026-01-01T00:00:26.000Z",
+              "taken_count": 0,
+              "skipped_count": 0,
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
               "state": "done",
-              "started_at": "2026-01-01T00:00:28.000Z",
-              "finished_at": "2026-01-01T00:00:29.000Z",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": "2026-01-01T00:00:28.000Z",
               "eta_seconds": 0,
               "done_count": 4,
               "total_count": 4,
               "outcome": {
-                "cuts": 3,
+                "steps": [
+                  {
+                    "step": "clips",
+                    "state": "done"
+                  },
+                  {
+                    "step": "sound",
+                    "state": "done"
+                  },
+                  {
+                    "step": "cover",
+                    "state": "done"
+                  },
+                  {
+                    "step": "file",
+                    "state": "done"
+                  }
+                ],
+                "percent": 100,
                 "seconds": 10.1
               },
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:28.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -2772,7 +3286,7 @@
         "method": "GET",
         "path": "/memories/00000000-0000-4000-8000-a00000000001/montages/00000000-0000-4000-8000-b00000000001/journal",
         "query": {
-          "after": 20,
+          "after": 17,
           "limit": 4
         }
       },
@@ -2785,98 +3299,128 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
               "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
+              "done_count": 3,
+              "total_count": 3,
               "outcome": {
                 "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
               },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "updated_at": "2026-01-01T00:00:26.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
               "state": "done",
-              "started_at": "2026-01-01T00:00:28.000Z",
-              "finished_at": "2026-01-01T00:00:29.000Z",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": "2026-01-01T00:00:28.000Z",
               "eta_seconds": 0,
               "done_count": 4,
               "total_count": 4,
               "outcome": {
-                "cuts": 3,
+                "steps": [
+                  {
+                    "step": "clips",
+                    "state": "done"
+                  },
+                  {
+                    "step": "sound",
+                    "state": "done"
+                  },
+                  {
+                    "step": "cover",
+                    "state": "done"
+                  },
+                  {
+                    "step": "file",
+                    "state": "done"
+                  }
+                ],
+                "percent": 100,
                 "seconds": 10.1
               },
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:28.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [],
@@ -2903,115 +3447,180 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
               "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
+              "done_count": 3,
+              "total_count": 3,
               "outcome": {
                 "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
               },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "updated_at": "2026-01-01T00:00:26.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
               "state": "done",
-              "started_at": "2026-01-01T00:00:28.000Z",
-              "finished_at": "2026-01-01T00:00:29.000Z",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": "2026-01-01T00:00:28.000Z",
               "eta_seconds": 0,
               "done_count": 4,
               "total_count": 4,
               "outcome": {
-                "cuts": 3,
+                "steps": [
+                  {
+                    "step": "clips",
+                    "state": "done"
+                  },
+                  {
+                    "step": "sound",
+                    "state": "done"
+                  },
+                  {
+                    "step": "cover",
+                    "state": "done"
+                  },
+                  {
+                    "step": "file",
+                    "state": "done"
+                  }
+                ],
+                "percent": 100,
                 "seconds": 10.1
               },
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:28.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
             {
               "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000007",
+              "media_id": "00000000-0000-4000-8000-f00000000012",
               "thought": null,
               "decision": "skip",
-              "reason": "no_room",
+              "reason": "left_out",
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:24.000Z",
-              "id": 20,
+              "details": null,
+              "created_at": "2026-01-01T00:00:23.000Z",
+              "id": 17,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000010",
+              "thought": null,
+              "decision": "skip",
+              "reason": "left_out",
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:22.000Z",
+              "id": 16,
+              "focus": null
+            },
+            {
+              "stage": "directing",
+              "media_id": "00000000-0000-4000-8000-f00000000007",
+              "thought": null,
+              "decision": "skip",
+              "reason": "left_out",
+              "series_size": null,
+              "story_part": null,
+              "story_part_title": null,
+              "source_from_seconds": null,
+              "source_to_seconds": null,
+              "labels": null,
+              "details": null,
+              "created_at": "2026-01-01T00:00:21.000Z",
+              "id": 15,
               "focus": null
             },
             {
@@ -3019,15 +3628,16 @@
               "media_id": "00000000-0000-4000-8000-f00000000006",
               "thought": null,
               "decision": "skip",
-              "reason": "no_room",
+              "reason": "left_out",
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:23.000Z",
-              "id": 19,
+              "details": null,
+              "created_at": "2026-01-01T00:00:20.000Z",
+              "id": 14,
               "focus": null
             },
             {
@@ -3042,8 +3652,9 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:22.000Z",
-              "id": 18,
+              "details": null,
+              "created_at": "2026-01-01T00:00:19.000Z",
+              "id": 13,
               "focus": null
             },
             {
@@ -3058,24 +3669,9 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:21.000Z",
-              "id": 17,
-              "focus": null
-            },
-            {
-              "stage": "directing",
-              "media_id": "00000000-0000-4000-8000-f00000000008",
-              "thought": null,
-              "decision": "skip",
-              "reason": "excluded",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:20.000Z",
-              "id": 16,
+              "details": null,
+              "created_at": "2026-01-01T00:00:18.000Z",
+              "id": 12,
               "focus": null
             },
             {
@@ -3083,15 +3679,16 @@
               "media_id": "00000000-0000-4000-8000-f00000000009",
               "thought": null,
               "decision": "take",
-              "reason": "included",
+              "reason": null,
               "series_size": null,
               "story_part": null,
               "story_part_title": null,
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:19.000Z",
-              "id": 15,
+              "details": null,
+              "created_at": "2026-01-01T00:00:17.000Z",
+              "id": 11,
               "focus": null
             },
             {
@@ -3106,8 +3703,9 @@
               "source_from_seconds": 2,
               "source_to_seconds": 6,
               "labels": null,
-              "created_at": "2026-01-01T00:00:18.000Z",
-              "id": 14,
+              "details": null,
+              "created_at": "2026-01-01T00:00:16.000Z",
+              "id": 10,
               "focus": null
             },
             {
@@ -3122,8 +3720,9 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:17.000Z",
-              "id": 13,
+              "details": null,
+              "created_at": "2026-01-01T00:00:15.000Z",
+              "id": 9,
               "focus": null
             },
             {
@@ -3138,12 +3737,13 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:16.000Z",
-              "id": 12,
+              "details": null,
+              "created_at": "2026-01-01T00:00:14.000Z",
+              "id": 8,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000009",
               "thought": "тёмный кадр",
               "decision": null,
@@ -3154,28 +3754,17 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:13.000Z",
-              "id": 11,
+              "details": {
+                "light": "Темно",
+                "people": 0,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:11.000Z",
+              "id": 7,
               "focus": null
             },
             {
-              "stage": "understanding",
-              "media_id": "00000000-0000-4000-8000-f00000000008",
-              "thought": "чужой человек в кадре",
-              "decision": null,
-              "reason": null,
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": ["человек-3"],
-              "created_at": "2026-01-01T00:00:12.000Z",
-              "id": 10,
-              "focus": null
-            },
-            {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000005",
               "thought": "тост",
               "decision": null,
@@ -3186,12 +3775,19 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-2", "животное-1"],
-              "created_at": "2026-01-01T00:00:11.000Z",
-              "id": 9,
+              "details": {
+                "mood": "Празднично",
+                "shot": "Средний",
+                "people": 1,
+                "speech": "Тост",
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:10.000Z",
+              "id": 6,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000004",
               "thought": "стол",
               "decision": null,
@@ -3202,12 +3798,17 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:10.000Z",
-              "id": 8,
+              "details": {
+                "shot": "Общий",
+                "people": 0,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:09.000Z",
+              "id": 5,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000003",
               "thought": "Лиза обнимает бабушку",
               "decision": null,
@@ -3218,12 +3819,18 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-1", "человек-2"],
-              "created_at": "2026-01-01T00:00:09.000Z",
-              "id": 7,
+              "details": {
+                "mood": "Нежно",
+                "shot": "Средний",
+                "people": 2,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:08.000Z",
+              "id": 4,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000002",
               "thought": "Бабушка смеётся, Лиза рядом",
               "decision": null,
@@ -3234,12 +3841,18 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-1", "человек-2"],
-              "created_at": "2026-01-01T00:00:08.000Z",
-              "id": 6,
+              "details": {
+                "mood": "Весело",
+                "shot": "Средний",
+                "people": 2,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:07.000Z",
+              "id": 3,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000001",
               "thought": "Бабушка смеётся",
               "decision": null,
@@ -3250,28 +3863,18 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-1"],
-              "created_at": "2026-01-01T00:00:07.000Z",
-              "id": 5,
+              "details": {
+                "mood": "Весело",
+                "shot": "Крупный",
+                "people": 1,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:06.000Z",
+              "id": 2,
               "focus": null
             },
             {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000012",
-              "thought": null,
-              "decision": "skip",
-              "reason": "blur",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:04.000Z",
-              "id": 4,
-              "focus": null
-            },
-            {
-              "stage": "screening",
+              "stage": "prep",
               "media_id": "00000000-0000-4000-8000-f00000000011",
               "thought": null,
               "decision": "skip",
@@ -3282,39 +3885,8 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:03.000Z",
-              "id": 3,
-              "focus": null
-            },
-            {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000010",
-              "thought": null,
-              "decision": "skip",
-              "reason": "exposure",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
+              "details": null,
               "created_at": "2026-01-01T00:00:02.000Z",
-              "id": 2,
-              "focus": null
-            },
-            {
-              "stage": "screening",
-              "media_id": "00000000-0000-4000-8000-f00000000009",
-              "thought": null,
-              "decision": "skip",
-              "reason": "exposure",
-              "series_size": null,
-              "story_part": null,
-              "story_part_title": null,
-              "source_from_seconds": null,
-              "source_to_seconds": null,
-              "labels": null,
-              "created_at": "2026-01-01T00:00:01.000Z",
               "id": 1,
               "focus": null
             }
@@ -3324,6 +3896,7 @@
             {
               "id": "00000000-0000-4000-8000-f00000000001",
               "kind": "photo",
+              "file_name": "f1.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:00:00.000Z",
               "duration_seconds": null,
@@ -3333,29 +3906,35 @@
                   "start_seconds": 0,
                   "duration_seconds": 2.53
                 }
-              ]
+              ],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000002",
               "kind": "photo",
+              "file_name": "f2.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:00:01.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000002.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000003",
               "kind": "photo",
+              "file_name": "f3.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:00:02.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000003.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000004",
               "kind": "photo",
+              "file_name": "f4.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:01:00.000Z",
               "duration_seconds": null,
@@ -3365,11 +3944,13 @@
                   "start_seconds": 2.03,
                   "duration_seconds": 2.7
                 }
-              ]
+              ],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000005",
               "kind": "video",
+              "file_name": "f5.mov",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:02:00.000Z",
               "duration_seconds": 8,
@@ -3379,38 +3960,35 @@
                   "start_seconds": 4.23,
                   "duration_seconds": 3.5
                 }
-              ]
+              ],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000006",
               "kind": "photo",
+              "file_name": "f6.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:03:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000006.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000007",
               "kind": "photo",
+              "file_name": "f7.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:04:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000007.jpg?signed",
-              "places": []
-            },
-            {
-              "id": "00000000-0000-4000-8000-f00000000008",
-              "kind": "photo",
-              "uploaded_by": "00000000-0000-4000-8000-c00000000002",
-              "captured_at": "2025-12-31T18:05:00.000Z",
-              "duration_seconds": null,
-              "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000008.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000009",
               "kind": "photo",
+              "file_name": "f9.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:06:00.000Z",
               "duration_seconds": null,
@@ -3420,34 +3998,41 @@
                   "start_seconds": 7.23,
                   "duration_seconds": 2.83
                 }
-              ]
+              ],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000010",
               "kind": "photo",
+              "file_name": "f10.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:07:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000010.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000011",
               "kind": "photo",
+              "file_name": "f11.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:08:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000011.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             },
             {
               "id": "00000000-0000-4000-8000-f00000000012",
               "kind": "photo",
+              "file_name": "f12.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000002",
               "captured_at": "2025-12-31T18:09:00.000Z",
               "duration_seconds": null,
               "thumbnail_url": "http://recorded.test:9000/recorded/thumbs/00000000-0000-4000-8000-f00000000012.jpg?signed",
-              "places": []
+              "places": [],
+              "comments": []
             }
           ],
           "viewers": []
@@ -3473,98 +4058,128 @@
           },
           "stages": [
             {
-              "stage": "screening",
+              "stage": "prep",
               "state": "done",
               "started_at": "2026-01-01T00:00:00.000Z",
-              "finished_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:04.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 11,
+              "total_count": 11,
               "outcome": {
-                "of": 12,
-                "kept": 8,
-                "reasons": {
-                  "blur": 1,
-                  "exposure": 2,
-                  "unreadable": 1
-                }
+                "bytes": 45056,
+                "photos": 10,
+                "videos": 1,
+                "senders": {
+                  "00000000-0000-4000-8000-c00000000001": 11
+                },
+                "photos_done": 9,
+                "videos_done": 1,
+                "video_seconds": 8
               },
-              "updated_at": "2026-01-01T00:00:05.000Z",
+              "updated_at": "2026-01-01T00:00:04.000Z",
               "taken_count": 0,
-              "skipped_count": 4,
-              "thought_count": 0
+              "skipped_count": 1,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "unreadable": 1
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "state": "done",
-              "started_at": "2026-01-01T00:00:06.000Z",
-              "finished_at": "2026-01-01T00:00:14.000Z",
+              "started_at": "2026-01-01T00:00:05.000Z",
+              "finished_at": "2026-01-01T00:00:12.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
+              "done_count": 0,
+              "total_count": 0,
               "outcome": {
-                "of": 12,
-                "faces": 7,
-                "people": 3,
-                "animals": 1,
-                "described": 7
+                "people": 2,
+                "earlier": 6,
+                "described": 0
               },
-              "updated_at": "2026-01-01T00:00:14.000Z",
+              "updated_at": "2026-01-01T00:00:12.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 7
+              "thought_count": 6,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "directing",
               "state": "done",
-              "started_at": "2026-01-01T00:00:15.000Z",
-              "finished_at": "2026-01-01T00:00:25.000Z",
+              "started_at": "2026-01-01T00:00:13.000Z",
+              "finished_at": "2026-01-01T00:00:24.000Z",
               "eta_seconds": 0,
-              "done_count": 12,
-              "total_count": 12,
-              "outcome": {
-                "of": 12,
-                "frames": 4
-              },
-              "updated_at": "2026-01-01T00:00:25.000Z",
+              "done_count": 10,
+              "total_count": 10,
+              "outcome": {},
+              "updated_at": "2026-01-01T00:00:24.000Z",
               "taken_count": 4,
-              "skipped_count": 5,
-              "thought_count": 0
+              "skipped_count": 6,
+              "thought_count": 0,
+              "skipped_by_reason": {
+                "left_out": 4,
+                "duplicate": 2
+              },
+              "taken_by_part": {}
             },
             {
-              "stage": "rhythm",
+              "stage": "music",
               "state": "done",
-              "started_at": "2026-01-01T00:00:26.000Z",
-              "finished_at": "2026-01-01T00:00:27.000Z",
+              "started_at": "2026-01-01T00:00:25.000Z",
+              "finished_at": "2026-01-01T00:00:26.000Z",
               "eta_seconds": 0,
-              "done_count": 4,
-              "total_count": 4,
+              "done_count": 3,
+              "total_count": 3,
               "outcome": {
                 "bpm": 81,
-                "cuts": 3,
-                "track": ["warm"]
+                "tracks": ["warm"],
+                "cut_seconds": [2.03, 4.23, 7.23]
               },
-              "updated_at": "2026-01-01T00:00:27.000Z",
+              "updated_at": "2026-01-01T00:00:26.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             },
             {
               "stage": "assembly",
               "state": "done",
-              "started_at": "2026-01-01T00:00:28.000Z",
-              "finished_at": "2026-01-01T00:00:29.000Z",
+              "started_at": "2026-01-01T00:00:27.000Z",
+              "finished_at": "2026-01-01T00:00:28.000Z",
               "eta_seconds": 0,
               "done_count": 4,
               "total_count": 4,
               "outcome": {
-                "cuts": 3,
+                "steps": [
+                  {
+                    "step": "clips",
+                    "state": "done"
+                  },
+                  {
+                    "step": "sound",
+                    "state": "done"
+                  },
+                  {
+                    "step": "cover",
+                    "state": "done"
+                  },
+                  {
+                    "step": "file",
+                    "state": "done"
+                  }
+                ],
+                "percent": 100,
                 "seconds": 10.1
               },
-              "updated_at": "2026-01-01T00:00:29.000Z",
+              "updated_at": "2026-01-01T00:00:28.000Z",
               "taken_count": 0,
               "skipped_count": 0,
-              "thought_count": 0
+              "thought_count": 0,
+              "skipped_by_reason": {},
+              "taken_by_part": {}
             }
           ],
           "entries": [
@@ -3580,12 +4195,13 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": null,
-              "created_at": "2026-01-01T00:00:16.000Z",
-              "id": 12,
+              "details": null,
+              "created_at": "2026-01-01T00:00:14.000Z",
+              "id": 8,
               "focus": null
             },
             {
-              "stage": "understanding",
+              "stage": "analysis",
               "media_id": "00000000-0000-4000-8000-f00000000001",
               "thought": "Бабушка смеётся",
               "decision": null,
@@ -3596,8 +4212,14 @@
               "source_from_seconds": null,
               "source_to_seconds": null,
               "labels": ["человек-1"],
-              "created_at": "2026-01-01T00:00:07.000Z",
-              "id": 5,
+              "details": {
+                "mood": "Весело",
+                "shot": "Крупный",
+                "people": 1,
+                "earlier": true
+              },
+              "created_at": "2026-01-01T00:00:06.000Z",
+              "id": 2,
               "focus": null
             }
           ],
@@ -3606,6 +4228,7 @@
             {
               "id": "00000000-0000-4000-8000-f00000000001",
               "kind": "photo",
+              "file_name": "f1.jpg",
               "uploaded_by": "00000000-0000-4000-8000-c00000000001",
               "captured_at": "2025-12-31T18:00:00.000Z",
               "duration_seconds": null,
@@ -3615,7 +4238,8 @@
                   "start_seconds": 0,
                   "duration_seconds": 2.53
                 }
-              ]
+              ],
+              "comments": []
             }
           ],
           "viewers": []
@@ -3650,9 +4274,12 @@
             "name": "Ролик на 0:00",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": null,
             "poster_url": null,
             "stages": null,
+            "queue": null,
             "watched_by": []
           },
           {
@@ -3677,9 +4304,12 @@
             "name": "Ролик на 0:10",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": "http://recorded.test:9000/recorded/videos/00000000-0000-4000-8000-b00000000001.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/00000000-0000-4000-8000-b00000000001.jpg?signed",
             "stages": null,
+            "queue": null,
             "watched_by": []
           },
           {
@@ -3701,9 +4331,12 @@
             "name": "Ролик на 0:30",
             "template": null,
             "size_bytes": null,
+            "photos": null,
+            "videos": null,
             "video_url": "http://recorded.test:9000/recorded/videos/old.mp4?signed",
             "poster_url": "http://recorded.test:9000/recorded/posters/old.jpg?signed",
             "stages": null,
+            "queue": null,
             "watched_by": []
           }
         ]

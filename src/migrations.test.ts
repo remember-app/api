@@ -7,7 +7,8 @@ import { sql } from "./db.ts";
 /**
  * Migrations 100 (frame info), 110 (memory cover), 140 (dates between
  * days), 150 (hidden frame, place set by hand), 160 (montage name and
- * «посмотрели») and 170 (montage template and file size): the three promises the
+ * «посмотрели»), 170 (montage template and file size) and 180 (the five new
+ * montage stages, entry details, what the order counted): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -488,6 +489,91 @@ test(
     expect(await info()).toEqual({ template: null, size_bytes: null });
     await db`update montages set template = 'report', size_bytes = 1024 where id = ${montage.id}`;
     expect(await info()).toEqual({ template: "report", size_bytes: "1024" });
+  },
+  slow,
+);
+
+test(
+  "180 montage-stages: old journals move to the new stage codes, a replay keeps what was written, an undo moves them back, a redo forward again",
+  async () => {
+    const { db, apply, shape } = await chain(180);
+    const before = await shape();
+    const { user, memory, photo } = await seed(db);
+    const media = await photo();
+    const [montage] = await db<{ id: string }[]>`
+      insert into montages (memory_id, ordered_by, status) values (${memory}, ${user}, 'ready')
+      returning id
+    `;
+    if (!montage) throw new Error("no montage");
+    // A journal written before 180, every stage under its old code.
+    const old = ["screening", "understanding", "directing", "rhythm", "assembly"];
+    for (const stage of old) {
+      await db`insert into montage_stages (montage_id, stage, state) values (${montage.id}, ${stage}, 'done')`;
+      await db`
+        insert into montage_journal_entries (montage_id, stage, media_id, thought)
+        values (${montage.id}, ${stage}, ${media}, ${stage})
+      `;
+    }
+    const codes = async () => ({
+      stages: (
+        await db<{ stage: string }[]>`
+          select stage from montage_stages where montage_id = ${montage.id} order by updated_at, stage
+        `
+      ).map((row) => row.stage),
+      // Each entry's thought is the code it was written under: which moved where.
+      entries: (
+        await db<{ thought: string; stage: string }[]>`
+          select thought, stage from montage_journal_entries where montage_id = ${montage.id} order by id
+        `
+      ).map((row) => [row.thought, row.stage]),
+    });
+    const moved = [
+      ["screening", "prep"],
+      ["understanding", "analysis"],
+      ["directing", "directing"],
+      ["rhythm", "music"],
+      ["assembly", "assembly"],
+    ];
+
+    await apply(180, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    expect((await codes()).entries).toEqual(moved);
+    expect((await codes()).stages.sort()).toEqual(moved.map(([, now]) => now).sort());
+    // The old codes are refused from now on — a worker still writing them is
+    // told so at once — and the new columns are there to be written.
+    await expect(
+      db`insert into montage_journal_entries (montage_id, stage) values (${montage.id}, 'screening')`,
+    ).rejects.toThrow(/montage_journal_entries_stage_check/);
+    await db`
+      insert into montage_journal_entries (montage_id, stage, details)
+      values (${montage.id}, 'music', ${db.json({ music: 0.8, live: 0.25 })})
+    `;
+    await db`update montages set photos = 168, videos = 46 where id = ${montage.id}`;
+    const written = await codes();
+
+    // The replay: same schema, nothing moved twice, nothing written lost.
+    await apply(180, "do");
+    expect(await shape()).toEqual(after);
+    expect(await codes()).toEqual(written);
+    const [counted] = await db`select photos, videos from montages where id = ${montage.id}`;
+    expect(counted).toEqual({ photos: 168, videos: 46 });
+
+    // The undo: the old schema and the old codes, the journal itself kept — and
+    // twice over, as a redo script would run it.
+    await apply(180, "undo");
+    expect(await shape()).toEqual(before);
+    expect((await codes()).entries).toEqual([
+      ...moved.map(([was]) => [was, was]),
+      [null, "rhythm"],
+    ]);
+    await apply(180, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo: the same schema, and the codes forward again.
+    await apply(180, "do");
+    expect(await shape()).toEqual(after);
+    expect((await codes()).entries).toEqual([...moved, [null, "music"]]);
   },
   slow,
 );

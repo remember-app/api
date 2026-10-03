@@ -64,6 +64,7 @@ type SnapEntry = {
   source_from_seconds: number | null;
   source_to_seconds: number | null;
   labels: string[] | null;
+  details: Record<string, unknown> | null;
   focus: { x: number; y: number; w: number; h: number } | null;
   created_at: string;
 };
@@ -98,8 +99,8 @@ const golden = (file: string) => fileURLToPath(new URL(`./golden/${file}`, impor
 const snapshots = ["director", "algorithm"].map((scenario) => {
   const snap = JSON.parse(readFileSync(golden(`journal_${scenario}.json`), "utf8")) as Snapshot;
   // Формат поменяли — читать его по-старому значит тихо загрузить не то.
-  if (snap.format !== 1)
-    throw new Error(`journal_${scenario}.json: format ${snap.format}, ждали 1`);
+  if (snap.format !== 2)
+    throw new Error(`journal_${scenario}.json: format ${snap.format}, ждали 2`);
   return snap;
 });
 
@@ -110,6 +111,9 @@ const iso = (stamp: string | null) => (stamp === null ? null : new Date(stamp).t
 // Съёмка файлов — от произвольной, но одной и той же отправной точки.
 const shotBase = Date.UTC(2025, 11, 31, 18);
 const shotAt = (seconds: number) => new Date(shotBase + seconds * 1000).toISOString();
+/** Имени файла с телефона снимок не хранит — оно от метки: `f3.mov`. */
+const fileName = (file: { label: string; kind: string }) =>
+  `${file.label}.${file.kind === "video" ? "mov" : "jpg"}`;
 
 /**
  * Копия ручки оценки воркера `journal.ESTIMATE`: секунд на файл материала и на секунду
@@ -118,10 +122,10 @@ const shotAt = (seconds: number) => new Date(shotBase + seconds * 1000).toISOStr
  * копии»): воркер подстроил числа — обновить их тут и перезаписать ответы.
  */
 const ESTIMATE: Record<string, [number, number]> = {
-  screening: [1.5, 0],
-  understanding: [0.8, 0],
+  prep: [1.5, 0],
+  analysis: [0.8, 0],
   directing: [0.5, 0],
-  rhythm: [0.2, 0.1],
+  music: [0.2, 0.1],
   assembly: [0, 1.4],
 };
 /** Округление Python (`round`): половина — к чётному; `Math.round` дало бы на «6,5» семь вместо шести. */
@@ -141,15 +145,17 @@ const beginEstimate = (snap: Snapshot, stage: string) => {
 // ---------------------------------------------------------------- ответы api
 
 type ApiEntry = Omit<SnapEntry, "n" | "media"> & { id: number; media_id: string | null };
-type ApiStage = SnapStage & { taken_count: number; skipped_count: number; thought_count: number };
+type ApiStage = SnapStage & ReturnType<typeof countersOf>;
 type ApiFile = {
   id: string;
   kind: string;
+  file_name: string | null;
   uploaded_by: string;
   captured_at: string | null;
   duration_seconds: number | null;
   thumbnail_url: string | null;
   places: { start_seconds: number; duration_seconds: number }[];
+  comments: unknown[];
 };
 type Journal = {
   montage: { id: string; status: string };
@@ -239,12 +245,12 @@ async function stand(app: App, snap: Snapshot) {
     await sql`
       insert into media_items (
         id, memory_id, uploaded_by, kind, status, original_key, thumbnail_key,
-        size_bytes, captured_at, duration_seconds
+        size_bytes, captured_at, duration_seconds, file_name
       )
       values (
         ${id}, ${memoryId}, ${by}, ${file.kind}, 'ready', ${`originals/${id}`},
         ${`thumbs/${id}.jpg`}, 4096, ${shotAt(file.captured_after_seconds)},
-        ${file.duration_seconds}
+        ${file.duration_seconds}, ${fileName(file)}
       )
     `;
     media.set(file.label, id);
@@ -295,6 +301,25 @@ async function stand(app: App, snap: Snapshot) {
         ]),
       ) as Parameters<typeof sql.json>[0],
     );
+  // «Кто прислал» в итоге подготовки снимок называет метками людей: `u1` привёз первый файл,
+  // `u2` — второй. Здесь первый привёз организатор, второй — участник.
+  const person = new Map([
+    ["u1", people.organizer.user.id],
+    ["u2", people.contributor.user.id],
+  ]);
+  const outcomeOf = (outcome: Record<string, unknown>) => {
+    const senders = outcome.senders as Record<string, number> | undefined;
+    if (senders === undefined) return outcome;
+    const real = (who: string) => {
+      const id = person.get(who);
+      if (!id) throw new Error(`в снимке неизвестный человек ${who}`);
+      return id;
+    };
+    return {
+      ...outcome,
+      senders: Object.fromEntries(Object.entries(senders).map(([who, n]) => [real(who), n])),
+    };
+  };
   const putStage = (montageId: string, row: SnapStage, over: Record<string, unknown> = {}) => {
     const fields = {
       state: row.state,
@@ -303,7 +328,7 @@ async function stand(app: App, snap: Snapshot) {
       eta_seconds: row.eta_seconds,
       done_count: row.done_count,
       total_count: row.total_count,
-      outcome: sql.json(row.outcome as Parameters<typeof sql.json>[0]),
+      outcome: sql.json(outcomeOf(row.outcome) as Parameters<typeof sql.json>[0]),
       updated_at: at(row.updated_at),
       ...over,
     };
@@ -389,7 +414,7 @@ async function stand(app: App, snap: Snapshot) {
             update montage_stages
                set state = ${row.state}, finished_at = ${at(row.finished_at)},
                    eta_seconds = ${row.eta_seconds}, done_count = ${row.done_count},
-                   outcome = ${sql.json(row.outcome as Parameters<typeof sql.json>[0])},
+                   outcome = ${sql.json(outcomeOf(row.outcome) as Parameters<typeof sql.json>[0])},
                    updated_at = ${at(row.updated_at)}
              where montage_id = ${montageId} and stage = ${row.stage}
             returning ${columns}
@@ -414,6 +439,8 @@ async function stand(app: App, snap: Snapshot) {
           source_from_seconds: e.source_from_seconds,
           source_to_seconds: e.source_to_seconds,
           labels: e.labels,
+          details:
+            e.details === null ? null : sql.json(e.details as Parameters<typeof sql.json>[0]),
           focus_x: e.focus?.x ?? null,
           focus_y: e.focus?.y ?? null,
           focus_w: e.focus?.w ?? null,
@@ -551,6 +578,7 @@ async function stand(app: App, snap: Snapshot) {
     ask,
     montage,
     ordered,
+    outcomeOf,
     putStage,
     worker,
     putEntries,
@@ -567,15 +595,29 @@ type Stand = Awaited<ReturnType<typeof stand>>;
 
 // ---------------------------------------------------------------- ожидания
 
+/** Файлы, о которых журнал хоть что-то сказал, — метками снимка. */
+const toldAbout = (snap: Snapshot) => [
+  ...new Set(snap.entries.flatMap((e) => (e.media === null ? [] : [e.media]))),
+];
+
 /** Что журнал обязан сказать про этапы, если записаны такие-то записи. */
-const countersOf = (stage: string, written: SnapEntry[]) => {
+function countersOf(stage: string, written: SnapEntry[]) {
   const mine = written.filter((e) => e.stage === stage);
-  return {
-    taken_count: mine.filter((e) => e.decision === "take").length,
-    skipped_count: mine.filter((e) => e.decision === "skip").length,
-    thought_count: mine.filter((e) => e.decision === null).length,
+  const tally = (keys: (string | number | null)[]) => {
+    const out: Record<string, number> = {};
+    for (const key of keys) if (key !== null) out[key] = (out[key] ?? 0) + 1;
+    return out;
   };
-};
+  const taken = mine.filter((e) => e.decision === "take");
+  const skipped = mine.filter((e) => e.decision === "skip");
+  return {
+    taken_count: taken.length,
+    skipped_count: skipped.length,
+    thought_count: mine.filter((e) => e.decision === null).length,
+    skipped_by_reason: tally(skipped.map((e) => e.reason)),
+    taken_by_part: tally(taken.map((e) => e.story_part)),
+  };
+}
 
 /** Файлы отданной порции: сведения о них, включая места в раскладке, если она уже есть. */
 const expectFiles = (s: Stand, snap: Snapshot, body: Journal, layoutWritten: boolean) => {
@@ -586,9 +628,11 @@ const expectFiles = (s: Stand, snap: Snapshot, body: Journal, layoutWritten: boo
     const spec = snap.files.find((f) => f.label === label);
     expect(file).toMatchObject({
       kind: spec?.kind,
+      file_name: spec && fileName(spec),
       uploaded_by: s.uploader.get(label),
       duration_seconds: spec?.duration_seconds,
       captured_at: shotAt(spec?.captured_after_seconds ?? Number.NaN),
+      comments: [],
     });
     expect(new URL(file.thumbnail_url ?? "").pathname).toContain(`thumbs/${file.id}.jpg`);
     expect(file.places).toEqual(
@@ -737,16 +781,14 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
         total_count: null,
         outcome: {},
         updated_at: iso(firstStage.started_at),
-        taken_count: 0,
-        skipped_count: 0,
-        thought_count: 0,
+        ...countersOf(stage, []),
       })),
     );
 
     for (const row of snap.stages) {
       const mine = snap.entries.filter((e) => e.stage === row.stage);
       if (row.stage === "assembly") {
-        // Раскладку воркер пишет между ритмом и склейкой; журнал строит места по ней.
+        // Раскладку воркер пишет между музыкой и сборкой; журнал строит места по ней.
         await s.putLayout(id);
         layoutWritten = true;
       }
@@ -756,16 +798,9 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
       for (const [i, chunk] of chunks(mine, 5).entries()) {
         await s.putEntries(id, chunk);
         written.push(...chunk);
-        const last = chunk.at(-1);
-        if (row.stage === "screening" && last?.media) {
-          // Отсев двигает счётчик по файлу — и после каждой записи о нём: файлов раньше нашего
-          // по порядку съёмки уже просмотрено столько, какой он по счёту.
-          const position = snap.files.find((f) => f.label === last.media)?.position ?? 0;
-          track(await w.progress(row, position, new Date(last.created_at)));
-        }
         await catchUp();
 
-        if (row.stage === "understanding" && i === 0) {
+        if (row.stage === "analysis" && i === 0) {
           // Карточка на ленте: этап виден, не открывая журнала.
           const list = await ask<(ListItem & { params: unknown })[]>(
             "montage_list_while_building",
@@ -805,8 +840,9 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
           ]);
         }
       }
-      if (row.stage === "assembly") {
-        // Склейка двигает счётчик по готовому куску; на середине пути — опрос.
+      if (row.stage === "prep" || row.stage === "assembly") {
+        // Подготовка двигает счётчик по скачанному файлу, сборка — по склеенному куску; на
+        // середине пути — опрос.
         const half = Math.floor((row.total_count ?? 0) / 2);
         const span = Date.parse(row.finished_at ?? "") - Date.parse(row.started_at ?? "");
         const moment = Date.parse(row.started_at ?? "") + (span * half) / (row.total_count || 1);
@@ -840,25 +876,23 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
         ...row,
         started_at: iso(row.started_at),
         finished_at: iso(row.finished_at),
+        outcome: s.outcomeOf(row.outcome),
         updated_at: iso(row.updated_at),
         ...countersOf(row.stage, snap.entries),
       })),
     );
-    // Места кадров — раскладка снимка; файл вне раскладки — пусто.
+    // Места кадров — раскладка снимка; файл вне раскладки — пусто. Кадр, исключённый при
+    // заказе, в материал не входит, и журнал о нём молчит.
     expectFiles(s, snap, full.body, true);
-    expect(full.body.files).toHaveLength(snap.files.length);
+    const told = toldAbout(snap);
+    expect(full.body.files).toHaveLength(told.length);
     const placed = new Set(snap.layout.map((frame) => frame.media));
     expect(
       full.body.files
         .filter((f) => f.places.length === 0)
         .map((f) => s.label(f.id))
         .sort(),
-    ).toEqual(
-      snap.files
-        .map((f) => f.label)
-        .filter((l) => !placed.has(l))
-        .sort(),
-    );
+    ).toEqual(told.filter((l) => !placed.has(l)).sort());
 
     // Разговор про один кадр — лист «что с этим файлом».
     const some = snap.layout[0]?.media ?? "";
@@ -916,10 +950,16 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
     const { app } = buildTestApp();
     const s = await stand(app, snap);
     const id = await s.built("processing");
-    // Собрался до склейки и упал на ней.
+    // Собрался до сборки и остановился на ней — с причиной кодом.
     const last = snap.stages.at(-1);
     if (!last) throw new Error("в снимке нет этапов");
-    await s.putStage(id, last, { state: "failed", eta_seconds: null });
+    await s.putStage(id, last, {
+      state: "failed",
+      eta_seconds: null,
+      outcome: sql.json({ ...s.outcomeOf(last.outcome), stopped: "internal" } as Parameters<
+        typeof sql.json
+      >[0]),
+    });
     await sql`update montages set status = 'failed', error_text = 'ffmpeg упал на склейке' where id = ${id}`;
     const retry = (who: "organizer" | "contributor") =>
       app.inject({
@@ -934,6 +974,7 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
       ...snap.stages.slice(0, -1).map((st) => st.state),
       "failed",
     ]);
+    expect(before.stages.at(-1)?.outcome).toMatchObject({ stopped: "internal" });
     const listed = (await s.ask<ListItem[]>(null, "organizer", s.listPath)).body;
     expect(listed[0]?.stages?.at(-1)).toEqual({ stage: last.stage, state: "failed" });
 
@@ -981,8 +1022,7 @@ describe.each(snapshots)("журнал настоящей сборки ворк�
     expect(after.entries.some((e) => e.media_id === goneId)).toBe(true);
     // Сведений о файле нет, а у остальных места прежние.
     expect(after.files.map((f) => s.label(f.id)).sort()).toEqual(
-      snap.files
-        .map((f) => f.label)
+      toldAbout(snap)
         .filter((l) => l !== gone)
         .sort(),
     );

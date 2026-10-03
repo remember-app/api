@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 2,
   "scenario": "director",
   "montage": {
     "status": "ready",
@@ -107,38 +107,38 @@
   ],
   "stages": [
     {
-      "stage": "screening",
+      "stage": "prep",
       "state": "done",
       "started_at": "2026-01-01T00:00:00Z",
-      "finished_at": "2026-01-01T00:00:05Z",
+      "finished_at": "2026-01-01T00:00:04Z",
       "eta_seconds": 0,
-      "done_count": 13,
-      "total_count": 13,
+      "done_count": 12,
+      "total_count": 12,
       "outcome": {
-        "of": 13,
-        "kept": 9,
-        "reasons": {
-          "blur": 1,
-          "exposure": 2,
-          "unreadable": 1
+        "photos": 11,
+        "videos": 1,
+        "photos_done": 10,
+        "videos_done": 1,
+        "video_seconds": 8.0,
+        "bytes": 49152,
+        "senders": {
+          "u1": 12
         }
       },
-      "updated_at": "2026-01-01T00:00:05Z"
+      "updated_at": "2026-01-01T00:00:04Z"
     },
     {
-      "stage": "understanding",
+      "stage": "analysis",
       "state": "done",
-      "started_at": "2026-01-01T00:00:06Z",
+      "started_at": "2026-01-01T00:00:05Z",
       "finished_at": "2026-01-01T00:00:17Z",
       "eta_seconds": 0,
-      "done_count": 13,
-      "total_count": 13,
+      "done_count": 9,
+      "total_count": 9,
       "outcome": {
-        "of": 13,
-        "faces": 10,
-        "people": 4,
-        "animals": 1,
-        "described": 10
+        "described": 9,
+        "earlier": 2,
+        "people": 4
       },
       "updated_at": "2026-01-01T00:00:17Z"
     },
@@ -146,83 +146,82 @@
       "stage": "directing",
       "state": "done",
       "started_at": "2026-01-01T00:00:18Z",
-      "finished_at": "2026-01-01T00:00:31Z",
+      "finished_at": "2026-01-01T00:00:32Z",
       "eta_seconds": 0,
-      "done_count": 13,
-      "total_count": 13,
+      "done_count": 11,
+      "total_count": 11,
       "outcome": {
-        "of": 13,
-        "parts": 3,
-        "frames": 6,
-        "part_titles": ["Сборы", "Торт", "Тосты"]
+        "parts": [
+          {
+            "title": "Сборы",
+            "from_seconds": 0.0,
+            "to_seconds": 2.5
+          },
+          {
+            "title": "Торт",
+            "from_seconds": 2.5,
+            "to_seconds": 6.0
+          },
+          {
+            "title": "Тосты",
+            "from_seconds": 6.0,
+            "to_seconds": 15.0
+          }
+        ]
       },
-      "updated_at": "2026-01-01T00:00:31Z"
+      "updated_at": "2026-01-01T00:00:32Z"
     },
     {
-      "stage": "rhythm",
+      "stage": "music",
       "state": "done",
-      "started_at": "2026-01-01T00:00:32Z",
-      "finished_at": "2026-01-01T00:00:33Z",
+      "started_at": "2026-01-01T00:00:33Z",
+      "finished_at": "2026-01-01T00:00:37Z",
       "eta_seconds": 0,
-      "done_count": 6,
-      "total_count": 6,
+      "done_count": 5,
+      "total_count": 5,
       "outcome": {
-        "cuts": 0,
-        "track": []
+        "tracks": [],
+        "cut_seconds": [2.5, 6.0, 8.0, 10.5, 12.5]
       },
-      "updated_at": "2026-01-01T00:00:33Z"
+      "updated_at": "2026-01-01T00:00:37Z"
     },
     {
       "stage": "assembly",
       "state": "done",
-      "started_at": "2026-01-01T00:00:34Z",
-      "finished_at": "2026-01-01T00:00:35Z",
+      "started_at": "2026-01-01T00:00:38Z",
+      "finished_at": "2026-01-01T00:00:40Z",
       "eta_seconds": 0,
       "done_count": 6,
       "total_count": 6,
       "outcome": {
-        "cuts": 5,
+        "percent": 100,
+        "steps": [
+          {
+            "step": "clips",
+            "state": "done"
+          },
+          {
+            "step": "sound",
+            "state": "done"
+          },
+          {
+            "step": "cover",
+            "state": "done"
+          },
+          {
+            "step": "file",
+            "state": "done"
+          }
+        ],
         "seconds": 15.0
       },
-      "updated_at": "2026-01-01T00:00:35Z"
+      "updated_at": "2026-01-01T00:00:40Z"
     }
   ],
   "entries": [
     {
       "n": 1,
-      "stage": "screening",
-      "media": "f10",
-      "thought": null,
-      "decision": "skip",
-      "reason": "exposure",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:01Z"
-    },
-    {
-      "n": 2,
-      "stage": "screening",
-      "media": "f11",
-      "thought": null,
-      "decision": "skip",
-      "reason": "exposure",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:02Z"
-    },
-    {
-      "n": 3,
-      "stage": "screening",
+      "stage": "prep",
       "media": "f12",
       "thought": null,
       "decision": "skip",
@@ -233,28 +232,13 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
-      "created_at": "2026-01-01T00:00:03Z"
+      "created_at": "2026-01-01T00:00:02Z"
     },
     {
-      "n": 4,
-      "stage": "screening",
-      "media": "f13",
-      "thought": null,
-      "decision": "skip",
-      "reason": "blur",
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": null,
-      "focus": null,
-      "created_at": "2026-01-01T00:00:04Z"
-    },
-    {
-      "n": 5,
-      "stage": "understanding",
+      "n": 2,
+      "stage": "analysis",
       "media": "f1",
       "thought": "накрывают на стол",
       "decision": null,
@@ -265,12 +249,21 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-1", "человек-2"],
+      "details": {
+        "earlier": true,
+        "people": 2,
+        "place": "Гостиная",
+        "light": "Вечер, лампа над столом",
+        "mood": "Спокойно",
+        "shot": "Средний",
+        "text": "Двое накрывают на стол: тарелки, свечи, торт ещё на кухне."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:07Z"
+      "created_at": "2026-01-01T00:00:06Z"
     },
     {
-      "n": 6,
-      "stage": "understanding",
+      "n": 3,
+      "stage": "analysis",
       "media": "f2",
       "thought": "вносят торт",
       "decision": null,
@@ -281,12 +274,21 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-1", "человек-3"],
+      "details": {
+        "earlier": true,
+        "people": 2,
+        "place": "Гостиная",
+        "light": "Вечер, свечи на торте",
+        "mood": "Радостно",
+        "shot": "Средний",
+        "text": "Торт со свечами вносят в комнату, гости оборачиваются."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:08Z"
+      "created_at": "2026-01-01T00:00:07Z"
     },
     {
-      "n": 7,
-      "stage": "understanding",
+      "n": 4,
+      "stage": "analysis",
       "media": "f3",
       "thought": "чокаются, все смеются",
       "decision": null,
@@ -297,12 +299,32 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-2", "человек-3"],
+      "details": {
+        "people": 3,
+        "place": "Гостиная",
+        "light": "Вечер, тёплый свет",
+        "mood": "Весело",
+        "shot": "Общий → средний",
+        "camera": "Медленно наезжает на стол",
+        "speech": "Тост, смех, звон бокалов",
+        "moments": [
+          {
+            "seconds": 1.5,
+            "text": "Поднимают бокалы"
+          },
+          {
+            "seconds": 6.0,
+            "text": "Чокаются и смеются"
+          }
+        ],
+        "text": "Гости за столом поднимают бокалы, говорят тост и чокаются; в конце все смеются."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:09Z"
+      "created_at": "2026-01-01T00:00:08Z"
     },
     {
-      "n": 8,
-      "stage": "understanding",
+      "n": 5,
+      "stage": "analysis",
       "media": "f4",
       "thought": "задувают свечи",
       "decision": null,
@@ -313,12 +335,20 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-3"],
+      "details": {
+        "people": 1,
+        "place": "Гостиная",
+        "light": "Полумрак, свечи",
+        "mood": "Торжественно",
+        "shot": "Крупный",
+        "text": "Именинник задувает свечи на торте."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:10Z"
+      "created_at": "2026-01-01T00:00:09Z"
     },
     {
-      "n": 9,
-      "stage": "understanding",
+      "n": 6,
+      "stage": "analysis",
       "media": "f5",
       "thought": "задувают свечи, ближе",
       "decision": null,
@@ -329,12 +359,20 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-3"],
+      "details": {
+        "people": 1,
+        "place": "Гостиная",
+        "light": "Полумрак, свечи",
+        "mood": "Торжественно",
+        "shot": "Крупный",
+        "text": "Тот же момент со свечами, чуть ближе."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:11Z"
+      "created_at": "2026-01-01T00:00:10Z"
     },
     {
-      "n": 10,
-      "stage": "understanding",
+      "n": 7,
+      "stage": "analysis",
       "media": "f6",
       "thought": "собака под столом",
       "decision": null,
@@ -345,12 +383,20 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["животное-1"],
+      "details": {
+        "people": 0,
+        "place": "Под столом",
+        "light": "Полумрак",
+        "mood": "Смешно",
+        "shot": "Крупный",
+        "text": "Собака спит под столом среди ног гостей."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:12Z"
+      "created_at": "2026-01-01T00:00:11Z"
     },
     {
-      "n": 11,
-      "stage": "understanding",
+      "n": 8,
+      "stage": "analysis",
       "media": "f7",
       "thought": "пустая тарелка",
       "decision": null,
@@ -361,12 +407,20 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": {
+        "people": 0,
+        "place": "Стол",
+        "light": "Вечер",
+        "mood": "Спокойно",
+        "shot": "Крупный",
+        "text": "Пустая тарелка с крошками торта."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:13Z"
+      "created_at": "2026-01-01T00:00:12Z"
     },
     {
-      "n": 12,
-      "stage": "understanding",
+      "n": 9,
+      "stage": "analysis",
       "media": "f8",
       "thought": "салют во дворе",
       "decision": null,
@@ -377,28 +431,20 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": {
+        "people": 0,
+        "place": "Двор",
+        "light": "Ночь, вспышки салюта",
+        "mood": "Празднично",
+        "shot": "Общий",
+        "text": "Салют над двором, видны крыши соседних домов."
+      },
       "focus": null,
-      "created_at": "2026-01-01T00:00:14Z"
+      "created_at": "2026-01-01T00:00:13Z"
     },
     {
-      "n": 13,
-      "stage": "understanding",
-      "media": "f9",
-      "thought": "гость на пороге",
-      "decision": null,
-      "reason": null,
-      "series_size": null,
-      "story_part": null,
-      "story_part_title": null,
-      "source_from_seconds": null,
-      "source_to_seconds": null,
-      "labels": ["человек-4"],
-      "focus": null,
-      "created_at": "2026-01-01T00:00:15Z"
-    },
-    {
-      "n": 14,
-      "stage": "understanding",
+      "n": 10,
+      "stage": "analysis",
       "media": "f10",
       "thought": "тёмный кадр после тоста",
       "decision": null,
@@ -409,14 +455,70 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": ["человек-2"],
+      "details": {
+        "people": 1,
+        "place": "Гостиная",
+        "light": "Темно",
+        "mood": "Тихо",
+        "shot": "Средний",
+        "text": "Гость в полутьме после тоста, лицо едва видно."
+      },
+      "focus": null,
+      "created_at": "2026-01-01T00:00:14Z"
+    },
+    {
+      "n": 11,
+      "stage": "analysis",
+      "media": "f11",
+      "thought": "гости снимают куртки",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": ["человек-4"],
+      "details": {
+        "people": 1,
+        "place": "Прихожая",
+        "light": "Яркая лампа",
+        "mood": "Суетливо",
+        "shot": "Средний",
+        "text": "Гость снимает куртку в прихожей."
+      },
+      "focus": null,
+      "created_at": "2026-01-01T00:00:15Z"
+    },
+    {
+      "n": 12,
+      "stage": "analysis",
+      "media": "f13",
+      "thought": "танцуют у стола",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": ["человек-1"],
+      "details": {
+        "people": 1,
+        "place": "Гостиная",
+        "light": "Вечер",
+        "mood": "Весело",
+        "shot": "Общий",
+        "text": "Хозяйка танцует у стола, кадр смазан движением."
+      },
       "focus": null,
       "created_at": "2026-01-01T00:00:16Z"
     },
     {
-      "n": 15,
+      "n": 13,
       "stage": "directing",
       "media": null,
-      "thought": "План на четыре части: сборы, торт, тосты — клип с тостом двумя отрезками — и салют, которому в ролике не хватит места. Собака под столом в эту историю не встала.",
+      "thought": "План на три части: сборы, торт, тосты — клип с тостом двумя отрезками. Салюту в ролике не хватит места, собака под столом в эту историю не встала.",
       "decision": null,
       "reason": null,
       "series_size": null,
@@ -425,11 +527,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:19Z"
     },
     {
-      "n": 16,
+      "n": 14,
       "stage": "directing",
       "media": "f1",
       "thought": "Стол накрывают, гости ещё собираются — с этого вечер и начинается.",
@@ -441,11 +544,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:20Z"
     },
     {
-      "n": 17,
+      "n": 15,
       "stage": "directing",
       "media": "f2",
       "thought": "Вносят торт — главный момент вечера, держу подольше и смотрю на свечи.",
@@ -457,6 +561,7 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": {
         "x": 0.3,
         "y": 0.05,
@@ -466,7 +571,7 @@
       "created_at": "2026-01-01T00:00:21Z"
     },
     {
-      "n": 18,
+      "n": 16,
       "stage": "directing",
       "media": "f3",
       "thought": "Поднимают бокалы — беру начало клипа.",
@@ -478,11 +583,12 @@
       "source_from_seconds": 0.5,
       "source_to_seconds": 3.0,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:22Z"
     },
     {
-      "n": 19,
+      "n": 17,
       "stage": "directing",
       "media": "f4",
       "thought": "Задувают свечи — один кадр из серии, самый чёткий.",
@@ -494,6 +600,7 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": {
         "x": 0.1,
         "y": 0.2,
@@ -503,7 +610,7 @@
       "created_at": "2026-01-01T00:00:23Z"
     },
     {
-      "n": 20,
+      "n": 18,
       "stage": "directing",
       "media": "f3",
       "thought": "Чокаются — конец того же клипа, там слышен смех.",
@@ -515,43 +622,46 @@
       "source_from_seconds": 5.0,
       "source_to_seconds": 7.5,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:24Z"
     },
     {
-      "n": 21,
+      "n": 19,
       "stage": "directing",
-      "media": "f8",
-      "thought": "Салют во дворе — красивый финал, если хватит времени.",
-      "decision": "skip",
-      "reason": "no_room",
+      "media": "f10",
+      "thought": "Тёмный кадр после тоста — короткая пауза перед финалом.",
+      "decision": "take",
+      "reason": null,
       "series_size": null,
-      "story_part": 4,
-      "story_part_title": "Салют",
+      "story_part": 3,
+      "story_part_title": "Тосты",
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:25Z"
     },
     {
-      "n": 22,
+      "n": 20,
       "stage": "directing",
-      "media": "f10",
-      "thought": null,
-      "decision": "take",
-      "reason": "included",
+      "media": "f8",
+      "thought": "Салют во дворе — красивый финал, но в 15 секунд не помещается.",
+      "decision": "skip",
+      "reason": "left_out",
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:26Z"
     },
     {
-      "n": 23,
+      "n": 21,
       "stage": "directing",
       "media": "f6",
       "thought": "собака не про этот вечер",
@@ -563,11 +673,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:27Z"
     },
     {
-      "n": 24,
+      "n": 22,
       "stage": "directing",
       "media": "f7",
       "thought": null,
@@ -579,11 +690,12 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:28Z"
     },
     {
-      "n": 25,
+      "n": 23,
       "stage": "directing",
       "media": "f5",
       "thought": null,
@@ -595,24 +707,120 @@
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:29Z"
     },
     {
-      "n": 26,
+      "n": 24,
       "stage": "directing",
-      "media": "f9",
-      "thought": null,
+      "media": "f11",
+      "thought": "Прихожая — это ещё до праздника.",
       "decision": "skip",
-      "reason": "excluded",
+      "reason": "left_out",
       "series_size": null,
       "story_part": null,
       "story_part_title": null,
       "source_from_seconds": null,
       "source_to_seconds": null,
       "labels": null,
+      "details": null,
       "focus": null,
       "created_at": "2026-01-01T00:00:30Z"
+    },
+    {
+      "n": 25,
+      "stage": "directing",
+      "media": "f13",
+      "thought": null,
+      "decision": "skip",
+      "reason": "duplicate",
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:31Z"
+    },
+    {
+      "n": 26,
+      "stage": "music",
+      "media": null,
+      "thought": "Звон посуды и голоса",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": 1,
+      "story_part_title": "Сборы",
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": {
+        "music": 0.0,
+        "live": 1.0
+      },
+      "focus": null,
+      "created_at": "2026-01-01T00:00:34Z"
+    },
+    {
+      "n": 27,
+      "stage": "music",
+      "media": null,
+      "thought": "Поют «С днём рождения»",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": 2,
+      "story_part_title": "Торт",
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": {
+        "music": 0.0,
+        "live": 1.0
+      },
+      "focus": null,
+      "created_at": "2026-01-01T00:00:35Z"
+    },
+    {
+      "n": 28,
+      "stage": "music",
+      "media": null,
+      "thought": "Тост слышно целиком",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": 3,
+      "story_part_title": "Тосты",
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": {
+        "music": 0.0,
+        "live": 1.0
+      },
+      "focus": null,
+      "created_at": "2026-01-01T00:00:36Z"
+    },
+    {
+      "n": 29,
+      "stage": "assembly",
+      "media": null,
+      "thought": "Склейка 5: от свечей к бокалам — мягкий переход на смехе",
+      "decision": null,
+      "reason": null,
+      "series_size": null,
+      "story_part": null,
+      "story_part_title": null,
+      "source_from_seconds": null,
+      "source_to_seconds": null,
+      "labels": null,
+      "details": null,
+      "focus": null,
+      "created_at": "2026-01-01T00:00:39Z"
     }
   ],
   "layout": [

@@ -7,6 +7,7 @@ import { storageConfigured } from "../media/r2.ts";
 import { uuidPattern } from "../memories/plugin.ts";
 import { stagesFor } from "./journal.ts";
 import { checkOrder, nameField, nameOf, type OrderBody, orderBodySchema } from "./order.ts";
+import { queueFor } from "./queue.ts";
 import type { Montage } from "./row.ts";
 import { orderSummary } from "./summary.ts";
 import { type ViewRow, view, viewColumns } from "./view.ts";
@@ -113,9 +114,10 @@ export function montageRoutes(app: FastifyInstance) {
       const montage = await sql.begin(async (tx) => {
         const [row] = await tx<ViewRow[]>`
           with m as (
-            insert into montages (memory_id, ordered_by, params, name, template)
+            insert into montages (memory_id, ordered_by, params, name, template, photos, videos)
             values (${memory.id}, ${request.user.id}, ${sql.json(params)},
-              ${nameOf(request.body?.name)}, ${request.body?.template ?? null})
+              ${nameOf(request.body?.name)}, ${request.body?.template ?? null},
+              ${checked.left.photos}, ${checked.left.videos})
             returning *
           )
           select ${viewColumns} from m join users u on u.id = m.ordered_by
@@ -203,13 +205,16 @@ export function montageRoutes(app: FastifyInstance) {
       // list, forever.
       //
       // Who watched, the other way round: only a ready video can have been
-      // watched (`watched.ts`), so only those are asked about.
-      const [progress, watched] = await Promise.all([
-        stagesFor(montages.filter((m) => m.status !== "ready").map((m) => m.id)),
+      // watched (`watched.ts`), so only those are asked about. And only a
+      // queued one waits in the queue (`queue.ts`).
+      const ids = (keep: (m: ViewRow) => boolean) => montages.filter(keep).map((m) => m.id);
+      const [progress, watched, queue] = await Promise.all([
+        stagesFor(ids((m) => m.status !== "ready")),
         watchersOf(
           request.membership.memory.id,
-          montages.filter((m) => m.status === "ready").map((m) => m.id),
+          ids((m) => m.status === "ready"),
         ),
+        queueFor(ids((m) => m.status === "queued")),
       ]);
 
       const ttl = downloadTtlSeconds();
@@ -217,6 +222,7 @@ export function montageRoutes(app: FastifyInstance) {
         montages.map(async (montage) => ({
           ...(await view(montage, ttl, request.user.language)),
           stages: progress.get(montage.id) ?? null,
+          queue: queue.get(montage.id) ?? null,
           watched_by: watched.get(montage.id) ?? [],
         })),
       );
