@@ -3,6 +3,7 @@ import { sql } from "../db.ts";
 import { seenBy, uuidPattern } from "../memories/plugin.ts";
 import type { Montage } from "../montages/row.ts";
 import { montageName } from "../montages/view.ts";
+import { labelCards } from "./labels.ts";
 import type { MediaItem } from "./upload.ts";
 
 /**
@@ -25,7 +26,9 @@ import type { MediaItem } from "./upload.ts";
  * database keeps the worker from writing over it (migration 150).
  * `montage_frames` is the worker's too, written while it cuts a video. Null and
  * an empty list are «ещё не посчитано», not «нечего показывать» — the same
- * silence the gallery's missing derivatives keep.
+ * silence the gallery's missing derivatives keep. `labels` is nobody's to
+ * invent: the same rows the memory's label list hands out, narrowed to this
+ * frame, so a foreign private box leaves no trace in either.
  */
 
 /** The row behind the sheet: the frame, its uploader, and that person's tally. */
@@ -160,14 +163,27 @@ export function frameRoutes(app: FastifyInstance) {
       //
       // Newest first, as `GET /memories/:memoryId/montages` is ordered, so the
       // list reads the same way round in both places.
-      const montages = await sql<InMontage[]>`
-        select m.id, m.name, m.params, m.duration_seconds, f.start_seconds
-        from montage_frames f
-        join montages m on m.id = f.montage_id
-        where f.media_id = ${mediaId} and m.memory_id = ${memoryId}
-          and m.status = 'ready'
-        order by m.created_at desc, m.id desc, f.start_seconds
-      `;
+      //
+      // The labels come from the same call that builds the memory's label list,
+      // narrowed to this frame: one row builder, one rights rule, one order —
+      // a foreign private label leaves no trace here for the reason it leaves
+      // none in the list. `media_count` is the label's own count, exactly as the
+      // list gives it, so a row on this sheet is the row the filter sheet shows.
+      const [montages, labels] = await Promise.all([
+        sql<InMontage[]>`
+          select m.id, m.name, m.params, m.duration_seconds, f.start_seconds
+          from montage_frames f
+          join montages m on m.id = f.montage_id
+          where f.media_id = ${mediaId} and m.memory_id = ${memoryId}
+            and m.status = 'ready'
+          order by m.created_at desc, m.id desc, f.start_seconds
+        `,
+        labelCards(
+          memoryId,
+          { id: request.user.id, role: request.membership.role },
+          { mediaId },
+        ),
+      ]);
 
       const {
         file_name,
@@ -197,6 +213,10 @@ export function frameRoutes(app: FastifyInstance) {
           ...line,
           name: montageName({ ...line, params }, request.user.language),
         })),
+        // Empty when the frame is in no box, and never a null: «not in a label»
+        // is a line the sheet does not draw, while an absent key would be a
+        // field the api has not sent yet.
+        labels,
       };
     },
   );
