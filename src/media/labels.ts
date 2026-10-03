@@ -143,10 +143,14 @@ export const handOverLabels = (
   where memory_id = ${memoryId} and owner_id = ${leaving} and shared
 `;
 
+/** Чем сузить список: один названный лейбл либо лейблы одного кадра. */
+type LabelFilter = { labelId?: string; mediaId?: string };
+
 /**
- * Лейблы воспоминания глазами спрашивающего — весь список или один названный,
- * одним запросом на оба случая: маршруты записи отвечают той же строкой, что
- * приходит в списке, и собирать её вторым способом значит однажды разойтись.
+ * Лейблы воспоминания глазами спрашивающего — весь список, один названный или
+ * те, в которых лежит кадр, одним запросом на все случаи: маршруты записи
+ * отвечают той же строкой, что приходит в списке, и собирать её вторым
+ * способом значит однажды разойтись.
  *
  * `media_count` — сколько кадров коробки спрашивающий видит в галерее: тот же
  * лейбл в фильтре открывает ровно столько. Удалённый кадр уносит свою связь
@@ -154,10 +158,10 @@ export const handOverLabels = (
  * по тому же `seenBy`, по которому его нет в галерее. `::int` — иначе count()
  * приходит bigint, то есть строкой, и «23 кадра» нечем сравнить с «12».
  */
-async function labelCards(
+export async function labelCards(
   memoryId: string,
   caller: Caller,
-  labelId: string | null = null,
+  { labelId, mediaId }: LabelFilter = {},
 ): Promise<LabelListItem[]> {
   type Row = LabelRow & { title: string; color: number; media_count: number };
   const rows = await sql<Row[]>`
@@ -166,7 +170,10 @@ async function labelCards(
         join media_items mi on mi.id = lm.media_id
         where lm.label_id = l.id and ${seenBy("mi", caller.id)}) as media_count
     from (${visibleLabels(memoryId, caller.id)}) l
-    where ${labelId}::uuid is null or l.id = ${labelId}::uuid
+    where (${labelId ?? null}::uuid is null or l.id = ${labelId ?? null}::uuid)
+      and (${mediaId ?? null}::uuid is null or exists (
+        select 1 from label_media lm where lm.label_id = l.id and lm.media_id = ${mediaId ?? null}::uuid
+      ))
     ${labelOrder}
   `;
   // Права считаются здесь, а не в запросе: правило одно на весь файл, и
@@ -186,7 +193,7 @@ async function labelCards(
 
 /** Тот же ответ, что и у списка, но об одном лейбле — им отвечает каждая запись. */
 async function labelCard(memoryId: string, caller: Caller, labelId: string) {
-  const [card] = await labelCards(memoryId, caller, labelId);
+  const [card] = await labelCards(memoryId, caller, { labelId });
   // Чужой личный до записи не допущен, общий и свой личный записавший видит;
   // не нашёлся — его удалили одновременно из другого запроса (редкая гонка, `500`).
   if (!card) throw new Error("the written label is not in its own author's list");

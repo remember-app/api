@@ -141,6 +141,19 @@ type Sheet = {
   longitude: number | null;
   uploaded_by: { id: string; username: string | null; name: string | null; media_count: number };
   montages: { id: string; name: string; duration_seconds: number | null; start_seconds: number }[];
+  labels: LabelCard[];
+};
+
+/** The label row, exactly as `GET /memories/:memoryId/labels` hands it out. */
+type LabelCard = {
+  id: string;
+  title: string;
+  color: number;
+  shared: boolean;
+  mine: boolean;
+  can_edit: boolean;
+  can_add_media: boolean;
+  media_count: number;
 };
 
 test("the sheet says who brought the frame, what the file is and what took it", async () => {
@@ -307,6 +320,166 @@ test("«В роликах» calls a video what the list of montages calls it: it
     expect(await names(token)).toEqual(["Свадьба Марка"]);
     expect(await names(token)).toEqual(await listed(token));
   }
+
+  await app.close();
+});
+
+test("the sheet says which boxes the frame is in, and a foreign private one is not among them", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+  const mark = await member(app, memory.id, "contributor", organizer.user.id);
+  const viewer = await member(app, memory.id, "viewer", organizer.user.id);
+
+  const id = await frame(memory.id, mark.user.id);
+  const other = await frame(memory.id, mark.user.id);
+
+  // A shared box everybody may write to, and a private one of the asker's own
+  // — both hold the frame.
+  const shared = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/labels`,
+      payload: { title: "Лучшее", color: 3, shared: true, media_ids: [id, other] },
+    }),
+  );
+  expect(shared.statusCode).toBe(201);
+  const sharedId = (shared.json() as LabelCard).id;
+
+  const minePrivate = await app.inject(
+    as(mark.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/labels`,
+      payload: { title: "Моё", color: 5, shared: false, media_ids: [id] },
+    }),
+  );
+  expect(minePrivate.statusCode).toBe(201);
+  const mineId = (minePrivate.json() as LabelCard).id;
+
+  // Somebody else's private box holding the very same frame: the organizer's
+  // own. Nobody but him may see it — not a member, and not the viewer.
+  const theirsPrivate = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/labels`,
+      payload: { title: "Его", color: 2, shared: false, media_ids: [id] },
+    }),
+  );
+  expect(theirsPrivate.statusCode).toBe(201);
+  const theirsId = (theirsPrivate.json() as LabelCard).id;
+
+  const boxes = async (token: string) =>
+    (await info(app, token, memory.id, id)).json().labels as LabelCard[];
+
+  // Mark sees both of his and none of the organizer's — including the one the
+  // organizer made, which is private and therefore his alone.
+  expect(await boxes(mark.token)).toEqual([
+    {
+      id: sharedId,
+      title: "Лучшее",
+      color: 3,
+      shared: true,
+      mine: false,
+      can_edit: true,
+      can_add_media: true,
+      media_count: 2,
+    },
+    {
+      id: mineId,
+      title: "Моё",
+      color: 5,
+      shared: false,
+      mine: true,
+      can_edit: true,
+      can_add_media: true,
+      media_count: 1,
+    },
+  ]);
+
+  // The organizer sees the shared box and his own private one, and not mark's.
+  expect(await boxes(organizer.token)).toEqual([
+    {
+      id: sharedId,
+      title: "Лучшее",
+      color: 3,
+      shared: true,
+      mine: true,
+      can_edit: true,
+      can_add_media: true,
+      media_count: 2,
+    },
+    {
+      id: theirsId,
+      title: "Его",
+      color: 2,
+      shared: false,
+      mine: true,
+      can_edit: true,
+      can_add_media: true,
+      media_count: 1,
+    },
+  ]);
+
+  // The viewer has boxes of his own and sees every shared one; mark's private
+  // box leaves no trace in his answer — not its id, not its title.
+  const viewerBoxes = await boxes(viewer.token);
+  expect(viewerBoxes.map((l) => l.id)).toEqual([sharedId]);
+  expect(JSON.stringify(viewerBoxes)).not.toContain(mineId);
+
+  // And the rows are the very ones the list would hand out, so the sheet and the
+  // filter sheet cannot drift apart.
+  const listed = (await app.inject(
+    as(mark.token, { method: "GET", url: `/memories/${memory.id}/labels` }),
+  )).json() as LabelCard[];
+  expect(await boxes(mark.token)).toEqual(listed.filter((l) => [sharedId, mineId].includes(l.id)));
+
+  await app.close();
+});
+
+test("the boxes of a frame stand in the list's own order — shared first, then by name", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+
+  const id = await frame(memory.id, organizer.user.id);
+  // Made in one order, and titled so that creation order and the list's order
+  // disagree: the sheet has to answer in the second, not the first.
+  const made = async (title: string, shared: boolean) => {
+    const created = await app.inject(
+      as(organizer.token, {
+        method: "POST",
+        url: `/memories/${memory.id}/labels`,
+        payload: { title, color: 1, shared, media_ids: [id] },
+      }),
+    );
+    expect(created.statusCode).toBe(201);
+    return (created.json() as LabelCard).id;
+  };
+  const privateFirst = await made("Ярмарка", false);
+  const sharedLast = await made("Аквариум", true);
+  const sharedFirst = await made("Берег", true);
+
+  const read = await info(app, organizer.token, memory.id, id);
+  expect(read.statusCode).toBe(200);
+  // Shared before private, and inside each group by title — «Аквариум» before
+  // «Берег», which is the reverse of how they were made.
+  expect((read.json() as Sheet).labels.map((l) => l.id)).toEqual([
+    sharedLast,
+    sharedFirst,
+    privateFirst,
+  ]);
+
+  // The same order the list itself uses, so the two answers agree.
+  const listed = (await app.inject(
+    as(organizer.token, { method: "GET", url: `/memories/${memory.id}/labels` }),
+  )).json() as LabelCard[];
+  expect(listed.map((l) => l.id)).toEqual([sharedLast, sharedFirst, privateFirst]);
+
+  // A frame in no box at all is an empty list, never a null and never a 404.
+  const bare = await frame(memory.id, organizer.user.id);
+  const bareSheet = await info(app, organizer.token, memory.id, bare);
+  expect(bareSheet.statusCode).toBe(200);
+  expect((bareSheet.json() as Sheet).labels).toEqual([]);
 
   await app.close();
 });
@@ -605,6 +778,17 @@ test("the sheet hands out no key of the store and no address, and needs no stora
   });
   await stands(await montage(memory.id, organizer.user.id), id, 12);
 
+  // A box round the frame, so the label row the sheet draws is there to be
+  // looked at rather than being quietly absent from the answer.
+  const boxed = await app.inject(
+    as(organizer.token, {
+      method: "POST",
+      url: `/memories/${memory.id}/labels`,
+      payload: { title: "Лучшее", color: 1, shared: true, media_ids: [id] },
+    }),
+  );
+  expect(boxed.statusCode).toBe(201);
+
   // The frame's own keys (original, thumbnail, preview, the multipart upload's
   // id) and the person's address are all one `select *` away from the answer;
   // the sheet is exactly the documented fields and nothing beside them.
@@ -625,6 +809,7 @@ test("the sheet hands out no key of the store and no address, and needs no stora
       "focal_length_mm",
       "height",
       "id",
+      "labels",
       "latitude",
       "longitude",
       "montages",
@@ -637,6 +822,18 @@ test("the sheet hands out no key of the store and no address, and needs no stora
       "media_count",
       "name",
       "username",
+    ]);
+    // A label row is the list's row, down to the last key: no owner, or the
+    // sheet would hand out who made a private box.
+    expect(Object.keys(sheet.labels[0] ?? {}).sort()).toEqual([
+      "can_add_media",
+      "can_edit",
+      "color",
+      "id",
+      "media_count",
+      "mine",
+      "shared",
+      "title",
     ]);
     expect(Object.keys(sheet.montages[0] ?? {}).sort()).toEqual([
       "duration_seconds",
