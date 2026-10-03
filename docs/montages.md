@@ -226,6 +226,7 @@
            "music_wishes":{"music/7d2e…":"На сборы, тихо"},"orientation":"portrait"},
  "error_text":null,
  "created_at":"…","updated_at":"…","name":"Ролик на 1:30","template":null,"size_bytes":null,
+ "photos":168,"videos":46,
  "video_url":null,"poster_url":null}
 ```
 
