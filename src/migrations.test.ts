@@ -8,8 +8,9 @@ import { sql } from "./db.ts";
  * Migrations 100 (frame info), 110 (memory cover), 140 (dates between
  * days), 150 (hidden frame, place set by hand), 160 (montage name and
  * «посмотрели»), 170 (montage template and file size), 180 (the five new
- * montage stages, entry details, what the order counted) and 190 (comments
- * under a frame): the three promises the
+ * montage stages, entry details, what the order counted), 190 (comments
+ * under a frame) and 200 (the shooting settings strip — ISO, exposure,
+ * shutter): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -665,6 +666,90 @@ test(
     `;
     await db`delete from users where id = ${author.id}`;
     expect(await db`select count(*)::int as n from frame_comments`).toEqual([{ n: 0 }]);
+  },
+  slow,
+);
+
+test(
+  "200 frame-exposure: the shooting settings start empty, a replay keeps what the worker wrote, an undo takes the three columns away, a redo brings them back empty",
+  async () => {
+    const { db, apply, shape } = await chain(200);
+    const before = await shape();
+
+    await apply(200, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    const settings = after.columns
+      .filter((c) => c.table_name === "media_items")
+      .map((c) => c.column_name);
+    expect(settings).toEqual(expect.arrayContaining(["iso", "exposure_ev", "shutter"]));
+    // All three nullable, and none of them carrying a DEFAULT: a frame nobody
+    // probed is `null`, which is the one answer «не смотрели» can take.
+    for (const name of ["iso", "exposure_ev", "shutter"]) {
+      const column = after.columns.find(
+        (c) => c.table_name === "media_items" && c.column_name === name,
+      );
+      expect(column?.is_nullable).toBe("YES");
+      expect(column?.column_default).toBeNull();
+    }
+
+    const { photo } = await seed(db);
+    const media = await photo();
+    const held = async () => {
+      const [row] = await db<
+        {
+          iso: number | null;
+          exposure_ev: number | null;
+          shutter: string | null;
+        }[]
+      >`
+        select iso, exposure_ev, shutter from media_items where id = ${media}
+      `;
+      return row;
+    };
+    // A frame the worker has not read yet: three nulls, and — the reason these
+    // columns have no DEFAULT — an `exposure_ev` of 0 is a metered zero, not this.
+    expect(await held()).toEqual({ iso: null, exposure_ev: null, shutter: null });
+
+    // The `update` the worker's probe makes, with the shutter as the EXIF
+    // fraction: `1/60` in, `1/60` out, never 0.0166.
+    await db`
+      update media_items set iso = 400, exposure_ev = 0, shutter = '1/60' where id = ${media}
+    `;
+    expect(await held()).toEqual({ iso: 400, exposure_ev: 0, shutter: "1/60" });
+    // A zero and an absent value are two different rows, which is the whole
+    // reason the column is nullable rather than defaulted.
+    const second = await photo();
+    await db`update media_items set iso = 100 where id = ${second}`;
+    const [twin] = await db<{ exposure_ev: number | null }[]>`
+      select exposure_ev from media_items where id = ${second}
+    `;
+    expect(twin?.exposure_ev).toBeNull();
+
+    // The replay: same schema, and not one value lost — a `DROP … ; ADD …` in
+    // place of `IF NOT EXISTS` would pass the first half and fail this one.
+    await apply(200, "do");
+    expect(await shape()).toEqual(after);
+    expect(await held()).toEqual({ iso: 400, exposure_ev: 0, shutter: "1/60" });
+
+    // The undo: the schema as before, the frame itself kept, and twice over, as
+    // a redo script would run it.
+    await apply(200, "undo");
+    expect(await shape()).toEqual(before);
+    const [left] = await db`select count(*)::int as n from media_items where id = ${media}`;
+    expect(left?.n).toBe(1);
+    await apply(200, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo: the same schema, the columns back and empty — the undo took the
+    // values with them — and the worker can write them down again.
+    await apply(200, "do");
+    expect(await shape()).toEqual(after);
+    expect(await held()).toEqual({ iso: null, exposure_ev: null, shutter: null });
+    await db`
+      update media_items set iso = 12800, exposure_ev = -1.3, shutter = '1/125' where id = ${media}
+    `;
+    expect(await held()).toEqual({ iso: 12800, exposure_ev: -1.3, shutter: "1/125" });
   },
   slow,
 );
