@@ -140,6 +140,13 @@ type Sheet = {
   latitude: number | null;
   longitude: number | null;
   uploaded_by: { id: string; username: string | null; name: string | null; media_count: number };
+  comments: {
+    id: string;
+    body: string;
+    created_at: string;
+    author: { id: string };
+    mine: boolean;
+  }[];
   montages: { id: string; name: string; duration_seconds: number | null; start_seconds: number }[];
   labels: LabelCard[];
 };
@@ -428,9 +435,9 @@ test("the sheet says which boxes the frame is in, and a foreign private one is n
 
   // And the rows are the very ones the list would hand out, so the sheet and the
   // filter sheet cannot drift apart.
-  const listed = (await app.inject(
-    as(mark.token, { method: "GET", url: `/memories/${memory.id}/labels` }),
-  )).json() as LabelCard[];
+  const listed = (
+    await app.inject(as(mark.token, { method: "GET", url: `/memories/${memory.id}/labels` }))
+  ).json() as LabelCard[];
   expect(await boxes(mark.token)).toEqual(listed.filter((l) => [sharedId, mineId].includes(l.id)));
 
   await app.close();
@@ -470,9 +477,9 @@ test("the boxes of a frame stand in the list's own order — shared first, then 
   ]);
 
   // The same order the list itself uses, so the two answers agree.
-  const listed = (await app.inject(
-    as(organizer.token, { method: "GET", url: `/memories/${memory.id}/labels` }),
-  )).json() as LabelCard[];
+  const listed = (
+    await app.inject(as(organizer.token, { method: "GET", url: `/memories/${memory.id}/labels` }))
+  ).json() as LabelCard[];
   expect(listed.map((l) => l.id)).toEqual([sharedLast, sharedFirst, privateFirst]);
 
   // A frame in no box at all is an empty list, never a null and never a 404.
@@ -804,6 +811,10 @@ test("the sheet hands out no key of the store and no address, and needs no stora
       "aperture",
       "camera_model",
       "captured_at",
+      // The sheet draws what people wrote under the frame (doc-14), so it comes
+      // with the sheet rather than costing a second request over a panel the
+      // person just opened.
+      "comments",
       "created_at",
       "file_name",
       "focal_length_mm",
@@ -817,6 +828,9 @@ test("the sheet hands out no key of the store and no address, and needs no stora
       "uploaded_by",
       "width",
     ]);
+    // A frame nobody has written under carries an empty list, never a null and
+    // never a missing key — the sheet draws «Пока никто не написал».
+    expect(sheet.comments).toEqual([]);
     expect(Object.keys(sheet.uploaded_by).sort()).toEqual([
       "id",
       "media_count",

@@ -3,8 +3,8 @@ import { sql } from "../db.ts";
 import { seenBy, uuidPattern } from "../memories/plugin.ts";
 import type { Montage } from "../montages/row.ts";
 import { montageName } from "../montages/view.ts";
+import { frameComments } from "./comments.ts";
 import { labelCards } from "./labels.ts";
-import { frameComments, type FrameComment } from "./comments.ts";
 import type { MediaItem } from "./upload.ts";
 
 /**
@@ -188,11 +188,7 @@ export function frameRoutes(app: FastifyInstance) {
             and m.status = 'ready'
           order by m.created_at desc, m.id desc, f.start_seconds
         `,
-        labelCards(
-          memoryId,
-          { id: request.user.id, role: request.membership.role },
-          { mediaId },
-        ),
+        labelCards(memoryId, { id: request.user.id, role: request.membership.role }, { mediaId }),
         frameComments(memoryId, mediaId, request.user.id),
       ]);
 

@@ -84,13 +84,7 @@ const write = (app: App, token: string, memoryId: string, mediaId: string, paylo
     }),
   );
 
-const drop = (
-  app: App,
-  token: string,
-  memoryId: string,
-  mediaId: string,
-  commentId: string,
-) =>
+const drop = (app: App, token: string, memoryId: string, mediaId: string, commentId: string) =>
   app.inject(
     as(token, {
       method: "DELETE",
@@ -132,8 +126,6 @@ test("подписи кадра видит любой участник, зрит
 
   const shown = await frame(memory.id, anna.user.id);
   const bare = await frame(memory.id, organizer.user.id);
-  const elsewhere = await createMemory(app, organizer.token);
-  const alien = await frame(elsewhere.id, organizer.user.id);
 
   const first = await write(app, anna.token, memory.id, shown, { body: "Борис и Маша" });
   expect(first.statusCode).toBe(201);
@@ -157,9 +149,10 @@ test("подписи кадра видит любой участник, зрит
     "Борис и Маша",
     "Тут женились",
   ]);
-  expect(
-    (await commentsOf(app, anna.token, memory.id, shown)).map((row) => row.mine),
-  ).toEqual([true, false]);
+  expect((await commentsOf(app, anna.token, memory.id, shown)).map((row) => row.mine)).toEqual([
+    true,
+    false,
+  ]);
 
   // Зритель читает то же самое: подписи видны всем, кто видит кадр.
   expect(bodies(await commentsOf(app, viewer.token, memory.id, shown))).toEqual([
