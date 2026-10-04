@@ -4,6 +4,7 @@ import { seenBy, uuidPattern } from "../memories/plugin.ts";
 import type { Montage } from "../montages/row.ts";
 import { montageName } from "../montages/view.ts";
 import { labelCards } from "./labels.ts";
+import { frameComments, type FrameComment } from "./comments.ts";
 import type { MediaItem } from "./upload.ts";
 
 /**
@@ -28,7 +29,11 @@ import type { MediaItem } from "./upload.ts";
  * an empty list are «ещё не посчитано», not «нечего показывать» — the same
  * silence the gallery's missing derivatives keep. `labels` is nobody's to
  * invent: the same rows the memory's label list hands out, narrowed to this
- * frame, so a foreign private box leaves no trace in either.
+ * frame, so a foreign private box leaves no trace in either. `comments` is the
+ * third thing this sheet draws — what people wrote under the frame (doc-14) —
+ * and rides here for the same reason the labels do: it is drawn on the sheet the
+ * person just opened, so making them cost a second request would only mean the
+ * panel filling in after it appears.
  */
 
 /** The row behind the sheet: the frame, its uploader, and that person's tally. */
@@ -169,7 +174,12 @@ export function frameRoutes(app: FastifyInstance) {
       // a foreign private label leaves no trace here for the reason it leaves
       // none in the list. `media_count` is the label's own count, exactly as the
       // list gives it, so a row on this sheet is the row the filter sheet shows.
-      const [montages, labels] = await Promise.all([
+      //
+      // The comments are read the same way, and for the same reason: the sheet
+      // draws them («Комментарии» под «Сведениями о кадре»), so they ride here
+      // rather than costing a second request over a panel the person just opened.
+      // `mine` is the one flag that says «это твоё, это можно снести».
+      const [montages, labels, comments] = await Promise.all([
         sql<InMontage[]>`
           select m.id, m.name, m.params, m.duration_seconds, f.start_seconds
           from montage_frames f
@@ -183,6 +193,7 @@ export function frameRoutes(app: FastifyInstance) {
           { id: request.user.id, role: request.membership.role },
           { mediaId },
         ),
+        frameComments(memoryId, mediaId, request.user.id),
       ]);
 
       const {
@@ -217,6 +228,10 @@ export function frameRoutes(app: FastifyInstance) {
         // is a line the sheet does not draw, while an absent key would be a
         // field the api has not sent yet.
         labels,
+        // Same for comments: a frame nobody has written under has none, and the
+        // sheet draws the quiet «Пока никто не написал» over an empty list rather
+        // than over a missing field.
+        comments,
       };
     },
   );

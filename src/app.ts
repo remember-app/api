@@ -4,6 +4,7 @@ import { authPlugin } from "./auth/plugin.ts";
 import { socialRoutes } from "./auth/social.ts";
 import { contactRoutes } from "./contacts/contacts.ts";
 import { frameRoutes } from "./media/frame.ts";
+import { commentRoutes } from "./media/comments.ts";
 import { galleryRoutes } from "./media/gallery.ts";
 import { labelRoutes } from "./media/labels.ts";
 import { uploadRoutes } from "./media/upload.ts";
@@ -68,6 +69,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   // «Сведения о кадре» — one frame in words, beside the gallery that lists it
   // and on the same membership check.
   frameRoutes(app);
+  // «Комментарии» под кадром — две записи на той же membership-проверке, а чтение
+  // живёт в `GET …/media/:mediaId`, где лист их рисует (`frameComments`).
+  commentRoutes(app);
   // Коробки, по которым разложена та же галерея. Та же проверка членства, и
   // рядом с ней — потому что `label_ids` галереи приходят отсюда же.
   labelRoutes(app);

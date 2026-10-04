@@ -98,6 +98,15 @@ export const seenBy = (frame: string, userId: string) =>
   sql`(not ${sql(frame)}.hidden or ${sql(frame)}.uploaded_by = ${userId})`;
 
 /**
+ * Кадр, который спрашивающему вообще показывают: не только не скрытый (`seenBy`),
+ * но и долетевший — записи в `pending_upload` в галерее нет, и в «Сведениях о
+ * кадре» её нет тоже. Оба условия в одной строке, потому что маршрут, который
+ * забудет второе, откроет комментарии к кадру, которого ещё не видно.
+ */
+export const inSight = (frame: string, userId: string) =>
+  sql`${sql(frame)}.status <> 'pending_upload' and ${seenBy(frame, userId)}`;
+
+/**
  * What a memory is called and when it happened. One object rather than two
  * copies: the edit route takes the very same fields under the very same rules
  * — «с теми же проверками, что при создании» — and a rule written twice is a
