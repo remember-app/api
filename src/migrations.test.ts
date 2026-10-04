@@ -7,8 +7,9 @@ import { sql } from "./db.ts";
 /**
  * Migrations 100 (frame info), 110 (memory cover), 140 (dates between
  * days), 150 (hidden frame, place set by hand), 160 (montage name and
- * «посмотрели»), 170 (montage template and file size) and 180 (the five new
- * montage stages, entry details, what the order counted): the three promises the
+ * «посмотрели»), 170 (montage template and file size), 180 (the five new
+ * montage stages, entry details, what the order counted) and 190 (comments
+ * under a frame): the three promises the
  * docs/running.md makes of every migration and that no route can show — a replay is
  * harmless (a process killed between the file and its version mark runs it
  * again), an undo puts the schema back as it found it, and a redo gives the
@@ -574,6 +575,96 @@ test(
     await apply(180, "do");
     expect(await shape()).toEqual(after);
     expect((await codes()).entries).toEqual([...moved, [null, "music"]]);
+  },
+  slow,
+);
+
+test(
+  "190 frame-comments: a replay keeps every comment, an undo restores the old schema, a redo brings the cascade back",
+  async () => {
+    const { db, apply, shape } = await chain(190);
+    const before = await shape();
+
+    await apply(190, "do");
+    const after = await shape();
+    expect(after).not.toEqual(before);
+    expect(after.columns.map((c) => c.table_name)).toContain("frame_comments");
+
+    const { user, memory, photo } = await seed(db);
+    const media = await photo();
+    const say = async (body: string) => {
+      await db`
+        insert into frame_comments (media_id, memory_id, author_id, body)
+        values (${media}, ${memory}, ${user}, ${body})
+      `;
+    };
+    const held = async () => db`select body from frame_comments order by created_at, id`;
+
+    await say("Борис и Маша");
+    await say("Тут женились");
+    expect((await held()).map((row) => row.body)).toEqual(["Борис и Маша", "Тут женились"]);
+
+    // The column's own rules, which no route shows: an empty comment and one over
+    // the ceiling are refused by the database itself.
+    await expect(say("   ")).rejects.toThrow(/frame_comments_body_check/);
+    await expect(say("я".repeat(501))).rejects.toThrow(/frame_comments_body_check/);
+    // And the composite foreign key is «комментарий не выходит за своё воспоминание»
+    // — a rule the base keeps rather than the route promising.
+    const [stranger] = await db<{ id: string }[]>`
+      insert into memories (organizer_id, title, event_start)
+      values (${user}, 'neighbour', now()) returning id
+    `;
+    if (!stranger) throw new Error("no neighbour memory");
+    await expect(
+      db`
+        insert into frame_comments (media_id, memory_id, author_id, body)
+        values (${media}, ${stranger.id}, ${user}, 'Мимо')
+      `,
+    ).rejects.toThrow();
+
+    // The replay: same schema, and not one comment lost — a `DROP … ; ADD …` in
+    // place of `IF NOT EXISTS` would pass the first half and fail this one.
+    await apply(190, "do");
+    expect(await shape()).toEqual(after);
+    expect((await held()).map((row) => row.body)).toEqual(["Борис и Маша", "Тут женились"]);
+
+    await apply(190, "undo");
+    expect(await shape()).toEqual(before);
+    // What api owned stays: the frame and the memory are none of 190's business.
+    const [left] = await db`select count(*)::int as n from media_items where id = ${media}`;
+    expect(left?.n).toBe(1);
+    // An undo that fails on a second go is a redo nobody can script.
+    await apply(190, "undo");
+    expect(await shape()).toEqual(before);
+
+    // The redo is the same schema — and the rules work again, which a table
+    // brought back without its CHECK and cascades would not.
+    await apply(190, "do");
+    expect(await shape()).toEqual(after);
+    await expect(say("   ")).rejects.toThrow(/frame_comments_body_check/);
+
+    // The promise doc-14 makes: a comment leaves with its frame, on the database's
+    // own initiative — no line of api's deletion code says so.
+    await say("Уносится вместе с кадром");
+    expect((await held()).map((row) => row.body)).toContain("Уносится вместе с кадром");
+    await db`delete from media_items where id = ${media}`;
+    expect(await db`select count(*)::int as n from frame_comments`).toEqual([{ n: 0 }]);
+
+    // And with the person: what they wrote goes when the account does. The account
+    // is a second one, not the organizer's — `memories.organizer_id` deliberately
+    // has no ON DELETE (migration 003), so a user who organizes a memory cannot be
+    // deleted at all, and a test that tried would prove nothing about the cascade.
+    const [author] = await db<{ id: string }[]>`
+      insert into users (email) values (${`mig-${randomUUID()}@example.com`}) returning id
+    `;
+    if (!author) throw new Error("no second user");
+    const second = await photo();
+    await db`
+      insert into frame_comments (media_id, memory_id, author_id, body)
+      values (${second}, ${memory}, ${author.id}, 'Пока был')
+    `;
+    await db`delete from users where id = ${author.id}`;
+    expect(await db`select count(*)::int as n from frame_comments`).toEqual([{ n: 0 }]);
   },
   slow,
 );

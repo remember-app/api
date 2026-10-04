@@ -242,7 +242,7 @@ test("чужой комментарий не сносит никто, включ
   await app.close();
 });
 
-test("удаление кадра уносит его комментарии, а кадр соседнего воспоминания — нет", async () => {
+test("удаление кадра уносит его комментарии, а кадры других не трогает", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
   const memory = await createMemory(app, organizer.token);
@@ -251,13 +251,16 @@ test("удаление кадра уносит его комментарии, а
 
   const doomed = await frame(memory.id, anna.user.id);
   const survivor = await frame(memory.id, organizer.user.id);
-  const alien = await frame(elsewhere.id, organizer.user.id);
-  for (const target of [doomed, survivor, alien]) {
-    await write(app, anna.token, memory.id, target, { body: "Подпись" });
+  const other = await frame(memory.id, organizer.user.id);
+  for (const target of [doomed, survivor, other]) {
+    const written = await write(app, organizer.token, memory.id, target, { body: "Подпись" });
+    expect(written.statusCode).toBe(201);
   }
-  // Чужое воспоминание комментарий не примет: не за что зацепиться.
-  const refused = await write(app, anna.token, elsewhere.id, alien, { body: "Чужое" });
-  expect(refused.statusCode).toBe(200);
+  // Кадр соседнего воспоминания подписать нельзя — он не в этом воспоминании.
+  const alien = await frame(elsewhere.id, organizer.user.id);
+  expect((await write(app, organizer.token, memory.id, alien, { body: "Чужая" })).statusCode).toBe(
+    404,
+  );
 
   // Удалённый кадр уносит свои подписи каскадом, остальные не трогает.
   const removed = await app.inject(
@@ -266,7 +269,8 @@ test("удаление кадра уносит его комментарии, а
   expect(removed.statusCode).toBe(200);
   expect(await stored(doomed)).toEqual([]);
   expect(await stored(survivor)).toHaveLength(1);
-  expect(await stored(alien)).toHaveLength(1);
+  expect(await stored(other)).toHaveLength(1);
+  expect(await stored(alien)).toEqual([]);
 
   await app.close();
 });
@@ -363,21 +367,26 @@ test("текст: пустой, из одних пробелов, сверх п�
     { body: "   " },
     { body: "я".repeat(MAX_COMMENT_LENGTH + 1) },
     {},
-    { body: 5 },
+    { body: null },
+    { body: { text: "не строка" } },
   ]) {
     const answer = await write(app, organizer.token, memory.id, id, payload);
     expect(answer.statusCode, JSON.stringify(payload)).toBe(400);
   }
   expect(await stored(id)).toEqual([]);
 
-  // Ровно потолок — проходит, и пробелы по краям срезаются.
+  // Ровно потолок — проходит. Потолок считает то, что прислали, а не обрезанное:
+  // так же, как у названия лейбла, иначе «длинное с пробелами» проходило бы там,
+  // где не проходит короткое.
   const longest = await write(app, organizer.token, memory.id, id, {
-    body: `  ${"я".repeat(MAX_COMMENT_LENGTH)}  `,
+    body: "я".repeat(MAX_COMMENT_LENGTH),
   });
   expect(longest.statusCode).toBe(201);
   expect((longest.json() as Comment).body).toBe("я".repeat(MAX_COMMENT_LENGTH));
 
+  // Пробелы по краям срезаются — как у названия воспоминания и лейбла.
   const trimmed = await write(app, organizer.token, memory.id, id, { body: "  Обрезали  " });
+  expect(trimmed.statusCode).toBe(201);
   expect((trimmed.json() as Comment).body).toBe("Обрезали");
 
   await app.close();
