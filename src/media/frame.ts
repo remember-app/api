@@ -22,7 +22,12 @@ import type { MediaItem } from "./upload.ts";
  *
  * Most of its answers are not api's to write. `camera_model`,
  * `focal_length_mm` and `aperture` are the montage worker's, read out of the
- * original's metadata exactly as `width` and `height` are; so are `latitude`
+ * original's metadata exactly as `width` and `height` are — and so are the rest
+ * of the shooting settings strip, `iso`, `exposure_ev` and `shutter`, off that
+ * same probe (migration 200). `shutter` comes over as the fraction the EXIF
+ * holds, `1/60` rather than seconds, because the strip on the mockup says
+ * «1/60 с» and the app, not this database, decides what a reader's language
+ * spells that with. So are `latitude`
  * and `longitude` until the owner sets the place by hand, after which the
  * database keeps the worker from writing over it (migration 150).
  * `montage_frames` is the worker's too, written while it cuts a video. Null and
@@ -50,6 +55,11 @@ type FrameRow = {
   camera_model: string | null;
   focal_length_mm: number | null;
   aperture: number | null;
+  /** The shooting settings strip of `FrameInfo`: ISO, exposure, shutter. */
+  iso: number | null;
+  exposure_ev: number | null;
+  /** The EXIF fraction itself — `1/60`, `1/1`, `0.5` — never seconds. */
+  shutter: string | null;
   latitude: number | null;
   longitude: number | null;
   uploader_id: string;
@@ -143,6 +153,7 @@ export function frameRoutes(app: FastifyInstance) {
       const [frame] = await sql<FrameRow[]>`
         select i.id, i.file_name, i.size_bytes, i.captured_at, i.created_at,
                i.width, i.height, i.camera_model, i.focal_length_mm, i.aperture,
+               i.iso, i.exposure_ev, i.shutter,
                i.latitude, i.longitude,
                u.id as uploader_id, u.username as uploader_username,
                u.name as uploader_name,

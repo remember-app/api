@@ -51,6 +51,13 @@ export type MediaItem = {
   camera_model: string | null;
   focal_length_mm: number | null;
   aperture: number | null;
+  // The rest of the shooting settings strip (doc-02, `FrameInfo`): sensitivity,
+  // exposure compensation in stops, and the shutter speed as the fraction the
+  // EXIF holds — `1/60`, not seconds. Same worker, same probe, same silence of a
+  // null as the two numbers above; read by «Сведения о кадре» alone.
+  iso: number | null;
+  exposure_ev: number | null;
+  shutter: string | null;
   latitude: number | null;
   longitude: number | null;
   // The automatic screening's verdict, written by the same worker and read by

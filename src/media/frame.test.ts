@@ -76,6 +76,9 @@ async function frame(
     camera_model?: string;
     focal_length_mm?: number;
     aperture?: number;
+    iso?: number;
+    exposure_ev?: number;
+    shutter?: string;
     latitude?: number;
     longitude?: number;
   } = {},
@@ -83,12 +86,15 @@ async function frame(
   const [row] = await sql<{ id: string }[]>`
     insert into media_items
       (memory_id, uploaded_by, kind, status, original_key, size_bytes, captured_at,
-       file_name, width, height, camera_model, focal_length_mm, aperture, latitude, longitude)
+       file_name, width, height, camera_model, focal_length_mm, aperture,
+       iso, exposure_ev, shutter, latitude, longitude)
     values (${memoryId}, ${uploadedBy}, 'photo', ${fields.status ?? "ready"},
             ${`originals/${randomUUID()}`}, 4404019, ${fields.captured_at ?? null},
             ${fields.file_name ?? null}, ${fields.width ?? null}, ${fields.height ?? null},
             ${fields.camera_model ?? null}, ${fields.focal_length_mm ?? null},
-            ${fields.aperture ?? null}, ${fields.latitude ?? null}, ${fields.longitude ?? null})
+            ${fields.aperture ?? null},
+            ${fields.iso ?? null}, ${fields.exposure_ev ?? null}, ${fields.shutter ?? null},
+            ${fields.latitude ?? null}, ${fields.longitude ?? null})
     returning id
   `;
   if (!row) throw new Error("insert into media_items returned no row");
@@ -137,6 +143,9 @@ type Sheet = {
   camera_model: string | null;
   focal_length_mm: number | null;
   aperture: number | null;
+  iso: number | null;
+  exposure_ev: number | null;
+  shutter: string | null;
   latitude: number | null;
   longitude: number | null;
   uploaded_by: { id: string; username: string | null; name: string | null; media_count: number };
@@ -177,6 +186,9 @@ test("the sheet says who brought the frame, what the file is and what took it", 
     camera_model: "iPhone 15 Pro",
     focal_length_mm: 24,
     aperture: 1.8,
+    iso: 400,
+    exposure_ev: 0,
+    shutter: "1/60",
     latitude: 55.518,
     longitude: 37.53,
   });
@@ -202,6 +214,13 @@ test("the sheet says who brought the frame, what the file is and what took it", 
     camera_model: "iPhone 15 Pro",
     focal_length_mm: 24,
     aperture: 1.8,
+    // The rest of the strip the mockup draws under the camera card (TASK-532).
+    iso: 400,
+    exposure_ev: 0,
+    // The EXIF fraction, handed over as it is stored — the app writes «1/60 с»,
+    // and it is the only one of the two ends of that conversion that cannot be
+    // guessed back from seconds.
+    shutter: "1/60",
     latitude: 55.518,
     longitude: 37.53,
     montages: [],
@@ -242,10 +261,42 @@ test("a frame nobody has looked at yet is answered without a file name, not with
     camera_model: null,
     focal_length_mm: null,
     aperture: null,
+    // And the shooting settings strip (TASK-532): the worker has not read them
+    // either, and «не смотрел» is a null here exactly as it is two fields up.
+    iso: null,
+    exposure_ev: null,
+    shutter: null,
     latitude: null,
     longitude: null,
     montages: [],
   });
+
+  await app.close();
+});
+
+test("an exposure of zero is a zero, not a silence — the strip cannot tell them apart by accident", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+
+  // Two frames off the same camera on the same evening, one shot square and one
+  // not: the mockup's strip draws «0 ev» and the app must be able to tell that
+  // from a frame nobody has looked at.
+  const square = await frame(memory.id, organizer.user.id, { iso: 100, exposure_ev: 0 });
+  const looked = await frame(memory.id, organizer.user.id, { iso: 800, exposure_ev: -1.3 });
+
+  const read = async (id: string) => {
+    const got = await info(app, organizer.token, memory.id, id);
+    expect(got.statusCode).toBe(200);
+    const { iso, exposure_ev, shutter } = got.json() as Sheet;
+    return { iso, exposure_ev, shutter };
+  };
+
+  // `0` came over as the number zero, not as a missing key and not as null: the
+  // column has no DEFAULT, so an unprobed frame is null and a metered one is 0,
+  // and the two never collapse into each other on the way out.
+  expect(await read(square)).toEqual({ iso: 100, exposure_ev: 0, shutter: null });
+  expect(await read(looked)).toEqual({ iso: 800, exposure_ev: -1.3, shutter: null });
 
   await app.close();
 });
@@ -816,14 +867,19 @@ test("the sheet hands out no key of the store and no address, and needs no stora
       // person just opened.
       "comments",
       "created_at",
+      // The rest of the shooting settings strip, beside the two numbers the
+      // mockup already drew (TASK-532).
+      "exposure_ev",
       "file_name",
       "focal_length_mm",
       "height",
       "id",
+      "iso",
       "labels",
       "latitude",
       "longitude",
       "montages",
+      "shutter",
       "size_bytes",
       "uploaded_by",
       "width",
