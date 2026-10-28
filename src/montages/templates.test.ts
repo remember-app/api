@@ -16,6 +16,9 @@ const titleTag = "task198-test";
 const title = () => `${titleTag} ${randomUUID()}`;
 const mine = `${titleTag} %`;
 
+/** Два языка, четыре набора материала и заказ на каждый шаблон — не обещание в пять секунд на занятой машине. */
+const slow = 30_000;
+
 // Порядок тот же, что в montages.test.ts: сначала задачи в чужой таблице
 // `jobs`, потом воспоминания, и только потом люди — `montages.ordered_by`
 // нарочно без ON DELETE.
@@ -382,64 +385,68 @@ test("где заказ откажут за нехваткой материал�
   }
 });
 
-test("каждый шаблон принимается заказом как есть, на любом материале и на обоих языках", async () => {
-  const { app } = buildTestApp();
-  const organizer = await signIn(app, email());
+test(
+  "каждый шаблон принимается заказом как есть, на любом материале и на обоих языках",
+  async () => {
+    const { app } = buildTestApp();
+    const organizer = await signIn(app, email());
 
-  // С запасом, впритык по секундам, только фото, и такой, где предел — пара
-  // секунд из фото и видео без длины: во всех шаблон зажат под предел, а не
-  // отвергнут. Предел — за вычетом склеек, по полсекунды на каждую.
-  const stocks: [string, (number | null | "photo")[], number][] = [
-    ["roomy", [600, 600, 600], 600],
-    ["forty", [21, 10, 10], 40],
-    ["photos", ["photo", "photo", "photo"], 6],
-    ["blind", ["photo", "photo", null], 4],
-  ];
-  // Длины из макета: выше предела шаблон не поднимается, ниже — не опускается.
-  const drawn: Record<string, number> = {
-    for_myself: 180,
-    quick: 60,
-    report: 120,
-    short_form: 30,
-    parents: 150,
-    dopamine: 45,
-  };
-  for (const language of ["ru", "en"] as const) {
-    expect((await speak(app, organizer.token, language)).statusCode).toBe(200);
-    for (const [name, items, ceiling] of stocks) {
-      const memory = await createMemory(app, organizer.token);
-      await material(memory.id, organizer.user.id, items);
+    // С запасом, впритык по секундам, только фото, и такой, где предел — пара
+    // секунд из фото и видео без длины: во всех шаблон зажат под предел, а не
+    // отвергнут. Предел — за вычетом склеек, по полсекунды на каждую.
+    const stocks: [string, (number | null | "photo")[], number][] = [
+      ["roomy", [600, 600, 600], 600],
+      ["forty", [21, 10, 10], 40],
+      ["photos", ["photo", "photo", "photo"], 6],
+      ["blind", ["photo", "photo", null], 4],
+    ];
+    // Длины из макета: выше предела шаблон не поднимается, ниже — не опускается.
+    const drawn: Record<string, number> = {
+      for_myself: 180,
+      quick: 60,
+      report: 120,
+      short_form: 30,
+      parents: 150,
+      dopamine: 45,
+    };
+    for (const language of ["ru", "en"] as const) {
+      expect((await speak(app, organizer.token, language)).statusCode).toBe(200);
+      for (const [name, items, ceiling] of stocks) {
+        const memory = await createMemory(app, organizer.token);
+        await material(memory.id, organizer.user.id, items);
 
-      const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
-      expect(templates).toHaveLength(6);
-      const { people } = (await preview(app, organizer.token, memory.id)).json();
+        const templates = (await ask(app, organizer.token, memory.id)).json() as Template[];
+        expect(templates).toHaveLength(6);
+        const { people } = (await preview(app, organizer.token, memory.id)).json();
 
-      // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
-      for (const { id, ...payload } of templates) {
-        const where = `${language} ${name} ${id}`;
-        expect(payload.target_seconds, where).toBe(Math.min(ceiling, drawn[id] ?? 0));
-        expect(payload.story_text, where).toContain(
-          `${language === "ru" ? "от" : "from"} ${people} `,
-        );
-        const summary = await preview(app, organizer.token, memory.id, payload);
-        expect(summary.statusCode, `${where}: ${summary.body}`).toBe(200);
-        expect(summary.json().target_seconds, where).toBe(payload.target_seconds);
-        const ordered = await app.inject(
-          as(organizer.token, {
-            method: "POST",
-            url: `/memories/${memory.id}/montages`,
-            payload,
-          }),
-        );
-        expect(ordered.statusCode, `${where}: ${ordered.body}`).toBe(201);
-        // Пустой объект пожеланий — это «ничего не пожелали», и в строку он не
-        // пишется; непустой ложится как есть, у тех же треков.
-        const { music_wishes, ...rest } = payload;
-        expect(ordered.json().params, where).toEqual({
-          ...rest,
-          ...(Object.keys(music_wishes).length > 0 ? { music_wishes } : {}),
-        });
+        // Тело заказа — это шаблон без `id`: id называет карточку, а не пожелание.
+        for (const { id, ...payload } of templates) {
+          const where = `${language} ${name} ${id}`;
+          expect(payload.target_seconds, where).toBe(Math.min(ceiling, drawn[id] ?? 0));
+          expect(payload.story_text, where).toContain(
+            `${language === "ru" ? "от" : "from"} ${people} `,
+          );
+          const summary = await preview(app, organizer.token, memory.id, payload);
+          expect(summary.statusCode, `${where}: ${summary.body}`).toBe(200);
+          expect(summary.json().target_seconds, where).toBe(payload.target_seconds);
+          const ordered = await app.inject(
+            as(organizer.token, {
+              method: "POST",
+              url: `/memories/${memory.id}/montages`,
+              payload,
+            }),
+          );
+          expect(ordered.statusCode, `${where}: ${ordered.body}`).toBe(201);
+          // Пустой объект пожеланий — это «ничего не пожелали», и в строку он не
+          // пишется; непустой ложится как есть, у тех же треков.
+          const { music_wishes, ...rest } = payload;
+          expect(ordered.json().params, where).toEqual({
+            ...rest,
+            ...(Object.keys(music_wishes).length > 0 ? { music_wishes } : {}),
+          });
+        }
       }
     }
-  }
-});
+  },
+  slow,
+);
