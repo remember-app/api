@@ -745,6 +745,72 @@ test("the music is a list of any tracks, the organizer's and the shelf's, and bo
   await app.close();
 });
 
+test("the music may be left to the director instead of named as a list of tracks", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const token = organizer.token;
+  const memory = await createMemory(app, token);
+  await material(memory.id, organizer.user.id, 3);
+  const asked = async (payload: object) => alike(app, token, memory.id, payload);
+
+  // Handed over: the flag alone goes into `params`, and `music_tracks` is not
+  // written at all — the worker reads «пусть выберет режиссёр» from the flag's
+  // presence, and an empty list beside it would say the opposite, «без музыки».
+  const given = await asked({ music_director: true });
+  expect(given.statusCode).toBe(201);
+  expect(given.json().params).toEqual({ target_seconds: 60, music_director: true });
+  // And still there when the app reads the list — the worker takes it from the
+  // same place.
+  const listed = (await list(app, token, memory.id)).json() as { id: string; params: object }[];
+  expect(listed.find((item) => item.id === given.json().id)?.params).toEqual({
+    target_seconds: 60,
+    music_director: true,
+  });
+
+  // An empty list beside the flag is not a contradiction — «без треков» is what
+  // the flag already says — and writes the flag just the same.
+  const empty = await asked({ music_director: true, music_tracks: [] });
+  expect(empty.statusCode).toBe(201);
+  expect(empty.json().params).toEqual({ target_seconds: 60, music_director: true });
+
+  const before = (await montageRows(memory.id)).length;
+
+  // A track named beside the flag is two orders about the same music, refused
+  // before a row exists — the same shape of refusal a frame in both lists gets.
+  for (const music_tracks of [["calm"], ["road", "night"]]) {
+    const refused = await asked({ music_director: true, music_tracks });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toEqual({
+      error: "music_director cannot be combined with music_tracks",
+    });
+  }
+
+  // A wish has no track to be written to, and the wish rule refuses it by
+  // itself: no separate rule for this mode, exactly as the flag promises.
+  const wished = await asked({ music_director: true, music_wishes: { calm: "тихо" } });
+  expect(wished.statusCode).toBe(400);
+  expect(wished.json()).toEqual({
+    error: "music wish for a track not in music_tracks",
+    music_wishes: ["calm"],
+  });
+  expect((await montageRows(memory.id)).length).toBe(before);
+
+  // Said false or not said at all is the list, exactly as before: the flag
+  // changes nothing until it is true.
+  for (const payload of [{}, { music_director: false }, { music_tracks: [] }]) {
+    const plain = await asked(payload);
+    expect(plain.statusCode).toBe(201);
+    expect(plain.json().params).toEqual({ target_seconds: 60, music_tracks: [] });
+  }
+  // Not a flag at all — an object where a boolean belongs — is refused by the
+  // schema, the field named in the answer.
+  const wrong = await asked({ music_director: {} });
+  expect(wrong.statusCode).toBe(400);
+  expect(wrong.json().message).toContain("music_director");
+
+  await app.close();
+});
+
 test("a wish about the music is kept with the track it is written to, and only a track of this order", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());

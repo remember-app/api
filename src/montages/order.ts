@@ -115,6 +115,10 @@ export const orderBodySchema = () => {
         uniqueItems: true,
         maxItems: maxTracks,
       },
+      // The other way to ask for music: hand the choice to the director rather
+      // than name tracks. A flag, not a value — `true` is the whole of it, and
+      // `checkOrder` refuses it beside a non-empty `music_tracks`.
+      music_director: { type: "boolean" },
       // A wish per track, keyed by the track as `music_tracks` names it. Which
       // keys belong to this order is `checkOrder`'s question: it needs the
       // tracks cleaned first.
@@ -145,6 +149,7 @@ export type OrderBody = {
   include_media_ids?: string[];
   exclude_media_ids?: string[];
   music_tracks?: string[];
+  music_director?: boolean;
   music_wishes?: Record<string, string>;
   orientation?: (typeof orientations)[number];
   name?: string;
@@ -243,6 +248,14 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // dropped — «очистил поле» is «не сказал».
   const asked = body?.music_tracks ?? [];
   const tracks = [...new Set(asked.map((name) => storable(name)).filter((name) => name))];
+  // «Пусть выберет режиссёр» and «играй вот эти» at once is two orders about
+  // the same music, and obeying either would be us deciding which the organizer
+  // meant — the same refusal a frame in both lists gets. An empty list beside
+  // the flag is not a contradiction: «без треков» is what the flag already says.
+  const director = body?.music_director === true;
+  if (director && tracks.length > 0) {
+    return { code: 400, body: { error: "music_director cannot be combined with music_tracks" } };
+  }
   // A shelf id or a key of this memory's own track, in one list on purpose: the
   // order is the order they play in, and the worker downloads both the same
   // way. The shelf is checked against the very list «Послушать» is checked
@@ -304,7 +317,9 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
   // that says nothing is a key not worth writing. The tracks are the one
   // exception and are always written, empty list and all: the worker tells
   // «без музыки» from an order made before this field existed — where it played
-  // `warm` by default — by nothing but the field being there. The wishes are
+  // `warm` by default — by nothing but the field being there. Handed to the
+  // director, the two swap places: the flag is written and the list is not, so
+  // «режиссёр выберет» and «без музыки» stay two different rows. The wishes are
   // not an exception: no wish written is «ничего не пожелали».
   const story = storable(body?.story_text ?? "").trim();
   return {
@@ -313,7 +328,7 @@ export async function checkOrder(memoryId: string, body: OrderBody): Promise<Che
       ...(story ? { story_text: story } : {}),
       ...(include.length > 0 ? { include_media_ids: include } : {}),
       ...(exclude.length > 0 ? { exclude_media_ids: exclude } : {}),
-      music_tracks: tracks,
+      ...(director ? { music_director: true } : { music_tracks: tracks }),
       ...(Object.keys(wishes).length > 0 ? { music_wishes: wishes } : {}),
       ...(body?.orientation ? { orientation: body.orientation } : {}),
     },
