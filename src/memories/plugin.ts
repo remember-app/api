@@ -238,6 +238,7 @@ export function memoriesPlugin(app: FastifyInstance) {
         removal_media_count: 0,
         cover_thumbnail_url: null,
         recent_thumbnail_urls: [],
+        card_thumbnail_urls: [],
         member_count: 1,
         contributed_member_count: 0,
       });
@@ -326,9 +327,22 @@ export function memoriesPlugin(app: FastifyInstance) {
  *
  * The card shows real frames from inside the memory, so the keys ride along on
  * the listing itself: this screen holds every memory one is in, and a call per
- * card to fetch them would be a round trip per card. Four is what the card
- * draws — enough of the material to speak for itself, so nothing has to count
- * the rest beside them.
+ * card to fetch them would be a round trip per card.
+ *
+ * Two tails of frames, because two questions are asked of them, and neither
+ * can be the other's answer.
+ *
+ * `recent_thumbnail_urls` is the last four, newest first — the same order as
+ * the end of the gallery, read backwards. The cover picker (settings) and the
+ * films mosaic read it as such, so it keeps meaning «последние кадры» whatever
+ * the main screen draws.
+ *
+ * `card_thumbnail_urls` is the main screen's own: up to twelve frames drawn at
+ * random from the *whole* memory, not from its tail. A fixed tail would show
+ * the same four photographs every visit, however much the memory holds; a
+ * random draw from everywhere lets each listing answer be a different face of
+ * the same event. Twelve is the ceiling it samples down from — more than the
+ * card can draw, so it is never short of material.
  *
  * Two numbers of frames, because two different questions are asked of them.
  * `media_count` is what the caller opens: the gallery's own predicates, so a
@@ -344,6 +358,7 @@ export async function cards(userId: string, memoryId?: string) {
   type Row = Memory & {
     role: MemberRole;
     thumbnail_keys: string[];
+    card_thumbnail_keys: string[];
     cover_thumbnail_key: string | null;
     member_count: number;
     contributed_member_count: number;
@@ -373,7 +388,20 @@ export async function cards(userId: string, memoryId?: string) {
         -- end of the gallery.
         order by coalesce(mi.captured_at, mi.created_at) desc, mi.id desc
         limit 4
-      ) as thumbnail_keys
+      ) as thumbnail_keys,
+      -- The main screen's own tail: the same ready, seen frames, but drawn at
+      -- random from the whole memory rather than read off its end, so a card
+      -- is not four fixed photographs for as long as the memory lives. A random
+      -- sort puts the lot in order before the ceiling cuts it, which a memory's
+      -- own size carries here; the ceiling is well above what any card draws,
+      -- so the screen is never short of material to pick from.
+      array(
+        select mi.thumbnail_key from media_items mi
+        where mi.memory_id = m.id and mi.status = 'ready' and mi.thumbnail_key is not null
+          and ${seenBy("mi", userId)}
+        order by random()
+        limit 12
+      ) as card_thumbnail_keys
     from memory_members mm
     join memories m on m.id = mm.memory_id
     left join media_items cover on cover.id = m.cover_media_id and ${seenBy("cover", userId)}
@@ -420,17 +448,30 @@ export async function cards(userId: string, memoryId?: string) {
   const ttl = downloadTtlSeconds();
   const configured = storageConfigured();
   return Promise.all(
-    rows.map(async ({ thumbnail_keys, cover_thumbnail_key, seen_media_count, ...memory }) => ({
-      ...memory,
-      media_count: seen_media_count,
-      // The cover goes out as a link to the derivative, exactly as the tail
-      // does; null while none is chosen, which is the card drawn as it is
-      // drawn today (doc-01).
-      cover_thumbnail_url:
-        configured && cover_thumbnail_key ? await downloadUrl(cover_thumbnail_key, ttl) : null,
-      recent_thumbnail_urls: configured
-        ? await Promise.all(thumbnail_keys.map((key) => downloadUrl(key, ttl)))
-        : [],
-    })),
+    rows.map(
+      async ({
+        thumbnail_keys,
+        card_thumbnail_keys,
+        cover_thumbnail_key,
+        seen_media_count,
+        ...memory
+      }) => ({
+        ...memory,
+        media_count: seen_media_count,
+        // The cover goes out as a link to the derivative, exactly as the tail
+        // does; null while none is chosen, which is the card drawn as it is
+        // drawn today (doc-01).
+        cover_thumbnail_url:
+          configured && cover_thumbnail_key ? await downloadUrl(cover_thumbnail_key, ttl) : null,
+        recent_thumbnail_urls: configured
+          ? await Promise.all(thumbnail_keys.map((key) => downloadUrl(key, ttl)))
+          : [],
+        // Signed on the same ttl and drawn from the same ready, seen frames:
+        // the difference is only which of them the card is handed.
+        card_thumbnail_urls: configured
+          ? await Promise.all(card_thumbnail_keys.map((key) => downloadUrl(key, ttl)))
+          : [],
+      }),
+    ),
   );
 }
