@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { InjectOptions } from "fastify";
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test, vi } from "vitest";
 import { buildTestApp, cleanupTestUsers, signIn, testEmail } from "../auth/testing.ts";
 import { sql } from "../db.ts";
 import type { ContributionStatus, MemberRole } from "./plugin.ts";
@@ -190,9 +190,9 @@ const keyOf = (url: string) => keysOf([url])[0];
 
 /**
  * Two cards of one memory compared as they are meant to be: field for field,
- * except the main screen's own frames, which are drawn at random — the same
- * memory answers two requests with the same frames in a different order, so
- * they are sorted rather than compared as they arrived.
+ * except the main screen's own frames, which are compared as a set. They hold
+ * still within a five-hour window, but the two answers here are asked a moment
+ * apart and a run could straddle the window's edge, so the order is not pinned.
  */
 const sameCard = (card: { card_thumbnail_urls: string[] }) => ({
   ...card,
@@ -339,7 +339,14 @@ test("the card holds frames beyond the last four — all of them when the memory
   await app.close();
 });
 
-test("the card is drawn at random from the whole memory, not read off its end", async () => {
+/**
+ * The five hours a card's face holds still for, spelt here rather than read off
+ * the api: it is the contract the card names, so a change to the api's own
+ * window that this test did not mean to bless is a red test, not a silent pass.
+ */
+const cardWindowMs = 5 * 60 * 60 * 1000;
+
+test("the card holds the same dozen inside a window and turns over at its edge", async () => {
   const { app } = buildTestApp();
   const { token, user } = await signIn(app, email());
 
@@ -348,7 +355,8 @@ test("the card is drawn at random from the whole memory, not read off its end", 
   ).json();
 
   // Thirty ready frames, shot an hour apart: the memory is far wider than the
-  // dozen a card draws, so which dozen arrives is the draw's business.
+  // dozen a card draws, so which dozen arrives is the window's business — and
+  // the boundary has something to change.
   const key = (n: number) => `${titleTag}-${randomUUID()}-${n}.jpg`;
   const keys = Array.from({ length: 30 }, (_, n) => key(n));
   const shotAt = (n: number) => new Date(Date.UTC(2026, 4, 1) + n * 3_600_000).toISOString();
@@ -361,19 +369,39 @@ test("the card is drawn at random from the whole memory, not read off its end", 
       ((await list(app, token)).json()[0] as { card_thumbnail_urls: string[] }).card_thumbnail_urls,
     );
 
-  const first = await draw();
-  // The ceiling, not the tail: a card is a dozen frames wide.
-  expect(first).toHaveLength(12);
-  // Every one of them is a frame of this memory, signed like the rest.
-  expect(first.every((k) => keys.includes(k ?? ""))).toBe(true);
-  for (const url of (await list(app, token)).json()[0].card_thumbnail_urls) {
-    expect(url).toContain("X-Amz-Signature=");
+  // The clock drives the api's window seed, so the test holds it: an instant in
+  // one window, another near its end, and one just past the boundary. Anchored
+  // to the real clock — a fixed epoch would do the same, but signing links off
+  // a 1970 date is not what any running server does.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const boundary = Math.floor(Date.now() / cardWindowMs) * cardWindowMs;
+    vi.setSystemTime(new Date(boundary + 60_000));
+
+    const first = await draw();
+    // The ceiling, not the tail: a card is a dozen frames wide.
+    expect(first).toHaveLength(12);
+    // Every one of them is a frame of this memory, signed like the rest.
+    expect(first.every((k) => keys.includes(k ?? ""))).toBe(true);
+    for (const url of (await list(app, token)).json()[0].card_thumbnail_urls) {
+      expect(url).toContain("X-Amz-Signature=");
+    }
+
+    // Four hours on, still inside the same window: the same dozen in the same
+    // order. The phone re-reads the listing on every return to the main screen
+    // and must find the card it left.
+    vi.setSystemTime(new Date(boundary + cardWindowMs - 60_000));
+    expect(await draw()).toEqual(first);
+
+    // Across the boundary the seed changes, and the draw with it: over the
+    // whole memory the two windows name more than a dozen frames between them,
+    // which one fixed dozen never could.
+    vi.setSystemTime(new Date(boundary + cardWindowMs + 60_000));
+    const next = await draw();
+    expect(new Set([...first, ...next]).size).toBeGreaterThan(12);
+  } finally {
+    vi.useRealTimers();
   }
-  // Drawn, not read off an end: two answers to the same request name more than
-  // twelve different frames between them, which a fixed slice of the memory —
-  // its last four or its last twelve — never could.
-  const second = await draw();
-  expect(new Set([...first, ...second]).size).toBeGreaterThan(12);
 
   await app.close();
 });
