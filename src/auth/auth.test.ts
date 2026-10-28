@@ -24,6 +24,9 @@ const testEmail = () => sharedTestEmail("task05");
 // recognised by the provider account id instead.
 const testSub = () => `task07-${randomUUID()}`;
 
+/** The review door, its near misses and the letters they send — not a five-second promise on a busy machine. */
+const slow = 30_000;
+
 /**
  * The mailbox, stood in for by a real mail server of this file's own: the
  * letter goes to it over SMTP — STARTTLS, AUTH and all, as it goes to the real
@@ -826,42 +829,46 @@ test("the review door: its one address signs in on the fixed code, in production
 // fixed code worth nothing. The account behind another case is the reviewer's
 // own, and even there the fixed code does not open it — the live code is the
 // random one that went by letter.
-test("the review door opens for its exact spelling alone: near misses get a letter and the fixed code is refused", async () => {
-  const previous = saveEnv();
-  const { email, code } = openReviewDoor();
-  const { app } = buildTestApp();
-  try {
-    const [local, domain] = email.split("@");
-    for (const other of [
-      email.replace("task05", "Task05"),
-      `${local}+review@${domain}`,
-      `${local}0@${domain}`,
-      `${local}@example.org`,
-    ]) {
+test(
+  "the review door opens for its exact spelling alone: near misses get a letter and the fixed code is refused",
+  async () => {
+    const previous = saveEnv();
+    const { email, code } = openReviewDoor();
+    const { app } = buildTestApp();
+    try {
+      const [local, domain] = email.split("@");
+      for (const other of [
+        email.replace("task05", "Task05"),
+        `${local}+review@${domain}`,
+        `${local}0@${domain}`,
+        `${local}@example.org`,
+      ]) {
+        const posted = letters.length;
+        const start = await startLogin(app, { email: other });
+        expect(start.statusCode, other).toBe(200);
+        expect(start.json()).toEqual({ ok: true });
+        expect(letters, other).toHaveLength(posted + 1);
+        expect(letters.at(-1)?.to).toEqual([other.toLowerCase()]);
+        expect((await verifyCode(app, other, code)).statusCode, other).toBe(401);
+      }
+
+      // Stray spaces never reach the door: the address is not an address.
+      expect((await startLogin(app, { email: ` ${email} ` })).statusCode).toBe(400);
+
+      // Not a vacuous pass: the exact spelling does open, and nothing but its
+      // one code gets through it.
       const posted = letters.length;
-      const start = await startLogin(app, { email: other });
-      expect(start.statusCode, other).toBe(200);
-      expect(start.json()).toEqual({ ok: true });
-      expect(letters, other).toHaveLength(posted + 1);
-      expect(letters.at(-1)?.to).toEqual([other.toLowerCase()]);
-      expect((await verifyCode(app, other, code)).statusCode, other).toBe(401);
+      expect((await startLogin(app, { email })).statusCode).toBe(200);
+      expect(letters).toHaveLength(posted);
+      expect((await verifyCode(app, email, wrongCode(code, 1))).statusCode).toBe(401);
+      expect((await verifyCode(app, email, code)).statusCode).toBe(200);
+    } finally {
+      restoreEnv(previous);
+      await app.close();
     }
-
-    // Stray spaces never reach the door: the address is not an address.
-    expect((await startLogin(app, { email: ` ${email} ` })).statusCode).toBe(400);
-
-    // Not a vacuous pass: the exact spelling does open, and nothing but its
-    // one code gets through it.
-    const posted = letters.length;
-    expect((await startLogin(app, { email })).statusCode).toBe(200);
-    expect(letters).toHaveLength(posted);
-    expect((await verifyCode(app, email, wrongCode(code, 1))).statusCode).toBe(401);
-    expect((await verifyCode(app, email, code)).statusCode).toBe(200);
-  } finally {
-    restoreEnv(previous);
-    await app.close();
-  }
-});
+  },
+  slow,
+);
 
 // A code that never changes is a code a guesser can walk through in order, so
 // the door gets not one try more than anyone: the attempts on each code, the

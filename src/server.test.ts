@@ -26,6 +26,9 @@ const google = {
   GOOGLE_STORAGE_BUCKET: "fake-bucket",
 };
 
+/** Two server processes, each booting the database check, are not a five-second promise on a busy machine. */
+const slow = 30_000;
+
 const freePort = () =>
   new Promise<number>((resolve) => {
     const probe = createServer().listen(0, "127.0.0.1", () => {
@@ -55,33 +58,41 @@ const dies = async (env: Record<string, string>) => {
   return { code, output: run.output() };
 };
 
-test("no database URL, or a database that does not answer: the server exits with the reason", async () => {
-  const noUrl = await dies({});
-  expect(noUrl.code).toBe(1);
-  expect(noUrl.output).toContain("DATABASE_URL is not set");
+test(
+  "no database URL, or a database that does not answer: the server exits with the reason",
+  async () => {
+    const noUrl = await dies({});
+    expect(noUrl.code).toBe(1);
+    expect(noUrl.output).toContain("DATABASE_URL is not set");
 
-  const down = await dies({ DATABASE_URL: unreachable });
-  expect(down.code).toBe(1);
-  expect(down.output).toContain("ECONNREFUSED");
-});
+    const down = await dies({ DATABASE_URL: unreachable });
+    expect(down.code).toBe(1);
+    expect(down.output).toContain("ECONNREFUSED");
+  },
+  slow,
+);
 
-test("google storage without its prefix stops the server; with key and prefix it gets on to the database check", async () => {
-  const noPrefix = await dies({ DATABASE_URL: database, ...google });
-  expect(noPrefix.code).toBe(1);
-  expect(noPrefix.output).toContain("GOOGLE_STORAGE_PREFIX is not set");
+test(
+  "google storage without its prefix stops the server; with key and prefix it gets on to the database check",
+  async () => {
+    const noPrefix = await dies({ DATABASE_URL: database, ...google });
+    expect(noPrefix.code).toBe(1);
+    expect(noPrefix.output).toContain("GOOGLE_STORAGE_PREFIX is not set");
 
-  // Storage settings are checked before the database: with a good key and a
-  // prefix the failure left is the unreachable database, and the key itself is
-  // never printed.
-  const noDb = await dies({
-    DATABASE_URL: unreachable,
-    GOOGLE_STORAGE_PREFIX: "fake/prefix",
-    ...google,
-  });
-  expect(noDb.code).toBe(1);
-  expect(noDb.output).toContain("ECONNREFUSED");
-  expect(noDb.output).not.toContain("PRIVATE KEY");
-});
+    // Storage settings are checked before the database: with a good key and a
+    // prefix the failure left is the unreachable database, and the key itself is
+    // never printed.
+    const noDb = await dies({
+      DATABASE_URL: unreachable,
+      GOOGLE_STORAGE_PREFIX: "fake/prefix",
+      ...google,
+    });
+    expect(noDb.code).toBe(1);
+    expect(noDb.output).toContain("ECONNREFUSED");
+    expect(noDb.output).not.toContain("PRIVATE KEY");
+  },
+  slow,
+);
 
 test("a configured server listens, and its public pages need no sign-in", async () => {
   const port = await freePort();
