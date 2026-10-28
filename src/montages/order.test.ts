@@ -281,9 +281,20 @@ test("the order carries the story, the frames picked by hand and the music as a 
 
   // Every track of the shelf, in the order of the screen, all in one list: the
   // order they are listed in is the order they play in, so it is written down
-  // exactly as it came — `night` and `road` came with the real library and were
-  // refused here alone while this service still knew three.
-  const shelf = ["bright", "warm", "calm", "night", "road"];
+  // exactly as it came — the last five came with the grown library and were
+  // refused here alone while this service still knew five.
+  const shelf = [
+    "bright",
+    "warm",
+    "calm",
+    "night",
+    "road",
+    "merry",
+    "tender",
+    "dreamy",
+    "mystery",
+    "energetic",
+  ];
   const wholeShelf = await order(app, organizer.token, memory.id, { music_tracks: shelf });
   expect(wholeShelf.statusCode).toBe(201);
   expect(wholeShelf.json().params).toEqual({ target_seconds: 60, music_tracks: shelf });

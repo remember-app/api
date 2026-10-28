@@ -51,7 +51,7 @@ src/montages/watched.ts   «посмотрели»: отметка с экран
 src/montages/ready.ts     стук воркера о готовом ролике, за общим секретом
 src/montages/journal.ts   журнал сборки: чтение порциями, смотрящие, шкала этапов
 src/montages/templates.ts шесть готовых роликов — тот же заказ, заполненный заранее
-src/montages/music.ts     полка из пяти треков и свой трек организатора
+src/montages/music.ts     полка из десяти треков и свой трек организатора
 src/privacy/privacy.ts    GET /privacy — публичная страница политики конфиденциальности, текст в этом же файле
 scripts/migrate.ts    запуск postgrator и таблица jobs из montage
 scripts/storage-check.ts  живой контроль хранилища: все обращения api на бакете для проверок
@@ -75,5 +75,5 @@ docs/                 как поднять, что обещает каждый 
 - [docs/montages.md](docs/montages.md) — ролики: шаблоны, заказ, итог, список, повтор, имя,
   удаление, «посмотрели».
 - [docs/journal.md](docs/journal.md) — журнал монтажа: как читается и что пишет воркер.
-- [docs/music.md](docs/music.md) — полка из пяти треков и свой трек организатора.
+- [docs/music.md](docs/music.md) — полка из десяти треков и свой трек организатора.
 - [docs/push.md](docs/push.md) — пуш-токены и уведомления.
