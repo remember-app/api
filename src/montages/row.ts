@@ -43,6 +43,15 @@ export type Montage = {
      */
     music_tracks?: string[];
     /**
+     * The music left to the director instead of named by hand: `true` when the
+     * organizer handed the choice to the neural network, and then `music_tracks`
+     * is not written at all — the worker reads «пусть выберет режиссёр» from
+     * this key's presence, and an empty list would say the opposite, «без
+     * музыки». Absent on every order that named its own tracks, empty list and
+     * all. Never written as `false`.
+     */
+    music_director?: boolean;
+    /**
      * What the organizer wished of each track, in their own words (doc-03):
      * keyed by the track as `music_tracks` names it, so the worker hands every
      * wish on with its own track. Written only when there is a wish to write.
