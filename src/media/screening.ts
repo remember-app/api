@@ -24,35 +24,33 @@ export function screeningRoutes(app: FastifyInstance) {
       // the worker's time on.
       if (role !== "organizer") return reply.code(403).send({ error: "forbidden" });
 
-      const job = await sql.begin(async (tx) => {
+      const [job] = await sql.begin(async (tx) => {
         // Two taps race, and the queue has no unique key for this pair. The
         // lock is what keeps the second caller from finding nothing while the
         // first is about to insert; it is held per memory and released with
         // the transaction.
         await tx`select pg_advisory_xact_lock(hashtext(${`media_analysis:${memory.id}`}))`;
 
-        const [placed] = await tx<{ status: string }[]>`
-          insert into jobs (type, ref)
-          select 'media_analysis', ${memory.id}
-          where not exists (
-            select 1 from jobs
-            where type = 'media_analysis' and ref = ${memory.id}
-              and status in ('queued', 'running')
+        // The insert and the answer about the job it found are one statement,
+        // so one snapshot. Read in two, the worker could finish the job in
+        // between and the second read would find nothing to answer with.
+        return await tx<{ status: string }[]>`
+          with placed as (
+            insert into jobs (type, ref)
+            select 'media_analysis', ${memory.id}
+            where not exists (
+              select 1 from jobs
+              where type = 'media_analysis' and ref = ${memory.id}
+                and status in ('queued', 'running')
+            )
+            returning status
           )
-          returning status
-        `;
-        if (placed) return placed;
-
-        // One is already waiting or running: answered with where it stands,
-        // and not queued a second time.
-        const [current] = await tx<{ status: string }[]>`
+          select status from placed
+          union all
           select status from jobs
           where type = 'media_analysis' and ref = ${memory.id}
             and status in ('queued', 'running')
-          order by id desc
-          limit 1
         `;
-        return current;
       });
       if (!job) throw new Error("media_analysis job is gone after the queue said it was there");
 
