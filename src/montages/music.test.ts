@@ -129,7 +129,18 @@ async function sendParts(parts: { part_number: number; url: string }[], body: Bu
 
 /** Where «Послушать» knocks. The ids are written out, not read off the source. */
 const listen = (trackId: string) => `/music/tracks/${trackId}`;
-const shelf = ["bright", "warm", "calm", "night", "road"];
+const shelf = [
+  "bright",
+  "warm",
+  "calm",
+  "night",
+  "road",
+  "merry",
+  "tender",
+  "dreamy",
+  "mystery",
+  "energetic",
+];
 
 const tracksIn = async (memoryId: string) =>
   sql<{ id: string; status: string }[]>`
@@ -293,7 +304,7 @@ test("every track on the shelf can be listened to, and nothing else can", async 
     const answer = await app.inject(as(listener.token, { method: "GET", url: listen(id) }));
     expect(answer.statusCode).toBe(200);
     // The worker's key, signed: `tracks/<id>.mp3` is where `python -m montage
-    // tracks` lays the five files out, and the signature is what makes the link
+    // tracks` lays the ten files out, and the signature is what makes the link
     // openable by a phone that holds no credentials.
     const url = new URL(answer.json().url);
     expect(url.pathname.endsWith(`/tracks/${id}.mp3`)).toBe(true);

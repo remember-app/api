@@ -27,7 +27,7 @@ import { uuidPattern } from "../memories/plugin.ts";
  * reason the migration gives: a track is not the memory's material. The bytes
  * never touch the API here either — it only signs and records.
  *
- * The shelf's own five are here too, at the bottom: «Послушать» signs a link to
+ * The shelf's own ten are here too, at the bottom: «Послушать» signs a link to
  * one of them. Same music, same store, opposite direction — and no memory in
  * the path, because that shelf belongs to nobody in particular.
  *
@@ -36,18 +36,31 @@ import { uuidPattern } from "../memories/plugin.ts";
  */
 
 /**
- * The tracks the worker has, by id, in the order the app shows them
- * (`design/screens/MontageMusic.html`: Яркая, Тёплая, Спокойная, Ночь,
- * Дорога). To refuse an id it does not hold, and — exported — to weigh the
- * `music_tracks` of an order against the same list (`order.ts`). The files
- * themselves are the worker's, one per id, listed with their licences in
- * `projects/montage/tracks/README.md` — and the list is short enough that a
- * table for it would be a table for five strings. It is the worker's shelf that
- * decides what belongs here: when that shelf grew from three synthesized tones
- * to five real tracks, an order for `night` or `road` was refused by this
- * service alone.
+ * The tracks the worker has, by id, in the order the app shows them: the five
+ * of the layout (`design/screens/MontageMusic.html`: Яркая, Тёплая, Спокойная,
+ * Ночь, Дорога), then five more of the same kind. To refuse an id it does not
+ * hold, and — exported — to weigh the `music_tracks` of an order against the
+ * same list (`order.ts`). The files themselves are the worker's, one per id,
+ * listed with their licences in
+ * `projects/montage/montage/video/tracks/README.md` — and the list is short
+ * enough that a table for it would be a table for ten strings. It is the
+ * worker's shelf that decides what belongs here: when that shelf grew from
+ * three synthesized tones to five real tracks, an order for `night` or `road`
+ * was refused by this service alone; when it grew again to ten, `merry`,
+ * `tender`, `dreamy`, `mystery` and `energetic` were refused the same way.
  */
-export const musicTracks = ["bright", "warm", "calm", "night", "road"] as const;
+export const musicTracks = [
+  "bright",
+  "warm",
+  "calm",
+  "night",
+  "road",
+  "merry",
+  "tender",
+  "dreamy",
+  "mystery",
+  "energetic",
+] as const;
 
 /** A `music_uploads` row. `size_bytes` is a string for `media_items`'s reason. */
 export type MusicUpload = {
@@ -212,7 +225,7 @@ export function musicRoutes(app: FastifyInstance) {
   // «Послушать» on «Под что монтировать» (`design/screens/MontageMusic.html`):
   // the track before the video is ordered. Behind `app.authenticate` alone and
   // outside `/memories/:memoryId` — the library is one shelf for the whole
-  // product, the same five for everyone, so there is no membership to check and
+  // product, the same ten for everyone, so there is no membership to check and
   // no role to weigh. The worker lays the files out under `tracks/<id>.mp3`
   // (`python -m montage tracks`); signing a link to one is all of this route.
   app.get<{ Params: { trackId: string } }>(
