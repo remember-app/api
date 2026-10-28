@@ -76,6 +76,39 @@ test("a second tap neither adds a job nor pretends the analysis restarted", asyn
   expect(await jobsOf(memory.id)).toEqual([{ type: "media_analysis", status: "running" }]);
 });
 
+test("a tap waits on the per-memory queue lock before it looks", async () => {
+  const { app } = buildTestApp();
+  const organizer = await signIn(app, email());
+  const memory = await createMemory(app, organizer.token);
+
+  // Somebody else holds the memory's queue lock, as a tap in flight would.
+  let release = () => {};
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  let acquire = () => {};
+  const acquired = new Promise<void>((done) => {
+    acquire = done;
+  });
+  const holder = sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${`media_analysis:${memory.id}`}))`;
+    acquire();
+    await held;
+  });
+  await acquired;
+
+  const reply = analyze(app, organizer.token, memory.id);
+  // Long enough for the tap to have run both of its queries had nothing held
+  // it: the lock is the only thing keeping two taps from queueing twice.
+  await new Promise((done) => setTimeout(done, 500));
+  expect(await jobsOf(memory.id)).toEqual([]);
+
+  release();
+  await holder;
+  expect((await reply).statusCode).toBe(202);
+  expect(await jobsOf(memory.id)).toEqual([{ type: "media_analysis", status: "queued" }]);
+});
+
 test("a finished or failed analysis does not block the next tap", async () => {
   const { app } = buildTestApp();
   const organizer = await signIn(app, email());
