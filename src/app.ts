@@ -7,6 +7,7 @@ import { commentRoutes } from "./media/comments.ts";
 import { frameRoutes } from "./media/frame.ts";
 import { galleryRoutes } from "./media/gallery.ts";
 import { labelRoutes } from "./media/labels.ts";
+import { screeningRoutes } from "./media/screening.ts";
 import { uploadRoutes } from "./media/upload.ts";
 import { memberRoutes } from "./memories/members.ts";
 import { memoriesPlugin } from "./memories/plugin.ts";
@@ -66,6 +67,9 @@ export function buildApp(options: FastifyServerOptions = {}) {
   memoryRemovalRoutes(app);
   uploadRoutes(app);
   galleryRoutes(app);
+  // «Проанализировать» — отсев по требованию организатора: одна задача в
+  // очередь воркера, за той же проверкой членства.
+  screeningRoutes(app);
   // «Сведения о кадре» — one frame in words, beside the gallery that lists it
   // and on the same membership check.
   frameRoutes(app);

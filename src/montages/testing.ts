@@ -51,13 +51,19 @@ export function underTag(tag: string) {
   }
 
   // The queue rows go first: `jobs` belongs to montage, and only the rows this
-  // file put there may be taken back out.
+  // file put there may be taken back out. `media_analysis` names a memory
+  // rather than a frame or a video, so it is cleared by the memory's own id.
   const cleanup = async () => {
     await sql`
       delete from jobs where type = 'montage' and ref in (
         select id::text from montages where memory_id in (
           select id from memories where title like ${mine}
         )
+      )
+    `;
+    await sql`
+      delete from jobs where type = 'media_analysis' and ref in (
+        select id::text from memories where title like ${mine}
       )
     `;
     // The memories go before the people: montages.ordered_by deliberately has no
