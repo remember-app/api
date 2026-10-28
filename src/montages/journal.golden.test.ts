@@ -29,6 +29,9 @@ process.env.R2_SECRET_ACCESS_KEY = "recorded-secret";
 process.env.MONTAGE_VIEWER_WINDOW_SECONDS = "86400";
 process.env.R2_DOWNLOAD_TTL_SECONDS = "900";
 
+/** Стенд, сборка и десяток чтений — не обещание в пять секунд на занятой машине. */
+const slow = 30_000;
+
 const tag = "m27journal";
 const mine = `${tag}-test %`;
 
@@ -672,409 +675,425 @@ const checkRecorded = (scenario: string, steps: Step[]) => {
 // ---------------------------------------------------------------- тесты
 
 describe.each(snapshots)("журнал настоящей сборки воркера — $scenario", (snap) => {
-  test("живьём по курсору, после «готов» — целиком и запись в запись; места кадров, права", async () => {
-    const { app } = buildTestApp();
-    const s = await stand(app, snap);
-    const { ask, people } = s;
-    const day = (iso: string) => ({ created_at: new Date(iso) });
+  test(
+    "живьём по курсору, после «готов» — целиком и запись в запись; места кадров, права",
+    async () => {
+      const { app } = buildTestApp();
+      const s = await stand(app, snap);
+      const { ask, people } = s;
+      const day = (iso: string) => ({ created_at: new Date(iso) });
 
-    // Ролик без журнала: старый, собранный до журнала, и ждущий в очереди.
-    const old = await s.montage("ready", 2, {
-      ...day("2025-12-30T12:00:00Z"),
-      params: sql.json({ target_seconds: 30 }),
-      video_key: "videos/old.mp4",
-      poster_key: "posters/old.jpg",
-      duration_seconds: 30,
-    });
-    const queued = await s.montage("queued", 3, day("2026-01-01T12:00:00Z"));
-    const bare = (status: string, id: string) => ({
-      montage: { id, status },
-      stages: [],
-      entries: [],
-      has_more: false,
-      files: [],
-    });
-    for (const [name, id, status] of [
-      ["journal_of_old_ready_montage", old, "ready"],
-      ["journal_of_queued_montage", queued, "queued"],
-    ] as const) {
-      const { status: code, body } = await ask<Journal>(name, "organizer", s.journalPath(id));
-      expect(code).toBe(200);
-      expect(body).toMatchObject(bare(status, id));
-    }
-
-    // Ролик из этого заказа: воркер его берёт и собирает.
-    const id = await s.montage("processing", 1, {
-      params: s.ordered(snap.montage.params),
-      ...day("2025-12-31T12:00:00Z"),
-    });
-    const path = s.journalPath(id);
-
-    const written: SnapEntry[] = [];
-    const seen: ApiEntry[] = [];
-    let cursor = 0;
-    let layoutWritten = false;
-    let poll = 0;
-    // Строки этапов такими, какими воркер их оставил на этот миг (`worker` отдаёт их из базы).
-    const w = s.worker(id);
-    const model = new Map<string, SnapStage>();
-    const track = (rows: SnapStage | SnapStage[]) => {
-      for (const row of [rows].flat()) model.set(row.stage, row);
-    };
-
-    /** Опрос «что легло после курсора» — и вперёд, пока сказано, что есть ещё. */
-    const catchUp = async () => {
-      for (;;) {
-        const { status, body } = await ask<Journal>(`live_poll_${++poll}`, "organizer", path, {
-          after: cursor,
-          limit: 4,
-        });
-        expect(status).toBe(200);
-        const fresh = [...body.entries].reverse();
-        // Порция примыкает к курсору: ничего не пропущено и не повторено.
-        expect(fresh.every((e, i) => e.id > (fresh[i - 1]?.id ?? cursor))).toBe(true);
-        seen.push(...fresh);
-        cursor = Math.max(cursor, ...fresh.map((e) => e.id));
-        expect(body.has_more).toBe(seen.length < written.length);
-
-        expect(body.montage).toEqual({ id, status: "processing" });
-        // Этапы есть всегда и все пять, в порядке пайплайна: строка каждого — такая, какой её
-        // оставил воркер, со счётчиками по записям, что легли на этот миг.
-        expect(body.stages).toEqual(
-          snap.stages.map(({ stage }) => ({
-            ...model.get(stage),
-            ...countersOf(stage, written),
-          })),
-        );
-        expect(body.viewers.map((v) => v.id)).toContain(people.organizer.user.id);
-        expectFiles(s, snap, body, layoutWritten);
-        if (!body.has_more) break;
+      // Ролик без журнала: старый, собранный до журнала, и ждущий в очереди.
+      const old = await s.montage("ready", 2, {
+        ...day("2025-12-30T12:00:00Z"),
+        params: sql.json({ target_seconds: 30 }),
+        video_key: "videos/old.mp4",
+        poster_key: "posters/old.jpg",
+        duration_seconds: 30,
+      });
+      const queued = await s.montage("queued", 3, day("2026-01-01T12:00:00Z"));
+      const bare = (status: string, id: string) => ({
+        montage: { id, status },
+        stages: [],
+        entries: [],
+        has_more: false,
+        files: [],
+      });
+      for (const [name, id, status] of [
+        ["journal_of_old_ready_montage", old, "ready"],
+        ["journal_of_queued_montage", queued, "queued"],
+      ] as const) {
+        const { status: code, body } = await ask<Journal>(name, "organizer", s.journalPath(id));
+        expect(code).toBe(200);
+        expect(body).toMatchObject(bare(status, id));
       }
-      // Всё, что записано, прочитано — и в том порядке, в каком записано.
-      expect(seen.map((e) => saidByApi(e, s.label))).toEqual(written.map(saidBySnapshot));
-    };
 
-    // Воркер взял ролик и в самом начале, до первого скачанного файла, завёл все пять этапов
-    // в ожидании; время — та же секунда, с какой начинается первый этап.
-    const [firstStage] = snap.stages;
-    if (!firstStage) throw new Error("в снимке нет этапов");
-    track(await w.begin(at(firstStage.started_at) as Date));
+      // Ролик из этого заказа: воркер его берёт и собирает.
+      const id = await s.montage("processing", 1, {
+        params: s.ordered(snap.montage.params),
+        ...day("2025-12-31T12:00:00Z"),
+      });
+      const path = s.journalPath(id);
 
-    // Экран открыли раньше первой записи: записей нет, курсор — ноль, а этапы уже стоят —
-    // все пять в ожидании, с оценкой времени, которую поставил `begin`.
-    const first = await ask<Journal>("live_first_open_empty", "organizer", path, { limit: 4 });
-    expect(first.body).toMatchObject({
-      montage: { id, status: "processing" },
-      entries: [],
-      has_more: false,
-      files: [],
-      viewers: [{ id: people.organizer.user.id }],
-    });
-    expect(first.body.stages).toEqual(
-      snap.stages.map(({ stage }) => ({
-        stage,
-        state: "pending",
-        started_at: null,
-        finished_at: null,
-        eta_seconds: beginEstimate(snap, stage),
-        done_count: 0,
-        total_count: null,
-        outcome: {},
-        updated_at: iso(firstStage.started_at),
-        ...countersOf(stage, []),
-      })),
-    );
+      const written: SnapEntry[] = [];
+      const seen: ApiEntry[] = [];
+      let cursor = 0;
+      let layoutWritten = false;
+      let poll = 0;
+      // Строки этапов такими, какими воркер их оставил на этот миг (`worker` отдаёт их из базы).
+      const w = s.worker(id);
+      const model = new Map<string, SnapStage>();
+      const track = (rows: SnapStage | SnapStage[]) => {
+        for (const row of [rows].flat()) model.set(row.stage, row);
+      };
 
-    for (const row of snap.stages) {
-      const mine = snap.entries.filter((e) => e.stage === row.stage);
-      if (row.stage === "assembly") {
-        // Раскладку воркер пишет между музыкой и сборкой; журнал строит места по ней.
-        await s.putLayout(id);
-        layoutWritten = true;
-      }
-      track(await w.start(row));
-      // У этапа без записей глазу нечем двигаться, кроме самой строки: опрос — сразу за началом.
-      if (mine.length === 0) await catchUp();
-      for (const [i, chunk] of chunks(mine, 5).entries()) {
-        await s.putEntries(id, chunk);
-        written.push(...chunk);
-        await catchUp();
-
-        if (row.stage === "analysis" && i === 0) {
-          // Карточка на ленте: этап виден, не открывая журнала.
-          const list = await ask<(ListItem & { params: unknown })[]>(
-            "montage_list_while_building",
-            "organizer",
-            s.listPath,
-          );
-          expect(list.body.map((m) => [m.id, m.status])).toEqual([
-            [queued, "queued"],
-            [id, "processing"],
-            [old, "ready"],
-          ]);
-          expect(list.body.map((m) => m.stages?.length ?? null)).toEqual([null, 5, null]);
-          expect(list.body[1]?.stages?.map((st) => st.state)).toEqual([
-            "done",
-            "running",
-            "pending",
-            "pending",
-            "pending",
-          ]);
-        }
-        if (row.stage === "directing" && i === 0) {
-          // Зритель открыл сборку посередине: свежие сверху, и рядом видно организатора.
-          const late = await ask<Journal>("live_viewer_opens_mid_build", "viewer", path, {
+      /** Опрос «что легло после курсора» — и вперёд, пока сказано, что есть ещё. */
+      const catchUp = async () => {
+        for (;;) {
+          const { status, body } = await ask<Journal>(`live_poll_${++poll}`, "organizer", path, {
+            after: cursor,
             limit: 4,
           });
-          expect(late.status).toBe(200);
-          expect(late.body.entries.map((e) => e.id)).toEqual(
-            seen
-              .slice(-4)
-              .reverse()
-              .map((e) => e.id),
+          expect(status).toBe(200);
+          const fresh = [...body.entries].reverse();
+          // Порция примыкает к курсору: ничего не пропущено и не повторено.
+          expect(fresh.every((e, i) => e.id > (fresh[i - 1]?.id ?? cursor))).toBe(true);
+          seen.push(...fresh);
+          cursor = Math.max(cursor, ...fresh.map((e) => e.id));
+          expect(body.has_more).toBe(seen.length < written.length);
+
+          expect(body.montage).toEqual({ id, status: "processing" });
+          // Этапы есть всегда и все пять, в порядке пайплайна: строка каждого — такая, какой её
+          // оставил воркер, со счётчиками по записям, что легли на этот миг.
+          expect(body.stages).toEqual(
+            snap.stages.map(({ stage }) => ({
+              ...model.get(stage),
+              ...countersOf(stage, written),
+            })),
           );
-          expect(late.body.has_more).toBe(true);
-          expect(late.body.viewers.map((v) => v.id)).toEqual([
-            people.viewer.user.id,
-            people.organizer.user.id,
-          ]);
+          expect(body.viewers.map((v) => v.id)).toContain(people.organizer.user.id);
+          expectFiles(s, snap, body, layoutWritten);
+          if (!body.has_more) break;
         }
-      }
-      if (row.stage === "prep" || row.stage === "assembly") {
-        // Подготовка двигает счётчик по скачанному файлу, сборка — по склеенному куску; на
-        // середине пути — опрос.
-        const half = Math.floor((row.total_count ?? 0) / 2);
-        const span = Date.parse(row.finished_at ?? "") - Date.parse(row.started_at ?? "");
-        const moment = Date.parse(row.started_at ?? "") + (span * half) / (row.total_count || 1);
-        track(await w.progress(row, half, new Date(moment)));
+        // Всё, что записано, прочитано — и в том порядке, в каком записано.
+        expect(seen.map((e) => saidByApi(e, s.label))).toEqual(written.map(saidBySnapshot));
+      };
+
+      // Воркер взял ролик и в самом начале, до первого скачанного файла, завёл все пять этапов
+      // в ожидании; время — та же секунда, с какой начинается первый этап.
+      const [firstStage] = snap.stages;
+      if (!firstStage) throw new Error("в снимке нет этапов");
+      track(await w.begin(at(firstStage.started_at) as Date));
+
+      // Экран открыли раньше первой записи: записей нет, курсор — ноль, а этапы уже стоят —
+      // все пять в ожидании, с оценкой времени, которую поставил `begin`.
+      const first = await ask<Journal>("live_first_open_empty", "organizer", path, { limit: 4 });
+      expect(first.body).toMatchObject({
+        montage: { id, status: "processing" },
+        entries: [],
+        has_more: false,
+        files: [],
+        viewers: [{ id: people.organizer.user.id }],
+      });
+      expect(first.body.stages).toEqual(
+        snap.stages.map(({ stage }) => ({
+          stage,
+          state: "pending",
+          started_at: null,
+          finished_at: null,
+          eta_seconds: beginEstimate(snap, stage),
+          done_count: 0,
+          total_count: null,
+          outcome: {},
+          updated_at: iso(firstStage.started_at),
+          ...countersOf(stage, []),
+        })),
+      );
+
+      for (const row of snap.stages) {
+        const mine = snap.entries.filter((e) => e.stage === row.stage);
+        if (row.stage === "assembly") {
+          // Раскладку воркер пишет между музыкой и сборкой; журнал строит места по ней.
+          await s.putLayout(id);
+          layoutWritten = true;
+        }
+        track(await w.start(row));
+        // У этапа без записей глазу нечем двигаться, кроме самой строки: опрос — сразу за началом.
+        if (mine.length === 0) await catchUp();
+        for (const [i, chunk] of chunks(mine, 5).entries()) {
+          await s.putEntries(id, chunk);
+          written.push(...chunk);
+          await catchUp();
+
+          if (row.stage === "analysis" && i === 0) {
+            // Карточка на ленте: этап виден, не открывая журнала.
+            const list = await ask<(ListItem & { params: unknown })[]>(
+              "montage_list_while_building",
+              "organizer",
+              s.listPath,
+            );
+            expect(list.body.map((m) => [m.id, m.status])).toEqual([
+              [queued, "queued"],
+              [id, "processing"],
+              [old, "ready"],
+            ]);
+            expect(list.body.map((m) => m.stages?.length ?? null)).toEqual([null, 5, null]);
+            expect(list.body[1]?.stages?.map((st) => st.state)).toEqual([
+              "done",
+              "running",
+              "pending",
+              "pending",
+              "pending",
+            ]);
+          }
+          if (row.stage === "directing" && i === 0) {
+            // Зритель открыл сборку посередине: свежие сверху, и рядом видно организатора.
+            const late = await ask<Journal>("live_viewer_opens_mid_build", "viewer", path, {
+              limit: 4,
+            });
+            expect(late.status).toBe(200);
+            expect(late.body.entries.map((e) => e.id)).toEqual(
+              seen
+                .slice(-4)
+                .reverse()
+                .map((e) => e.id),
+            );
+            expect(late.body.has_more).toBe(true);
+            expect(late.body.viewers.map((v) => v.id)).toEqual([
+              people.viewer.user.id,
+              people.organizer.user.id,
+            ]);
+          }
+        }
+        if (row.stage === "prep" || row.stage === "assembly") {
+          // Подготовка двигает счётчик по скачанному файлу, сборка — по склеенному куску; на
+          // середине пути — опрос.
+          const half = Math.floor((row.total_count ?? 0) / 2);
+          const span = Date.parse(row.finished_at ?? "") - Date.parse(row.started_at ?? "");
+          const moment = Date.parse(row.started_at ?? "") + (span * half) / (row.total_count || 1);
+          track(await w.progress(row, half, new Date(moment)));
+          await catchUp();
+        }
+        track(await w.finish(row));
         await catchUp();
       }
-      track(await w.finish(row));
-      await catchUp();
-    }
 
-    // Ролик собран, и те, кто стоял у экрана на последних секундах, выпадают из окна.
-    await s.finish(id);
-    await sql`update montage_viewers set last_seen_at = now() - interval '2 days' where montage_id = ${id}`;
-    const idle = await ask<Journal>("journal_after_ready_nothing_new", "organizer", path, {
-      after: cursor,
-      limit: 4,
-    });
-    expect(idle.body).toMatchObject({ entries: [], has_more: false, viewers: [] });
+      // Ролик собран, и те, кто стоял у экрана на последних секундах, выпадают из окна.
+      await s.finish(id);
+      await sql`update montage_viewers set last_seen_at = now() - interval '2 days' where montage_id = ${id}`;
+      const idle = await ask<Journal>("journal_after_ready_nothing_new", "organizer", path, {
+        after: cursor,
+        limit: 4,
+      });
+      expect(idle.body).toMatchObject({ entries: [], has_more: false, viewers: [] });
 
-    const full = await ask<Journal>("journal_of_ready_montage", "organizer", path);
-    expect(full.status).toBe(200);
-    // Запись в запись: по смыслу полей, от свежих к старым, ни лишней, ни потерянной.
-    expect(full.body.entries.map((e) => saidByApi(e, s.label))).toEqual(
-      snap.entries.map(saidBySnapshot).reverse(),
-    );
-    expect(full.body.has_more).toBe(false);
-    expect(full.body.montage).toEqual({ id, status: "ready" });
-    expect(full.body.viewers).toEqual([]);
-    expect(full.body.stages).toEqual(
-      snap.stages.map((row) => ({
-        ...row,
-        started_at: iso(row.started_at),
-        finished_at: iso(row.finished_at),
-        outcome: s.outcomeOf(row.outcome),
-        updated_at: iso(row.updated_at),
-        ...countersOf(row.stage, snap.entries),
-      })),
-    );
-    // Места кадров — раскладка снимка; файл вне раскладки — пусто. Кадр, исключённый при
-    // заказе, в материал не входит, и журнал о нём молчит.
-    expectFiles(s, snap, full.body, true);
-    const told = toldAbout(snap);
-    expect(full.body.files).toHaveLength(told.length);
-    const placed = new Set(snap.layout.map((frame) => frame.media));
-    expect(
-      full.body.files
-        .filter((f) => f.places.length === 0)
-        .map((f) => s.label(f.id))
-        .sort(),
-    ).toEqual(told.filter((l) => !placed.has(l)).sort());
+      const full = await ask<Journal>("journal_of_ready_montage", "organizer", path);
+      expect(full.status).toBe(200);
+      // Запись в запись: по смыслу полей, от свежих к старым, ни лишней, ни потерянной.
+      expect(full.body.entries.map((e) => saidByApi(e, s.label))).toEqual(
+        snap.entries.map(saidBySnapshot).reverse(),
+      );
+      expect(full.body.has_more).toBe(false);
+      expect(full.body.montage).toEqual({ id, status: "ready" });
+      expect(full.body.viewers).toEqual([]);
+      expect(full.body.stages).toEqual(
+        snap.stages.map((row) => ({
+          ...row,
+          started_at: iso(row.started_at),
+          finished_at: iso(row.finished_at),
+          outcome: s.outcomeOf(row.outcome),
+          updated_at: iso(row.updated_at),
+          ...countersOf(row.stage, snap.entries),
+        })),
+      );
+      // Места кадров — раскладка снимка; файл вне раскладки — пусто. Кадр, исключённый при
+      // заказе, в материал не входит, и журнал о нём молчит.
+      expectFiles(s, snap, full.body, true);
+      const told = toldAbout(snap);
+      expect(full.body.files).toHaveLength(told.length);
+      const placed = new Set(snap.layout.map((frame) => frame.media));
+      expect(
+        full.body.files
+          .filter((f) => f.places.length === 0)
+          .map((f) => s.label(f.id))
+          .sort(),
+      ).toEqual(told.filter((l) => !placed.has(l)).sort());
 
-    // Разговор про один кадр — лист «что с этим файлом».
-    const some = snap.layout[0]?.media ?? "";
-    const one = await ask<Journal>("journal_of_one_file", "organizer", path, {
-      media_id: s.mediaId(some),
-    });
-    expect(one.body.entries.map((e) => saidByApi(e, s.label))).toEqual(
-      snap.entries
-        .filter((e) => e.media === some)
-        .map(saidBySnapshot)
-        .reverse(),
-    );
-    expectFiles(s, snap, one.body, true);
+      // Разговор про один кадр — лист «что с этим файлом».
+      const some = snap.layout[0]?.media ?? "";
+      const one = await ask<Journal>("journal_of_one_file", "organizer", path, {
+        media_id: s.mediaId(some),
+      });
+      expect(one.body.entries.map((e) => saidByApi(e, s.label))).toEqual(
+        snap.entries
+          .filter((e) => e.media === some)
+          .map(saidBySnapshot)
+          .reverse(),
+      );
+      expectFiles(s, snap, one.body, true);
 
-    const finished = await ask<ListItem[]>("montage_list_after_ready", "organizer", s.listPath);
-    expect(finished.body.map((m) => [m.id, m.status, m.stages])).toEqual([
-      [queued, "queued", null],
-      [id, "ready", null],
-      [old, "ready", null],
-    ]);
+      const finished = await ask<ListItem[]>("montage_list_after_ready", "organizer", s.listPath);
+      expect(finished.body.map((m) => [m.id, m.status, m.stages])).toEqual([
+        [queued, "queued", null],
+        [id, "ready", null],
+        [old, "ready", null],
+      ]);
 
-    // Права: участник и зритель читают то же самое; остальным — «нет такого».
-    for (const who of ["contributor", "viewer"] as const) {
-      const theirs = await ask<Journal>(null, who, path);
-      expect(theirs.status).toBe(200);
-      expect(theirs.body.entries).toEqual(full.body.entries);
-    }
-    const stranger = await ask<{ error: string }>("journal_of_stranger", "stranger", path);
-    expect(stranger.status).toBe(404);
-    expect(stranger.body).toEqual({ error: "not found" });
-    const elsewhere = await app.inject({
-      method: "POST",
-      url: "/memories",
-      headers: s.as("organizer"),
-      payload: { title: `${tag}-test ${randomUUID()}`, event_start: "2026-01-01T00:00:00Z" },
-    });
-    const foreign = await sql<{ id: string }[]>`
+      // Права: участник и зритель читают то же самое; остальным — «нет такого».
+      for (const who of ["contributor", "viewer"] as const) {
+        const theirs = await ask<Journal>(null, who, path);
+        expect(theirs.status).toBe(200);
+        expect(theirs.body.entries).toEqual(full.body.entries);
+      }
+      const stranger = await ask<{ error: string }>("journal_of_stranger", "stranger", path);
+      expect(stranger.status).toBe(404);
+      expect(stranger.body).toEqual({ error: "not found" });
+      const elsewhere = await app.inject({
+        method: "POST",
+        url: "/memories",
+        headers: s.as("organizer"),
+        payload: { title: `${tag}-test ${randomUUID()}`, event_start: "2026-01-01T00:00:00Z" },
+      });
+      const foreign = await sql<{ id: string }[]>`
       insert into montages (memory_id, ordered_by, status)
       values (${(elsewhere.json() as { id: string }).id}, ${people.organizer.user.id}, 'ready')
       returning id
     `;
-    // Чужой ролик по своему воспоминанию и свой ролик по чужому — одно и то же.
-    expect((await ask(null, "organizer", s.journalPath(foreign[0]?.id ?? ""))).status).toBe(404);
-    expect(
-      (await ask(null, "organizer", s.journalPath(id, (elsewhere.json() as { id: string }).id)))
-        .status,
-    ).toBe(404);
-    expect((await ask(null, null, path)).status).toBe(401);
+      // Чужой ролик по своему воспоминанию и свой ролик по чужому — одно и то же.
+      expect((await ask(null, "organizer", s.journalPath(foreign[0]?.id ?? ""))).status).toBe(404);
+      expect(
+        (await ask(null, "organizer", s.journalPath(id, (elsewhere.json() as { id: string }).id)))
+          .status,
+      ).toBe(404);
+      expect((await ask(null, null, path)).status).toBe(401);
 
-    checkRecorded(snap.scenario, s.steps);
-    await app.close();
-  });
+      checkRecorded(snap.scenario, s.steps);
+      await app.close();
+    },
+    slow,
+  );
 
-  test("упавший ролик повторяет организатор, и журнал начинается с чистого листа", async () => {
-    const { app } = buildTestApp();
-    const s = await stand(app, snap);
-    const id = await s.built("processing");
-    // Собрался до сборки и остановился на ней — с причиной кодом.
-    const last = snap.stages.at(-1);
-    if (!last) throw new Error("в снимке нет этапов");
-    await s.putStage(id, last, {
-      state: "failed",
-      eta_seconds: null,
-      outcome: sql.json({ ...s.outcomeOf(last.outcome), stopped: "internal" } as Parameters<
-        typeof sql.json
-      >[0]),
-    });
-    await sql`update montages set status = 'failed', error_text = 'ffmpeg упал на склейке' where id = ${id}`;
-    const retry = (who: "organizer" | "contributor") =>
-      app.inject({
-        method: "POST",
-        url: `/memories/${s.memoryId}/montages/${id}/retry`,
-        headers: s.as(who),
+  test(
+    "упавший ролик повторяет организатор, и журнал начинается с чистого листа",
+    async () => {
+      const { app } = buildTestApp();
+      const s = await stand(app, snap);
+      const id = await s.built("processing");
+      // Собрался до сборки и остановился на ней — с причиной кодом.
+      const last = snap.stages.at(-1);
+      if (!last) throw new Error("в снимке нет этапов");
+      await s.putStage(id, last, {
+        state: "failed",
+        eta_seconds: null,
+        outcome: sql.json({ ...s.outcomeOf(last.outcome), stopped: "internal" } as Parameters<
+          typeof sql.json
+        >[0]),
       });
+      await sql`update montages set status = 'failed', error_text = 'ffmpeg упал на склейке' where id = ${id}`;
+      const retry = (who: "organizer" | "contributor") =>
+        app.inject({
+          method: "POST",
+          url: `/memories/${s.memoryId}/montages/${id}/retry`,
+          headers: s.as(who),
+        });
 
-    const before = (await s.ask<Journal>(null, "organizer", s.journalPath(id))).body;
-    expect(before.entries).toHaveLength(snap.entries.length);
-    expect(before.stages.map((st) => st.state)).toEqual([
-      ...snap.stages.slice(0, -1).map((st) => st.state),
-      "failed",
-    ]);
-    expect(before.stages.at(-1)?.outcome).toMatchObject({ stopped: "internal" });
-    const listed = (await s.ask<ListItem[]>(null, "organizer", s.listPath)).body;
-    expect(listed[0]?.stages?.at(-1)).toEqual({ stage: last.stage, state: "failed" });
+      const before = (await s.ask<Journal>(null, "organizer", s.journalPath(id))).body;
+      expect(before.entries).toHaveLength(snap.entries.length);
+      expect(before.stages.map((st) => st.state)).toEqual([
+        ...snap.stages.slice(0, -1).map((st) => st.state),
+        "failed",
+      ]);
+      expect(before.stages.at(-1)?.outcome).toMatchObject({ stopped: "internal" });
+      const listed = (await s.ask<ListItem[]>(null, "organizer", s.listPath)).body;
+      expect(listed[0]?.stages?.at(-1)).toEqual({ stage: last.stage, state: "failed" });
 
-    // Не организатор — отказ, и журнал цел.
-    expect((await retry("contributor")).statusCode).toBe(403);
-    expect((await s.ask<Journal>(null, "organizer", s.journalPath(id))).body.entries).toHaveLength(
-      snap.entries.length,
-    );
+      // Не организатор — отказ, и журнал цел.
+      expect((await retry("contributor")).statusCode).toBe(403);
+      expect(
+        (await s.ask<Journal>(null, "organizer", s.journalPath(id))).body.entries,
+      ).toHaveLength(snap.entries.length);
 
-    const again = await retry("organizer");
-    expect(again.statusCode).toBe(200);
-    expect(again.json()).toMatchObject({ id, status: "queued", error_text: null });
-    const after = (await s.ask<Journal>(null, "organizer", s.journalPath(id))).body;
-    expect(after).toMatchObject({ entries: [], stages: [], files: [], has_more: false });
-    expect(after.montage.status).toBe("queued");
-    expect((await s.ask<ListItem[]>(null, "organizer", s.listPath)).body[0]?.stages).toBeNull();
-    const [queue] = await sql<{ count: number }[]>`
+      const again = await retry("organizer");
+      expect(again.statusCode).toBe(200);
+      expect(again.json()).toMatchObject({ id, status: "queued", error_text: null });
+      const after = (await s.ask<Journal>(null, "organizer", s.journalPath(id))).body;
+      expect(after).toMatchObject({ entries: [], stages: [], files: [], has_more: false });
+      expect(after.montage.status).toBe("queued");
+      expect((await s.ask<ListItem[]>(null, "organizer", s.listPath)).body[0]?.stages).toBeNull();
+      const [queue] = await sql<{ count: number }[]>`
       select count(*)::int from jobs where type = 'montage' and ref = ${id}
     `;
-    expect(queue?.count).toBe(1);
+      expect(queue?.count).toBe(1);
 
-    await app.close();
-  });
+      await app.close();
+    },
+    slow,
+  );
 
-  test("удалён кадр — записи о нём остались, места ушли; удалён ролик — ушёл журнал", async () => {
-    const { app } = buildTestApp();
-    const s = await stand(app, snap);
-    const id = await s.built("ready");
-    const path = s.journalPath(id);
-    // Кадр из раскладки; снимает его тот, кто его привёз, — организатор (первый в съёмке).
-    const gone = snap.layout[0]?.media ?? "";
-    const goneId = s.mediaId(gone);
-    const deleted = await app.inject({
-      method: "DELETE",
-      url: `/memories/${s.memoryId}/media/${goneId}`,
-      headers: s.as("organizer"),
-    });
-    expect(deleted.statusCode).toBe(200);
+  test(
+    "удалён кадр — записи о нём остались, места ушли; удалён ролик — ушёл журнал",
+    async () => {
+      const { app } = buildTestApp();
+      const s = await stand(app, snap);
+      const id = await s.built("ready");
+      const path = s.journalPath(id);
+      // Кадр из раскладки; снимает его тот, кто его привёз, — организатор (первый в съёмке).
+      const gone = snap.layout[0]?.media ?? "";
+      const goneId = s.mediaId(gone);
+      const deleted = await app.inject({
+        method: "DELETE",
+        url: `/memories/${s.memoryId}/media/${goneId}`,
+        headers: s.as("organizer"),
+      });
+      expect(deleted.statusCode).toBe(200);
 
-    const after = (await s.ask<Journal>(null, "organizer", path)).body;
-    // Записей ровно столько же, и о кадре они всё ещё говорят.
-    expect(after.entries.map((e) => saidByApi(e, s.label)).reverse()).toEqual(
-      snap.entries.map(saidBySnapshot),
-    );
-    expect(after.entries.some((e) => e.media_id === goneId)).toBe(true);
-    // Сведений о файле нет, а у остальных места прежние.
-    expect(after.files.map((f) => s.label(f.id)).sort()).toEqual(
-      toldAbout(snap)
-        .filter((l) => l !== gone)
-        .sort(),
-    );
-    for (const file of after.files) {
-      const label = s.label(file.id);
-      expect(file.places).toEqual(
-        snap.layout
-          .filter((frame) => frame.media === label)
-          .map(({ start_seconds, duration_seconds }) => ({ start_seconds, duration_seconds })),
+      const after = (await s.ask<Journal>(null, "organizer", path)).body;
+      // Записей ровно столько же, и о кадре они всё ещё говорят.
+      expect(after.entries.map((e) => saidByApi(e, s.label)).reverse()).toEqual(
+        snap.entries.map(saidBySnapshot),
       );
-    }
+      expect(after.entries.some((e) => e.media_id === goneId)).toBe(true);
+      // Сведений о файле нет, а у остальных места прежние.
+      expect(after.files.map((f) => s.label(f.id)).sort()).toEqual(
+        toldAbout(snap)
+          .filter((l) => l !== gone)
+          .sort(),
+      );
+      for (const file of after.files) {
+        const label = s.label(file.id);
+        expect(file.places).toEqual(
+          snap.layout
+            .filter((frame) => frame.media === label)
+            .map(({ start_seconds, duration_seconds }) => ({ start_seconds, duration_seconds })),
+        );
+      }
 
-    await sql`delete from montages where id = ${id}`;
-    expect((await s.ask(null, "organizer", path)).status).toBe(404);
-    const [left] = await sql<{ count: number }[]>`
+      await sql`delete from montages where id = ${id}`;
+      expect((await s.ask(null, "organizer", path)).status).toBe(404);
+      const [left] = await sql<{ count: number }[]>`
       select (
         (select count(*) from montage_journal_entries where montage_id = ${id})
         + (select count(*) from montage_stages where montage_id = ${id})
       )::int as count
     `;
-    expect(left?.count).toBe(0);
+      expect(left?.count).toBe(0);
+
+      await app.close();
+    },
+    slow,
+  );
+});
+
+test(
+  "клип несколькими отрезками: i-я запись «беру» файла — его i-е место в `places`",
+  async () => {
+    const snap = snapshots.find((one) => one.scenario === "director");
+    if (!snap) throw new Error("нет режиссёрского снимка");
+    const { app } = buildTestApp();
+    const s = await stand(app, snap);
+    // Раскладка ложится в базу задом наперёд: порядок мест обязан идти от ролика, а не от того,
+    // как строки легли в таблицу.
+    const id = await s.built("ready", [...snap.layout].reverse());
+    const { body } = await s.ask<Journal>(null, "organizer", s.journalPath(id));
+
+    // Опора сверки — сам снимок: воркер ведёт «беру» и раскладку по одному списку взятых кусков,
+    // так что k-я «беру» ролика стоит на k-м месте раскладки.
+    const takes = [...body.entries].reverse().filter((e) => e.decision === "take");
+    expect(takes.map((e) => s.label(e.media_id ?? ""))).toEqual(snap.layout.map((f) => f.media));
+
+    const clip = body.files.find((f) => f.places.length > 1);
+    if (!clip) throw new Error("в снимке нет файла с несколькими местами — сверять нечего");
+    // Как сопоставляет приложение: i-я «беру» файла — i-е его место в ответе.
+    expect(clip.places).toEqual(
+      takes
+        .filter((e) => e.media_id === clip.id)
+        .map((e) => {
+          const slot = snap.layout[takes.indexOf(e)];
+          return { start_seconds: slot?.start_seconds, duration_seconds: slot?.duration_seconds };
+        }),
+    );
 
     await app.close();
-  });
-});
-
-test("клип несколькими отрезками: i-я запись «беру» файла — его i-е место в `places`", async () => {
-  const snap = snapshots.find((one) => one.scenario === "director");
-  if (!snap) throw new Error("нет режиссёрского снимка");
-  const { app } = buildTestApp();
-  const s = await stand(app, snap);
-  // Раскладка ложится в базу задом наперёд: порядок мест обязан идти от ролика, а не от того,
-  // как строки легли в таблицу.
-  const id = await s.built("ready", [...snap.layout].reverse());
-  const { body } = await s.ask<Journal>(null, "organizer", s.journalPath(id));
-
-  // Опора сверки — сам снимок: воркер ведёт «беру» и раскладку по одному списку взятых кусков,
-  // так что k-я «беру» ролика стоит на k-м месте раскладки.
-  const takes = [...body.entries].reverse().filter((e) => e.decision === "take");
-  expect(takes.map((e) => s.label(e.media_id ?? ""))).toEqual(snap.layout.map((f) => f.media));
-
-  const clip = body.files.find((f) => f.places.length > 1);
-  if (!clip) throw new Error("в снимке нет файла с несколькими местами — сверять нечего");
-  // Как сопоставляет приложение: i-я «беру» файла — i-е его место в ответе.
-  expect(clip.places).toEqual(
-    takes
-      .filter((e) => e.media_id === clip.id)
-      .map((e) => {
-        const slot = snap.layout[takes.indexOf(e)];
-        return { start_seconds: slot?.start_seconds, duration_seconds: slot?.duration_seconds };
-      }),
-  );
-
-  await app.close();
-});
+  },
+  slow,
+);

@@ -52,7 +52,7 @@ afterAll(async () => {
     await sql.unsafe(`drop database if exists ${name} with (force)`);
   }
   await sql.end();
-});
+}, slow);
 
 /** An empty database with every migration below `below` already applied, in order. */
 async function chain(below: number) {
