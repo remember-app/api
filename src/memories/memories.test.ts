@@ -188,6 +188,17 @@ const ready = (
 const keysOf = (urls: string[]) => urls.map((url) => new URL(url).pathname.split("/").pop());
 const keyOf = (url: string) => keysOf([url])[0];
 
+/**
+ * Two cards of one memory compared as they are meant to be: field for field,
+ * except the main screen's own frames, which are drawn at random — the same
+ * memory answers two requests with the same frames in a different order, so
+ * they are sorted rather than compared as they arrived.
+ */
+const sameCard = (card: { card_thumbnail_urls: string[] }) => ({
+  ...card,
+  card_thumbnail_urls: [...card.card_thumbnail_urls].sort(),
+});
+
 test("the listing carries the last frames of every memory in one answer", async () => {
   const { app } = buildTestApp();
   const { token, user } = await signIn(app, email());
@@ -285,6 +296,84 @@ test("a tie in captured_at breaks on id, and four ready frames exactly fill the 
   expect(listed.statusCode).toBe(200);
   const [seen] = listed.json();
   expect(keysOf(seen.recent_thumbnail_urls)).toEqual(expectedKeys);
+
+  await app.close();
+});
+
+test("the card holds frames beyond the last four — all of them when the memory is small", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+  const other = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-04-10T12:00:00Z" })
+  ).json();
+  await sql`
+    insert into memory_members (memory_id, user_id, role, invited_by)
+    values (${memory.id}, ${other.user.id}, 'contributor', ${user.id})
+  `;
+
+  // Five ready frames — one more than the tail draws. The card's ceiling is a
+  // dozen, so every one of the five is in it whatever order the draw lands
+  // them in; a tail narrowed back to the last four would drop the oldest, which
+  // is exactly what this pins.
+  const key = (name: string) => `${titleTag}-${randomUUID()}-${name}.jpg`;
+  const keys = ["a", "b", "c", "d", "e"].map(key);
+  for (const [n, k] of keys.entries()) {
+    await ready(memory.id, user.id, k, `2026-04-10T0${n}:00:00Z`);
+  }
+  // Somebody else's frame, hidden by them: `seenBy` keeps it from everyone but
+  // its bringer, and the card honours the same rule the gallery does — so it is
+  // in none of the five, not a sixth.
+  const hiddenKey = key("hidden");
+  const [hidden] = await ready(memory.id, other.user.id, hiddenKey, "2026-04-10T06:00:00Z");
+  if (!hidden) throw new Error("insert into media_items returned no row");
+  await sql`update media_items set hidden = true where id = ${hidden.id}`;
+
+  const [seen] = (await list(app, token)).json();
+  expect(new Set(keysOf(seen.card_thumbnail_urls))).toEqual(new Set(keys));
+  // The tail is still the tail: the two fields answer different questions, and
+  // this one did not swallow the other.
+  expect(keysOf(seen.recent_thumbnail_urls)).toHaveLength(4);
+
+  await app.close();
+});
+
+test("the card is drawn at random from the whole memory, not read off its end", async () => {
+  const { app } = buildTestApp();
+  const { token, user } = await signIn(app, email());
+
+  const memory = (
+    await create(app, token, { title: title(), event_start: "2026-05-01T12:00:00Z" })
+  ).json();
+
+  // Thirty ready frames, shot an hour apart: the memory is far wider than the
+  // dozen a card draws, so which dozen arrives is the draw's business.
+  const key = (n: number) => `${titleTag}-${randomUUID()}-${n}.jpg`;
+  const keys = Array.from({ length: 30 }, (_, n) => key(n));
+  const shotAt = (n: number) => new Date(Date.UTC(2026, 4, 1) + n * 3_600_000).toISOString();
+  for (const [n, k] of keys.entries()) {
+    await ready(memory.id, user.id, k, shotAt(n));
+  }
+
+  const draw = async () =>
+    keysOf(
+      ((await list(app, token)).json()[0] as { card_thumbnail_urls: string[] }).card_thumbnail_urls,
+    );
+
+  const first = await draw();
+  // The ceiling, not the tail: a card is a dozen frames wide.
+  expect(first).toHaveLength(12);
+  // Every one of them is a frame of this memory, signed like the rest.
+  expect(first.every((k) => keys.includes(k ?? ""))).toBe(true);
+  for (const url of (await list(app, token)).json()[0].card_thumbnail_urls) {
+    expect(url).toContain("X-Amz-Signature=");
+  }
+  // Drawn, not read off an end: two answers to the same request name more than
+  // twelve different frames between them, which a fixed slice of the memory —
+  // its last four or its last twelve — never could.
+  const second = await draw();
+  expect(new Set([...first, ...second]).size).toBeGreaterThan(12);
 
   await app.close();
 });
@@ -887,7 +976,7 @@ test("an edit that does not name the cover leaves it where it is, and the whole 
     event_end: "2026-10-01T06:00:00.000Z",
     cover_media_id: second,
   });
-  expect((await list(app, token)).json()).toEqual([whole.json()]);
+  expect(sameCard((await list(app, token)).json()[0])).toEqual(sameCard(whole.json()));
 
   // The end is held to a moment as the start is — a bare date, or no date at
   // all, is a 400 here and when creating, and never a cast failing in Postgres.
