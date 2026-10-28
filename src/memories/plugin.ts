@@ -320,6 +320,17 @@ export function memoriesPlugin(app: FastifyInstance) {
 }
 
 /**
+ * The card's frames hold still for five hours. The phone re-reads the listing
+ * every time the main screen comes back, so a fresh draw per answer would change
+ * the card's face on every visit; instead the order is seeded by which window a
+ * request falls in, and the boundary is where the face turns over.
+ */
+const CARD_WINDOW_MS = 5 * 60 * 60 * 1000;
+
+/** The window a moment falls in, counted from the epoch — the seed above. */
+const cardWindow = () => Math.floor(Date.now() / CARD_WINDOW_MS);
+
+/**
  * The cards of the main screen — every memory the caller is in, or just the
  * one, which is what the routes that answer with a single memory (editing it,
  * accepting an invite into it) hand back: the one builder is what keeps every
@@ -337,12 +348,14 @@ export function memoriesPlugin(app: FastifyInstance) {
  * films mosaic read it as such, so it keeps meaning «последние кадры» whatever
  * the main screen draws.
  *
- * `card_thumbnail_urls` is the main screen's own: up to twelve frames drawn at
- * random from the *whole* memory, not from its tail. A fixed tail would show
- * the same four photographs every visit, however much the memory holds; a
- * random draw from everywhere lets each listing answer be a different face of
- * the same event. Twelve is the ceiling it samples down from — more than the
- * card can draw, so it is never short of material.
+ * `card_thumbnail_urls` is the main screen's own: up to twelve frames drawn
+ * from the *whole* memory, not from its tail. A fixed tail would show the same
+ * four photographs every visit, however much the memory holds; a draw from
+ * everywhere lets the card be a face of the whole event. The draw is seeded by
+ * the five-hour window (CARD_WINDOW_MS), not made afresh per answer: two
+ * listings inside one window name the same frames in the same order, and the
+ * face turns over when the window does. Twelve is the ceiling it samples down
+ * from — more than the card can draw, so it is never short of material.
  *
  * Two numbers of frames, because two different questions are asked of them.
  * `media_count` is what the caller opens: the gallery's own predicates, so a
@@ -389,17 +402,21 @@ export async function cards(userId: string, memoryId?: string) {
         order by coalesce(mi.captured_at, mi.created_at) desc, mi.id desc
         limit 4
       ) as thumbnail_keys,
-      -- The main screen's own tail: the same ready, seen frames, but drawn at
-      -- random from the whole memory rather than read off its end, so a card
-      -- is not four fixed photographs for as long as the memory lives. A random
-      -- sort puts the lot in order before the ceiling cuts it, which a memory's
-      -- own size carries here; the ceiling is well above what any card draws,
-      -- so the screen is never short of material to pick from.
+      -- The main screen's own dozen: the same ready, seen frames, but drawn
+      -- from the whole memory rather than read off its end. The order is seeded
+      -- by the five-hour window (CARD_WINDOW_MS), not drawn afresh per answer:
+      -- the phone re-reads this listing on every return to the main screen, and
+      -- a fresh draw each time would change the card's face under the person's
+      -- eyes. Inside a window the same frames come back in the same order; at
+      -- its edge the seed changes and so do they. The hash sorts the lot before
+      -- the ceiling cuts it, and the id breaks the tie two equal hashes would
+      -- leave — the ceiling is well above what any card draws, so the screen is
+      -- never short of material to pick from.
       array(
         select mi.thumbnail_key from media_items mi
         where mi.memory_id = m.id and mi.status = 'ready' and mi.thumbnail_key is not null
           and ${seenBy("mi", userId)}
-        order by random()
+        order by md5(mi.id::text || ${String(cardWindow())}), mi.id
         limit 12
       ) as card_thumbnail_keys
     from memory_members mm
