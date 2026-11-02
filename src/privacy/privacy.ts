@@ -1,10 +1,5 @@
 import type { FastifyInstance } from "fastify";
 
-/**
- * The text is the one the owner approved as is — change it here, word for word,
- * and nowhere else. Both languages on one page, so the single address Apple asks
- * for serves every reader.
- */
 const page = `<!doctype html>
 <html lang="ru">
 <head>
@@ -102,19 +97,11 @@ hr { margin: 3rem 0; border: 0; border-top: 1px solid; opacity: 0.2; }
 </body>
 </html>
 `;
-
-/**
- * GET /privacy — the privacy policy Apple requires before an external TestFlight
- * group. Public on purpose: no session check and no database, like /health.
- */
 export function privacyRoutes(app: FastifyInstance) {
   app.get("/privacy", (_request, reply) => {
     reply.type("text/html; charset=utf-8").headers({
       "cache-control": "public, max-age=3600",
       "x-content-type-options": "nosniff",
-      // 'unsafe-inline' rather than a hash: the page is a constant with no input
-      // to inject into, and default-src 'none' still shuts out every script,
-      // font, image and connection.
       "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
     });
     return page;

@@ -1,29 +1,13 @@
 import { sql } from "../db.ts";
 import { estimateMinutes, estimateSeconds } from "./summary.ts";
-
-/**
- * Ролик в очереди (doc-03, макет FilmQueued): «перед нами ещё один ролик,
- * сборка начнётся примерно через 2 минуты и займёт около 14».
- *
- * Очередь — таблица `jobs` воркера: он берёт задачи по `run_after`
- * (`worker.py`, `run_once`), и ролик ждёт всех, чья задача уже идёт или стоит
- * раньше его. Считается по роликам, а не по задачам: у повторённого их бывает
- * две — старая, до которой воркер так и не дошёл, и новая.
- */
-
-/**
- * Где ждёт каждый из этих роликов — у кого задача в очереди есть. Одним
- * запросом на весь список, как `stagesFor`: очередь общая на все воспоминания,
- * но наружу из неё уходят только число и минуты.
- *
- * Сколько ждать — прикидка `estimateSeconds` по каждому ролику впереди, а у
- * того, что уже собирается, — сколько осталось его этапам по журналу
- * (`eta_seconds` незакрытых). Ориентир, а не обещание, как и сама прикидка.
- */
 export async function queueFor(montageIds: string[]) {
   const queue = new Map<
     string,
-    { ahead: number; starts_in_minutes: number; estimate_minutes: number | null }
+    {
+      ahead: number;
+      starts_in_minutes: number;
+      estimate_minutes: number | null;
+    }
   >();
   if (montageIds.length === 0) return queue;
   const line = await sql<
