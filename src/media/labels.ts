@@ -8,16 +8,10 @@ import {
   seenBy,
   uuidPattern,
 } from "../memories/plugin.ts";
-export type LabelListItem = {
-  id: string;
-  title: string;
-  color: number;
-  shared: boolean;
-  mine: boolean;
-  can_edit: boolean;
-  can_add_media: boolean;
-  media_count: number;
-};
+import type { LabelListItem } from "../types/media.ts";
+
+export type { LabelListItem };
+
 type LabelRow = {
   id: string;
   owner_id: string;

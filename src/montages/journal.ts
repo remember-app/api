@@ -6,22 +6,11 @@ import { downloadUrl, storageConfigured } from "../media/r2.ts";
 import { seenBy, uuidPattern } from "../memories/plugin.ts";
 export const montageStages = ["prep", "analysis", "directing", "music", "assembly"] as const;
 type StageKey = (typeof montageStages)[number];
-export type StageRow = {
-  stage: StageKey;
-  state: "pending" | "running" | "done" | "failed";
-  started_at: Date | null;
-  finished_at: Date | null;
-  eta_seconds: number | null;
-  done_count: number;
-  total_count: number | null;
-  outcome: Record<string, unknown>;
-  updated_at: Date;
-  taken_count: number;
-  skipped_count: number;
-  thought_count: number;
-  skipped_by_reason: Record<string, number>;
-  taken_by_part: Record<string, number>;
-};
+
+import type { StageRow } from "../types/montages.ts";
+
+export type { StageRow };
+
 type State = StageRow["state"];
 type EntryRow = {
   id: string;

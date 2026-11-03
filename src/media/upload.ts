@@ -19,36 +19,8 @@ import {
   storageConfigured,
   type UploadedPart,
 } from "./r2.ts";
-export type MediaItem = {
-  id: string;
-  memory_id: string;
-  uploaded_by: string;
-  kind: "photo" | "video";
-  status: "pending_upload" | "processing" | "ready" | "failed";
-  original_key: string;
-  upload_id: string | null;
-  size_bytes: string;
-  captured_at: Date | null;
-  file_name: string | null;
-  width: number | null;
-  height: number | null;
-  duration_seconds: number | null;
-  thumbnail_key: string | null;
-  preview_key: string | null;
-  camera_model: string | null;
-  focal_length_mm: number | null;
-  aperture: number | null;
-  iso: number | null;
-  exposure_ev: number | null;
-  shutter: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  screening_rejected: boolean | null;
-  screening_reason: string | null;
-  hidden: boolean;
-  place_edited_at: Date | null;
-  created_at: Date;
-};
+
+
 const intentBody = {
   type: "object",
   required: ["kind", "size_bytes"],

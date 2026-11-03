@@ -1,15 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "../db.ts";
+import type { AuthUser, Language } from "../types/user.ts";
 import { sessionTtlDays } from "./config.ts";
-export type Language = "ru" | "en";
-export type AuthUser = {
-  id: string;
-  username: string | null;
-  name: string | null;
-  email: string | null;
-  language: Language;
-  dates_between_days: boolean;
-};
+
+export type { AuthUser, Language };
 export const profileColumns = sql`
   u.id, u.username, u.name, u.email, u.language, u.dates_between_days
 `;

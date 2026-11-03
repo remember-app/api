@@ -3,10 +3,10 @@ import { sql } from "../db.ts";
 import { downloadUrl } from "../media/r2.ts";
 import type { Montage } from "./row.ts";
 export const viewColumns = sql`m.*, u.username as orderer_username, u.name as orderer_name`;
-export type ViewRow = Montage & {
-  orderer_username: string | null;
-  orderer_name: string | null;
-};
+
+import type { ViewRow } from "../types/montages.ts";
+
+export type { ViewRow };
 export function montageName(
   { name, params, duration_seconds }: Pick<Montage, "name" | "params" | "duration_seconds">,
   language: Language,

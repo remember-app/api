@@ -14,13 +14,10 @@ type MediaKeys = {
   status: MediaItem["status"];
   upload_id: string | null;
 };
-export type Leftovers = {
-  keys: string[];
-  uploads: {
-    key: string;
-    uploadId: string;
-  }[];
-};
+
+import type { Leftovers } from "../types/media.ts";
+
+export type { Leftovers };
 export async function removeMedia(
   tx: TransactionSql,
   memoryId: string,

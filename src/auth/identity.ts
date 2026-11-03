@@ -43,7 +43,10 @@ const sessionParams = {
     id: { type: "string", pattern: "^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$" },
   },
 } as const;
-export type PublicUser = Pick<AuthUser, "id" | "username" | "name">;
+
+import type { PublicUser } from "../types/user.ts";
+
+export type { PublicUser };
 export async function findByUsername(username: string): Promise<PublicUser | undefined> {
   if (!usernameRegex.test(username)) return undefined;
   const [user] = await sql<PublicUser[]>`

@@ -3,7 +3,6 @@ import { sql } from "../db.ts";
 import { lowerIds, mediaIdsSchema } from "../memories/plugin.ts";
 import { materialLeft, minReadyItems } from "./material.ts";
 import { musicTracks } from "./music.ts";
-import type { Montage } from "./row.ts";
 import { orientations, templateIds } from "./row.ts";
 
 const maxStoryChars = 2000;
@@ -42,30 +41,10 @@ export const orderBodySchema = () => {
     },
   } as const;
 };
-export type OrderBody = {
-  target_seconds?: number;
-  story_text?: string;
-  include_media_ids?: string[];
-  exclude_media_ids?: string[];
-  music_tracks?: string[];
-  music_director?: boolean;
-  music_wishes?: Record<string, string>;
-  orientation?: (typeof orientations)[number];
-  name?: string;
-  template?: (typeof templateIds)[number];
-} | null;
-export type Order = {
-  params: Montage["params"] & {
-    target_seconds: number;
-  };
-  left: Awaited<ReturnType<typeof materialLeft>>;
-};
-export type Checked =
-  | Order
-  | {
-      code: number;
-      body: object;
-    };
+
+import type { Checked, Order, OrderBody } from "../types/montages.ts";
+
+export type { Checked, Order, OrderBody };
 export async function checkOrder(memoryId: string, body: OrderBody): Promise<Checked> {
   const include = lowerIds(body?.include_media_ids);
   const exclude = lowerIds(body?.exclude_media_ids);

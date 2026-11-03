@@ -10,8 +10,6 @@ export const rateMaxPerEmail = () => positive("EMAIL_LOGIN_RATE_MAX", 5);
 export const rateMaxPerIp = () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50);
 export const env = (name: string) => process.env[name]?.trim() || undefined;
 export const flag = (name: string) => ["1", "true"].includes(env(name)?.toLowerCase() ?? "");
-export const appleClientId = () => env("APPLE_CLIENT_ID");
-export const googleClientId = () => env("GOOGLE_CLIENT_ID");
 export const devEmailBypass = () => flag("EMAIL_LOGIN_DEV_BYPASS");
 export function reviewLogin() {
   const value = env("REVIEW_LOGIN");

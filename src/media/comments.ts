@@ -1,17 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { sql } from "../db.ts";
 import { inSight, uuidPattern } from "../memories/plugin.ts";
-export type FrameComment = {
-  id: string;
-  body: string;
-  created_at: Date;
-  author: {
-    id: string;
-    username: string | null;
-    name: string | null;
-  };
-  mine: boolean;
-};
+import type { FrameComment } from "../types/media.ts";
+
+export type { FrameComment };
 export const MAX_COMMENT_LENGTH = 500;
 const commentBody = {
   type: "object",

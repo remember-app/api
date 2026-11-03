@@ -1,15 +1,9 @@
 import { AwsClient } from "aws4fetch";
 import { env } from "../auth/config.ts";
+import type { Store, UploadedPart } from "../types/media.ts";
 import { googleStore } from "./gcs.ts";
-export type Store = {
-  call(method: string, key: string, query?: string, init?: RequestInit): Promise<Response>;
-  link(
-    method: "GET" | "PUT",
-    key: string,
-    ttl: number,
-    query?: Record<string, string>,
-  ): Promise<string>;
-};
+
+export type { Store, UploadedPart };
 export function storageDriver(): "s3" | "google" {
   const name = env("STORAGE_DRIVER")?.toLowerCase() ?? "s3";
   if (name === "s3" || name === "google") return name;
@@ -72,10 +66,6 @@ export function partUrls(
     ),
   );
 }
-export type UploadedPart = {
-  part_number: number;
-  etag: string;
-};
 export async function completeUpload(key: string, uploadId: string, parts: UploadedPart[]) {
   const xml = [...parts]
     .sort((a, b) => a.part_number - b.part_number)

@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS user_usage;
-DROP TABLE IF EXISTS media_items;

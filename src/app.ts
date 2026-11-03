@@ -1,7 +1,6 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { identityRoutes } from "./auth/identity.ts";
 import { authPlugin } from "./auth/plugin.ts";
-import { socialRoutes } from "./auth/social.ts";
 import { contactRoutes } from "./contacts/contacts.ts";
 import { commentRoutes } from "./media/comments.ts";
 import { frameRoutes } from "./media/frame.ts";
@@ -32,7 +31,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
   });
   authPlugin(app);
   identityRoutes(app);
-  socialRoutes(app);
   contactRoutes(app);
   memoriesPlugin(app);
   memberRoutes(app);

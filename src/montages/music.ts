@@ -26,17 +26,11 @@ export const musicTracks = [
   "mystery",
   "energetic",
 ] as const;
-export type MusicUpload = {
-  id: string;
-  memory_id: string;
-  uploaded_by: string;
-  status: "pending_upload" | "ready";
-  object_key: string;
-  upload_id: string | null;
-  size_bytes: string;
-  created_at: Date;
-  updated_at: Date;
-};
+
+import type { MusicUpload } from "../types/montages.ts";
+
+export type { MusicUpload };
+
 const intentBody = {
   type: "object",
   required: ["size_bytes"],

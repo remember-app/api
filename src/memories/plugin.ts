@@ -2,20 +2,10 @@ import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { sql } from "../db.ts";
 import { downloadTtlSeconds, memoryMaxFiles } from "../media/config.ts";
 import { downloadUrl, storageConfigured } from "../media/r2.ts";
-export type MemberRole = "organizer" | "contributor" | "viewer";
-export type ContributionStatus = "not_started" | "more_coming" | "done" | "nothing";
-export type Memory = {
-  id: string;
-  organizer_id: string;
-  title: string;
-  event_start: Date;
-  event_end: Date | null;
-  storage_bytes: string;
-  media_count: number;
-  montage_count: number;
-  created_at: Date;
-  cover_media_id: string | null;
-};
+import type { ContributionStatus, MemberRole, Memory } from "../types/memories.ts";
+
+export type { ContributionStatus, MemberRole, Memory };
+
 declare module "fastify" {
   interface FastifyInstance {
     requireMembership: preHandlerAsyncHookHandler;
