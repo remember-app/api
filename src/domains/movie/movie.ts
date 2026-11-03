@@ -1,0 +1,124 @@
+import { sql } from "../../integrations/db/index.ts";
+import type { MediaId, MontageId, MovieId, ProjectId, UserId } from "../../types/id.ts";
+import type { Movie } from "../../types/movie.ts";
+
+const columns = sql`
+  id,
+  name,
+  project_id as "projectId",
+  created_by as "createdBy",
+  created_at as "createdAt",
+  montage_id as "montageId",
+  video_id as "videoId",
+  thumbnail_id as "thumbnailId",
+  preview_id as "previewId"
+`;
+
+type MovieRow = {
+  id: MovieId;
+  name: string;
+  projectId: ProjectId;
+  createdBy: UserId;
+  createdAt: Date;
+  montageId: MontageId;
+  videoId: MediaId;
+  thumbnailId: MediaId | null;
+  previewId: MediaId | null;
+};
+
+const toMovie = ({ thumbnailId, previewId, ...rest }: MovieRow): Movie => ({
+  ...rest,
+  derived: { thumbnailId, previewId },
+});
+
+export async function getMovie(id: MovieId): Promise<Movie | undefined> {
+  const [row] = await sql<MovieRow[]>`select ${columns} from movies where id = ${id}`;
+  return row && toMovie(row);
+}
+
+export async function listMovies(projectId: ProjectId): Promise<Movie[]> {
+  const rows = await sql<MovieRow[]>`
+    select ${columns}
+    from movies
+    where project_id = ${projectId}
+    order by created_at desc
+  `;
+  return rows.map(toMovie);
+}
+
+export type NewMovie = {
+  name: string;
+  projectId: ProjectId;
+  createdBy: UserId;
+  montageId: MontageId;
+  videoId: MediaId;
+  thumbnailId: MediaId | null;
+  previewId: MediaId | null;
+};
+
+export async function createMovie(input: NewMovie): Promise<Movie> {
+  const [row] = await sql<MovieRow[]>`
+    insert into movies (
+      name, project_id, created_by, montage_id, video_id, thumbnail_id, preview_id
+    )
+    values (
+      ${input.name},
+      ${input.projectId},
+      ${input.createdBy},
+      ${input.montageId},
+      ${input.videoId},
+      ${input.thumbnailId},
+      ${input.previewId}
+    )
+    returning ${columns}
+  `;
+  if (!row) throw new Error("movie insert returned no row");
+  return toMovie(row);
+}
+
+export async function setMovieDerived(
+  id: MovieId,
+  thumbnailId: MediaId | null,
+  previewId: MediaId | null,
+): Promise<Movie | undefined> {
+  const [row] = await sql<MovieRow[]>`
+    update movies
+    set thumbnail_id = ${thumbnailId}, preview_id = ${previewId}
+    where id = ${id}
+    returning ${columns}
+  `;
+  return row && toMovie(row);
+}
+
+export async function renameMovie(
+  id: MovieId,
+  projectId: ProjectId,
+  name: string,
+): Promise<Movie | undefined> {
+  const [row] = await sql<MovieRow[]>`
+    update movies
+    set name = ${name}
+    where id = ${id} and project_id = ${projectId}
+    returning ${columns}
+  `;
+  return row && toMovie(row);
+}
+
+export type DeletedMovie = {
+  videoId: MediaId;
+  thumbnailId: MediaId | null;
+  previewId: MediaId | null;
+};
+
+export async function deleteMovie(
+  id: MovieId,
+  projectId: ProjectId,
+): Promise<DeletedMovie | undefined> {
+  const [row] = await sql<MovieRow[]>`
+    delete from movies
+    where id = ${id} and project_id = ${projectId}
+    returning ${columns}
+  `;
+  if (!row) return undefined;
+  return { videoId: row.videoId, thumbnailId: row.thumbnailId, previewId: row.previewId };
+}

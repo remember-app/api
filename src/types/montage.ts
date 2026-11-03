@@ -24,6 +24,8 @@ export type MontageTemplate = {
 
 export type MontageJournal = {};
 
+export type MontageStage = "prep" | "analysis" | "directing" | "music" | "assembly";
+
 export type MontageJournalEntry =
   | MontagePrepEntry
   | MontageAnalysisEntry

@@ -1,52 +1,20 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
-import { identityRoutes } from "./auth/identity.ts";
-import { authPlugin } from "./auth/plugin.ts";
-import { contactRoutes } from "./contacts/contacts.ts";
-import { commentRoutes } from "./media/comments.ts";
-import { frameRoutes } from "./media/frame.ts";
-import { galleryRoutes } from "./media/gallery.ts";
-import { labelRoutes } from "./media/labels.ts";
-import { screeningRoutes } from "./media/screening.ts";
-import { uploadRoutes } from "./media/upload.ts";
-import { memberRoutes } from "./memories/members.ts";
-import { memoriesPlugin } from "./memories/plugin.ts";
-import { pushRoutes } from "./memories/push.ts";
-import { memoryRemovalRoutes } from "./memories/removal.ts";
-import { journalRoutes } from "./montages/journal.ts";
-import { montageRoutes } from "./montages/montages.ts";
-import { musicRoutes } from "./montages/music.ts";
-import { montageReadyRoutes } from "./montages/ready.ts";
-import { montageTemplateRoutes } from "./montages/templates.ts";
-import { montageWatchRoutes } from "./montages/watched.ts";
-import { privacyRoutes } from "./privacy/privacy.ts";
+import { config } from "./config.ts";
+import { registerRoutes } from "./http/index.ts";
+
 export function buildApp(options: FastifyServerOptions = {}) {
-  const app = Fastify({ logger: process.env.NODE_ENV !== "test", ...options });
+  const app = Fastify({ logger: !config.server.isTest(), ...options });
+
   app.get("/health", () => ({ status: "ok" }));
-  privacyRoutes(app);
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500;
     if (status < 500) return reply.code(status).send(error);
     request.log.error({ err: error }, "request failed");
     return reply.code(500).send({ error: "internal" });
   });
-  authPlugin(app);
-  identityRoutes(app);
-  contactRoutes(app);
-  memoriesPlugin(app);
-  memberRoutes(app);
-  memoryRemovalRoutes(app);
-  uploadRoutes(app);
-  galleryRoutes(app);
-  screeningRoutes(app);
-  frameRoutes(app);
-  commentRoutes(app);
-  labelRoutes(app);
-  pushRoutes(app);
-  montageRoutes(app);
-  montageWatchRoutes(app);
-  montageReadyRoutes(app);
-  montageTemplateRoutes(app);
-  journalRoutes(app);
-  musicRoutes(app);
+
+  registerRoutes(app);
+
   return app;
 }

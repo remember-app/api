@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | "conflict"
   | "limit_exceeded"
   | "storage_unavailable"
+  | "email_unavailable"
   | "internal";
 
 export type ApiHealth = {

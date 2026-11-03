@@ -8,7 +8,7 @@ export type PhotoMedia = MediaItemCommon & {
   kind: "photo";
   format: MediaPhotoFormat;
   bytes: number;
-  dimensions: MediaDimension;
+  dimensions: MediaDimension | null;
   metadata: PhotoMediaMetadata;
 };
 
@@ -16,8 +16,8 @@ export type VideoMedia = MediaItemCommon & {
   kind: "video";
   format: MediaVideoFormat;
   bytes: number;
-  dimensions: MediaDimension;
-  duration: number;
+  dimensions: MediaDimension | null;
+  duration: number | null;
   metadata: VideoMediaMetadata;
 };
 
@@ -25,7 +25,7 @@ export type AudioMedia = MediaItemCommon & {
   kind: "audio";
   format: MediaAudioFormat;
   bytes: number;
-  duration: number;
+  duration: number | null;
   metadata: AudioMediaMetadata;
 };
 
