@@ -12,9 +12,11 @@ import { accessOf, isAdmin } from "../../domains/project/access.ts";
 import { montageFailedMessage, movieReadyMessage } from "../../domains/push/messages.ts";
 import { removeTokens, tokensOfProject } from "../../domains/push/push.ts";
 import { sendPush } from "../../integrations/push/index.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type { MontageConfig } from "../../types/montage.ts";
 import { fail } from "../errors.ts";
+import { allow } from "../rate-limit.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -92,6 +94,16 @@ export function montageRoutes(app: FastifyInstance) {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
       if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      if (
+        !allow(
+          "montages",
+          request.authenticated!.user.id,
+          config.rate.montages(),
+          config.rate.windowMs(),
+        )
+      ) {
+        return fail(reply, 429, "limit_exceeded");
+      }
       const result = await createMontage({
         projectId: request.params.projectId as ProjectId,
         createdBy: request.authenticated!.user.id,
@@ -111,13 +123,14 @@ export function montageRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/montages",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
-      return listMontages(request.params.projectId as ProjectId);
+      const { limit, offset } = pageOf(request.query);
+      return listMontages(request.params.projectId as ProjectId, limit, offset);
     },
   );
 
@@ -138,16 +151,20 @@ export function montageRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: MontageParams }>(
+  app.get<{
+    Params: MontageParams;
+    Querystring: { limit?: number; offset?: number };
+  }>(
     "/projects/:projectId/montages/:montageId/journal",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
       if (!uuidPattern.test(request.params.montageId)) {
         return fail(reply, 404, "not_found");
       }
-      return listJournal(request.params.montageId as MontageId);
+      const { limit, offset } = pageOf(request.query);
+      return listJournal(request.params.montageId as MontageId, limit, offset);
     },
   );
 

@@ -52,6 +52,7 @@ export type ProjectItemCommon = {
   description: string | null;
   labelIds: LabelId[];
   analysis: ProjectMediaItemAIAnalysis | null;
+  createdAt: Date;
 };
 
 export type ProjectMediaItemAIAnalysis = {

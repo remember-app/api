@@ -182,12 +182,14 @@ create table uploads (
         check (status in ('pending', 'uploading', 'completed', 'failed')),
     error_code       text,
     error            text,
+    media_id         uuid references media_items (id) on delete cascade,
     multipart_id     text,
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now()
 );
 
 create index uploads_project_idx on uploads (project_id);
+create index uploads_media_idx on uploads (media_id);
 
 create table songs (
     id          uuid primary key default gen_random_uuid(),

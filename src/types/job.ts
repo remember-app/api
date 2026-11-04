@@ -1,10 +1,10 @@
-import type { MediaId, MontageId } from "./id.ts";
+import type { MontageId, UploadId } from "./id.ts";
 
 export type Job = JobMediaDerive | JobMontage;
 
 export type JobMediaDerive = JobBase & {
   kind: "media_derive";
-  ref: MediaId;
+  ref: UploadId;
 };
 
 export type JobMontage = JobBase & {

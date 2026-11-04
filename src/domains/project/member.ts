@@ -1,4 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { MediaId, ProjectId, UserId } from "../../types/id.ts";
 import type {
   ProjectContributionStatus,
@@ -7,18 +9,36 @@ import type {
 } from "../../types/project.ts";
 import { deleteMediaRows } from "../media/media.ts";
 
-export async function listMembers(projectId: ProjectId): Promise<ProjectMember[]> {
+const memberColumns = sql`
+  user_id as "userId",
+  role,
+  contribution,
+  joined_at as "joinedAt",
+  invited_by as "invitedBy"
+`;
+
+export async function allMembers(projectId: ProjectId): Promise<ProjectMember[]> {
   return sql<ProjectMember[]>`
-    select
-      user_id as "userId",
-      role,
-      contribution,
-      joined_at as "joinedAt",
-      invited_by as "invitedBy"
+    select ${memberColumns}
     from project_members
     where project_id = ${projectId}
     order by joined_at, user_id
   `;
+}
+
+export async function listMembers(
+  projectId: ProjectId,
+  limit: number,
+  offset: number,
+): Promise<Page<ProjectMember>> {
+  const rows = await sql<ProjectMember[]>`
+    select ${memberColumns}
+    from project_members
+    where project_id = ${projectId}
+    order by joined_at, user_id
+    limit ${limit + 1} offset ${offset}
+  `;
+  return page(rows, limit, offset);
 }
 
 export async function addMember(
@@ -108,6 +128,11 @@ export async function removeMember(
     if (itemIds.length > 0) {
       await tx`delete from project_items where id = any(${itemIds})`;
     }
+    await tx`
+      delete from jobs
+      where ref = any(${mediaIds})
+         or ref in (select id from uploads where media_id = any(${mediaIds}))
+    `;
     const keys = await deleteMediaRows(mediaIds as MediaId[], tx);
     await tx`
       delete from labels

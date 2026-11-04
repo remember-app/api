@@ -10,7 +10,8 @@ import {
   partUrls,
   storageConfigured,
 } from "../../integrations/storage/s3.ts";
-import type { MediaId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
+import { type Cursor, type CursorPage, cursorPage } from "../../pagination.ts";
+import type { ProjectId, ProjectItemId, UploadId, UserId } from "../../types/id.ts";
 import type {
   MediaAudioFormat,
   MediaItem,
@@ -87,10 +88,10 @@ const mimeOf = (format: string): string => {
   return types[format] ?? "application/octet-stream";
 };
 
-const storageKeyOf = (format: string, id: MediaId): string => `remember/${format}/${id}`;
+const storageKeyOf = (format: string, id: UploadId): string => `remember/${format}/${id}`;
 
 async function ownedUpload(
-  id: MediaId,
+  id: UploadId,
   projectId: ProjectId,
   userId: UserId,
 ): Promise<UploadRow | undefined> {
@@ -103,7 +104,7 @@ async function ownedUpload(
 }
 
 export type UploadPlan = {
-  id: MediaId;
+  id: UploadId;
   path: string;
   partBytes: number;
   parts: string[];
@@ -142,7 +143,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if ((await countItems(input.projectId)) + (open?.count ?? 0) >= config.media.projectMaxFiles()) {
     return { denial: "too_many_files" };
   }
-  const id = randomUUID() as MediaId;
+  const id = randomUUID() as UploadId;
   const storageKey = storageKeyOf(format, id);
   await sql`
     insert into uploads (
@@ -166,7 +167,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
 }
 
 export async function resumeUpload(
-  id: MediaId,
+  id: UploadId,
   projectId: ProjectId,
   userId: UserId,
 ): Promise<UploadPlan | undefined> {
@@ -183,7 +184,7 @@ export async function resumeUpload(
 }
 
 export type CompleteUpload = {
-  id: MediaId;
+  id: UploadId;
   projectId: ProjectId;
   userId: UserId;
   parts: { part_number: number; etag: string }[];
@@ -246,16 +247,17 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
     const media = await createMedia(newMedia, tx);
     await tx`
       update uploads
-      set status = 'completed', error_code = null, error = null, updated_at = now()
+      set status = 'completed', error_code = null, error = null,
+          media_id = ${media.id}, updated_at = now()
       where id = ${row.id}
     `;
     const itemId = await createItem(input.projectId, media.id, row.kind, tx);
-    await enqueue("media_derive", media.id, tx);
+    await enqueue("media_derive", row.id, tx);
     return { media, itemId };
   });
 }
 
-async function markFailed(id: MediaId, code: string, message: string | null): Promise<void> {
+async function markFailed(id: UploadId, code: string, message: string | null): Promise<void> {
   await sql`
     update uploads
     set status = 'failed', error_code = ${code}, error = ${message}, updated_at = now()
@@ -264,7 +266,7 @@ async function markFailed(id: MediaId, code: string, message: string | null): Pr
 }
 
 export type UploadView = {
-  id: MediaId;
+  id: UploadId;
   uploadedBy: UserId;
   kind: MediaKind;
   fileName: string;
@@ -273,39 +275,64 @@ export type UploadView = {
   createdAt: Date;
   errorCode: string | null;
   error: string | null;
+  mediaId: string | null;
+  deriveStatus: string | null;
+  deriveError: string | null;
 };
 
 const viewColumns = sql`
-  id,
-  uploaded_by as "uploadedBy",
-  kind,
-  file_name as "fileName",
-  declared_bytes as "declaredBytes",
-  status,
-  created_at as "createdAt",
-  error_code as "errorCode",
-  error
+  u.id,
+  u.uploaded_by as "uploadedBy",
+  u.kind,
+  u.file_name as "fileName",
+  u.declared_bytes as "declaredBytes",
+  u.status,
+  u.created_at as "createdAt",
+  u.error_code as "errorCode",
+  u.error,
+  u.media_id as "mediaId",
+  j.status as "deriveStatus",
+  j.error as "deriveError"
 `;
 
-export async function listUploads(projectId: ProjectId, onlyUser?: UserId): Promise<UploadView[]> {
-  if (onlyUser) {
-    return sql<UploadView[]>`
-      select ${viewColumns}
-      from uploads
-      where project_id = ${projectId} and uploaded_by = ${onlyUser}
-      order by created_at desc, id
-    `;
-  }
-  return sql<UploadView[]>`
-    select ${viewColumns}
-    from uploads
-    where project_id = ${projectId}
-    order by created_at desc, id
-  `;
+const afterClause = (after: Cursor | null) => sql`
+  and (
+    ${after?.at ?? null}::timestamptz is null
+    or (date_trunc('milliseconds', u.created_at), u.id)
+      < (${after?.at ?? null}::timestamptz, ${after?.id ?? null}::uuid)
+  )
+`;
+
+export async function listUploads(
+  projectId: ProjectId,
+  onlyUser: UserId | undefined,
+  limit: number,
+  after: Cursor | null,
+): Promise<CursorPage<UploadView>> {
+  const rows = onlyUser
+    ? await sql<UploadView[]>`
+        select ${viewColumns}
+        from uploads u
+        left join jobs j on j.kind = 'media_derive' and j.ref = u.id
+        where u.project_id = ${projectId} and u.uploaded_by = ${onlyUser}
+        ${afterClause(after)}
+        order by date_trunc('milliseconds', u.created_at) desc, u.id desc
+        limit ${limit + 1}
+      `
+    : await sql<UploadView[]>`
+        select ${viewColumns}
+        from uploads u
+        left join jobs j on j.kind = 'media_derive' and j.ref = u.id
+        where u.project_id = ${projectId}
+        ${afterClause(after)}
+        order by date_trunc('milliseconds', u.created_at) desc, u.id desc
+        limit ${limit + 1}
+      `;
+  return cursorPage(rows, limit, (row) => ({ at: row.createdAt, id: row.id }));
 }
 
 export async function cancelUpload(
-  id: MediaId,
+  id: UploadId,
   projectId: ProjectId,
   userId: UserId,
 ): Promise<boolean> {

@@ -1,16 +1,19 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type {
   MediaId,
   MontageId,
   MovieId,
   ProjectId,
   ProjectItemId,
+  UploadId,
   UserId,
 } from "../../types/id.ts";
 import type { Project, ProjectMember } from "../../types/project.ts";
 import { deleteMediaRows } from "../media/media.ts";
 import { accessOf } from "./access.ts";
-import { listMembers } from "./member.ts";
+import { allMembers } from "./member.ts";
 
 type ProjectCore = Omit<Project, "members" | "itemIds" | "musicIds" | "movieIds">;
 
@@ -33,7 +36,7 @@ export async function loadProject(id: ProjectId): Promise<Project | undefined> {
   const core = await loadCore(id);
   if (!core) return undefined;
   const [members, items, songs, movies] = await Promise.all([
-    listMembers(id),
+    allMembers(id),
     sql<{ id: ProjectItemId }[]>`
       select id from project_items where project_id = ${id} order by created_at, id
     `,
@@ -63,12 +66,23 @@ export async function getProject(id: ProjectId, viewerId: UserId): Promise<Proje
   return loadProject(id);
 }
 
-export async function listProjects(viewerId: UserId): Promise<Project[]> {
+export async function listProjects(
+  viewerId: UserId,
+  limit: number,
+  offset: number,
+): Promise<Page<Project>> {
   const rows = await sql<{ id: ProjectId }[]>`
-    select project_id as id from project_members where user_id = ${viewerId}
+    select project_id as id from project_members
+    where user_id = ${viewerId}
+    order by joined_at, project_id
+    limit ${limit + 1} offset ${offset}
   `;
   const projects = await Promise.all(rows.map((row) => loadProject(row.id)));
-  return projects.filter((project) => project !== undefined);
+  return page(
+    projects.filter((project): project is Project => project !== undefined),
+    limit,
+    offset,
+  );
 }
 
 export type NewProject = {
@@ -165,11 +179,18 @@ export async function deleteProject(id: ProjectId): Promise<ProjectDeletion | un
     const montageIds = await tx<{ id: MontageId }[]>`
       select id from montages where project_id = ${id}
     `;
+    const uploadIds = await tx<{ id: UploadId }[]>`
+      select id from uploads where project_id = ${id}
+    `;
     const gone = await tx<{ id: ProjectId }[]>`
       delete from projects where id = ${id} returning id
     `;
     if (gone.length === 0) return undefined;
-    const refs = [...media.map((row) => row.id), ...montageIds.map((row) => row.id)];
+    const refs = [
+      ...media.map((row) => row.id),
+      ...montageIds.map((row) => row.id),
+      ...uploadIds.map((row) => row.id),
+    ];
     const keys = await deleteMediaRows(
       media.map((row) => row.id),
       tx,

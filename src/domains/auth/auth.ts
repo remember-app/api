@@ -2,6 +2,8 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from "node:util";
 import { config } from "../../config.ts";
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { AuthSession } from "../../types/auth.ts";
 import type { SessionId, UserId } from "../../types/id.ts";
 
@@ -142,13 +144,19 @@ export async function verifySession(token: string): Promise<AuthSession | undefi
   return row;
 }
 
-export async function listSessions(userId: UserId): Promise<AuthSession[]> {
-  return sql<AuthSession[]>`
+export async function listSessions(
+  userId: UserId,
+  limit: number,
+  offset: number,
+): Promise<Page<AuthSession>> {
+  const rows = await sql<AuthSession[]>`
     select ${sessionColumns}
     from auth_sessions
     where user_id = ${userId} and revoked_at is null and expires_at > now()
     order by created_at desc
+    limit ${limit + 1} offset ${offset}
   `;
+  return page(rows, limit, offset);
 }
 
 export async function revokeSession(id: SessionId, userId: UserId): Promise<boolean> {

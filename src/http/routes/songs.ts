@@ -10,6 +10,7 @@ import {
   listProjectSongs,
 } from "../../domains/song/song.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { ProjectId, SongId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -30,13 +31,18 @@ type ProjectParams = { projectId: string };
 type SongParams = { projectId: string; songId: string };
 
 export function songRoutes(app: FastifyInstance) {
-  app.get("/songs/library", { preHandler: app.authenticate }, async () => {
-    return listLibrarySongs();
-  });
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/songs/library",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      return listLibrarySongs(limit, offset);
+    },
+  );
 
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/songs",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       if (!uuidPattern.test(request.params.projectId)) {
         return fail(reply, 404, "not_found");
@@ -46,7 +52,8 @@ export function songRoutes(app: FastifyInstance) {
         request.authenticated!.user.id,
       );
       if (!access) return fail(reply, 404, "not_found");
-      return listProjectSongs(request.params.projectId as ProjectId);
+      const { limit, offset } = pageOf(request.query);
+      return listProjectSongs(request.params.projectId as ProjectId, limit, offset);
     },
   );
 

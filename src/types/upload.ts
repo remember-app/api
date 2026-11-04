@@ -1,8 +1,8 @@
-import type { MediaId, ProjectId, UserId } from "./id.ts";
+import type { ProjectId, UploadId, UserId } from "./id.ts";
 import type { MediaKind } from "./mediaItem.ts";
 
 export type Upload = {
-  id: MediaId;
+  id: UploadId;
   projectId: ProjectId;
   uploadedBy: UserId;
   kind: MediaKind;

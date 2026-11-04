@@ -10,6 +10,7 @@ import {
 } from "../../domains/label/label.ts";
 import type { ProjectAccess } from "../../domains/project/access.ts";
 import { accessOf, canContribute } from "../../domains/project/access.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { LabelId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { Label } from "../../types/label.ts";
 import { fail } from "../errors.ts";
@@ -64,14 +65,15 @@ async function projectAccess(projectId: string, userId: UserId) {
 }
 
 export function labelRoutes(app: FastifyInstance) {
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/labels",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
       if (!access) return fail(reply, 404, "not_found");
-      return listLabels(request.params.projectId as ProjectId, userId);
+      const { limit, offset } = pageOf(request.query);
+      return listLabels(request.params.projectId as ProjectId, userId, limit, offset);
     },
   );
 

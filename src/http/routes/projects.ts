@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { config } from "../../config.ts";
 import {
   acceptInvite,
   createAppInvite,
@@ -26,9 +27,11 @@ import { removeTokens, tokensOfUser } from "../../domains/push/push.ts";
 import { findByUsername } from "../../domains/user/user.ts";
 import { sendPush } from "../../integrations/push/index.ts";
 import { abortUploads, deleteObjects } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
 import { fail } from "../errors.ts";
+import { allow } from "../rate-limit.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -149,9 +152,14 @@ export function projectRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/projects", { preHandler: app.authenticate }, async (request) => {
-    return listProjects(request.authenticated!.user.id);
-  });
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/projects",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      return listProjects(request.authenticated!.user.id, limit, offset);
+    },
+  );
 
   app.get<{ Params: ProjectParams }>(
     "/projects/:projectId",
@@ -240,12 +248,13 @@ export function projectRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/members",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       if (!(await accessOr404(request, reply))) return reply;
-      return listMembers(request.params.projectId as ProjectId);
+      const { limit, offset } = pageOf(request.query);
+      return listMembers(request.params.projectId as ProjectId, limit, offset);
     },
   );
 
@@ -326,6 +335,16 @@ export function projectRoutes(app: FastifyInstance) {
       const access = await accessOr404(request, reply);
       if (!access) return reply;
       if (!canContribute(access)) return fail(reply, 403, "forbidden");
+      if (
+        !allow(
+          "invites",
+          request.authenticated!.user.id,
+          config.rate.invites(),
+          config.rate.windowMs(),
+        )
+      ) {
+        return fail(reply, 429, "limit_exceeded");
+      }
       const invite = await rotateProjectInvite({
         projectId: request.params.projectId as ProjectId,
         role: request.body?.role ?? "contributor",

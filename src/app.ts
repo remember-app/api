@@ -4,7 +4,11 @@ import { codeForStatus, fail } from "./http/errors.ts";
 import { registerRoutes } from "./http/index.ts";
 
 export function buildApp(options: FastifyServerOptions = {}) {
-  const app = Fastify({ logger: !config.server.isTest(), ...options });
+  const app = Fastify({
+    logger: !config.server.isTest(),
+    trustProxy: config.server.trustProxy(),
+    ...options,
+  });
 
   app.get("/health", () => ({ status: "ok" }));
 

@@ -1,4 +1,5 @@
 import { type Db, sql } from "../../integrations/db/index.ts";
+import { type Cursor, type CursorPage, cursorPage } from "../../pagination.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import type { ProjectItem, ProjectItemCommon } from "../../types/project.ts";
 import { deleteMediaRows } from "../media/media.ts";
@@ -17,6 +18,7 @@ const itemColumns = sql`
   pi.analysis,
   pi.thumbnail_id as "thumbnailId",
   pi.preview_id as "previewId",
+  pi.created_at as "createdAt",
   array(
     select l.label_id
     from project_item_labels l
@@ -33,6 +35,7 @@ const toItem = ({ thumbnailId, previewId, ...common }: ItemRow): ProjectItem => 
     description: common.description,
     labelIds: common.labelIds,
     analysis: common.analysis,
+    createdAt: common.createdAt,
   };
   if (common.kind === "audio") {
     return { ...base, kind: "audio", derivedMedia: { thumbnailId } };
@@ -40,14 +43,24 @@ const toItem = ({ thumbnailId, previewId, ...common }: ItemRow): ProjectItem => 
   return { ...base, kind: common.kind, derivedMedia: { thumbnailId, previewId } };
 };
 
-export async function listItems(projectId: ProjectId): Promise<ProjectItem[]> {
+export async function listItems(
+  projectId: ProjectId,
+  limit: number,
+  after: Cursor | null,
+): Promise<CursorPage<ProjectItem>> {
   const rows = await sql<ItemRow[]>`
     select ${itemColumns}
     from project_items pi
     where pi.project_id = ${projectId}
-    order by pi.created_at, pi.id
+      and (
+        ${after?.at ?? null}::timestamptz is null
+        or (date_trunc('milliseconds', pi.created_at), pi.id)
+          > (${after?.at ?? null}::timestamptz, ${after?.id ?? null}::uuid)
+      )
+    order by date_trunc('milliseconds', pi.created_at), pi.id
+    limit ${limit + 1}
   `;
-  return rows.map(toItem);
+  return cursorPage(rows.map(toItem), limit, (item) => ({ at: item.createdAt, id: item.id }));
 }
 
 export async function getItem(
@@ -118,7 +131,11 @@ export async function removeItemAndMedia(
   return sql.begin(async (tx) => {
     await tx`delete from project_items where project_id = ${projectId} and id = ${itemId}`;
     if (mediaIds.length === 0) return [];
-    await tx`delete from jobs where ref = any(${mediaIds})`;
+    await tx`
+      delete from jobs
+      where ref = any(${mediaIds})
+         or ref in (select id from uploads where media_id = any(${mediaIds}))
+    `;
     return deleteMediaRows(mediaIds, tx);
   });
 }

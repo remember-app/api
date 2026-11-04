@@ -1,4 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type {
   Montage,
@@ -27,13 +29,19 @@ export async function getMontage(id: MontageId): Promise<Montage | undefined> {
   return row;
 }
 
-export async function listMontages(projectId: ProjectId): Promise<Montage[]> {
-  return sql<Montage[]>`
+export async function listMontages(
+  projectId: ProjectId,
+  limit: number,
+  offset: number,
+): Promise<Page<Montage>> {
+  const rows = await sql<Montage[]>`
     select ${columns}
     from montages
     where project_id = ${projectId}
     order by created_at desc
+    limit ${limit + 1} offset ${offset}
   `;
+  return page(rows, limit, offset);
 }
 
 export type NewMontage = {
@@ -96,14 +104,17 @@ type JournalRow = {
 
 export async function listJournal(
   montageId: MontageId,
-): Promise<{ id: number; stage: MontageStage; entry: MontageJournalEntry }[]> {
+  limit: number,
+  offset: number,
+): Promise<Page<{ id: number; stage: MontageStage; entry: MontageJournalEntry }>> {
   const rows = await sql<JournalRow[]>`
     select id, stage, entry
     from montage_journal_entries
     where montage_id = ${montageId}
     order by id
+    limit ${limit + 1} offset ${offset}
   `;
-  return rows;
+  return page(rows, limit, offset);
 }
 
 export async function listTemplates(): Promise<MontageTemplate[]> {

@@ -1,4 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { LabelId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { Label } from "../../types/label.ts";
 
@@ -18,13 +20,20 @@ export async function getLabel(id: LabelId): Promise<Label | undefined> {
   return row;
 }
 
-export async function listLabels(projectId: ProjectId, viewerId: UserId): Promise<Label[]> {
-  return sql<Label[]>`
+export async function listLabels(
+  projectId: ProjectId,
+  viewerId: UserId,
+  limit: number,
+  offset: number,
+): Promise<Page<Label>> {
+  const rows = await sql<Label[]>`
     select ${columns}
     from labels
     where project_id = ${projectId} and (shared or owner_id = ${viewerId})
     order by shared desc, name, id
+    limit ${limit + 1} offset ${offset}
   `;
+  return page(rows, limit, offset);
 }
 
 export type NewLabel = {

@@ -1,4 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { MediaId, MontageId, MovieId, ProjectId, UserId } from "../../types/id.ts";
 import type { Movie } from "../../types/movie.ts";
 import { deleteMediaRows } from "../media/media.ts";
@@ -37,14 +39,19 @@ export async function getMovie(id: MovieId): Promise<Movie | undefined> {
   return row && toMovie(row);
 }
 
-export async function listMovies(projectId: ProjectId): Promise<Movie[]> {
+export async function listMovies(
+  projectId: ProjectId,
+  limit: number,
+  offset: number,
+): Promise<Page<Movie>> {
   const rows = await sql<MovieRow[]>`
     select ${columns}
     from movies
     where project_id = ${projectId}
     order by created_at desc
+    limit ${limit + 1} offset ${offset}
   `;
-  return rows.map(toMovie);
+  return page(rows.map(toMovie), limit, offset);
 }
 
 export type NewMovie = {

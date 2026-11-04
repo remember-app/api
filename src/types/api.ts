@@ -20,3 +20,8 @@ export type ApiErrorCode =
 export type ApiHealth = {
   status: "ok";
 };
+
+export type Page<T> = {
+  items: T[];
+  nextOffset: number | null;
+};

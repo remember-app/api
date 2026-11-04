@@ -1,9 +1,11 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
+import { config } from "../../config.ts";
 import { verifySession } from "../../domains/auth/auth.ts";
 import { getUser } from "../../domains/user/user.ts";
 import type { AuthSession } from "../../types/auth.ts";
 import type { User } from "../../types/user.ts";
 import { fail } from "../errors.ts";
+import { allow } from "../rate-limit.ts";
 
 export type Authenticated = {
   user: User;
@@ -32,6 +34,10 @@ export function authPlugin(app: FastifyInstance) {
     if (!session) return fail(reply, 401, "unauthorized");
     const user = await getUser(session.userId);
     if (!user) return fail(reply, 401, "unauthorized");
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      const within = allow("write", user.id, config.rate.write(), config.rate.windowMs());
+      if (!within) return fail(reply, 429, "limit_exceeded");
+    }
     request.authenticated = { user, session, token };
   });
 }

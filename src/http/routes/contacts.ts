@@ -6,6 +6,7 @@ import {
   renameContact,
 } from "../../domains/contact/contact.ts";
 import { findByUsername } from "../../domains/user/user.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { UserId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -29,9 +30,14 @@ const renameBody = {
 } as const;
 
 export function contactRoutes(app: FastifyInstance) {
-  app.get("/me/contacts", { preHandler: app.authenticate }, async (request) => {
-    return listContacts(request.authenticated!.user.id);
-  });
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/me/contacts",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      return listContacts(request.authenticated!.user.id, limit, offset);
+    },
+  );
 
   app.post<{ Body: { username: string; name?: string | null } }>(
     "/me/contacts",

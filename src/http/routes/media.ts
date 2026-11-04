@@ -10,6 +10,7 @@ import {
   setItemDescription,
 } from "../../domains/project/item.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
+import { cursorQuerySchema, decodeCursor, limitOf } from "../../pagination.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -59,15 +60,22 @@ const sign = (key: string | undefined | null, ttl: number) =>
   key ? downloadUrl(key, ttl) : Promise.resolve(null);
 
 export function mediaRoutes(app: FastifyInstance) {
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; cursor?: string } }>(
     "/projects/:projectId/media",
-    { preHandler: app.authenticate },
+    { schema: { querystring: cursorQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       if (!(await accessOr404(request, reply))) return reply;
       const ttl = config.media.downloadTtlSeconds();
-      const items = await listItems(request.params.projectId as ProjectId);
-      return Promise.all(
-        items.map(async (item) => {
+      const cursor = request.query.cursor;
+      const after = cursor ? (decodeCursor(cursor) ?? null) : null;
+      if (cursor && !after) return fail(reply, 400, "bad_request");
+      const found = await listItems(
+        request.params.projectId as ProjectId,
+        limitOf(request.query.limit),
+        after,
+      );
+      const items = await Promise.all(
+        found.items.map(async (item) => {
           const media = await getMedia(item.mediaId);
           const thumbnail = item.derivedMedia.thumbnailId
             ? await getMedia(item.derivedMedia.thumbnailId)
@@ -85,6 +93,7 @@ export function mediaRoutes(app: FastifyInstance) {
           };
         }),
       );
+      return { items, nextCursor: found.nextCursor };
     },
   );
 

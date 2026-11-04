@@ -5,6 +5,7 @@ export type ProjectItemId = string & { readonly __brand: "ProjectItemId" };
 export type LabelId = string & { readonly __brand: "LabelId" };
 
 export type MediaId = string & { readonly __brand: "MediaId" };
+export type UploadId = string & { readonly __brand: "UploadId" };
 
 export type SongId = string & { readonly __brand: "SongId" };
 

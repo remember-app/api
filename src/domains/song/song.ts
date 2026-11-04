@@ -1,4 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
+import { page } from "../../pagination.ts";
+import type { Page } from "../../types/api.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
 import { deleteMediaRows } from "../media/media.ts";
@@ -17,16 +19,26 @@ export async function getSong(id: SongId): Promise<Song | undefined> {
   return row;
 }
 
-export async function listLibrarySongs(): Promise<Song[]> {
-  return sql<Song[]>`
-    select ${columns} from songs where project_id is null order by name, id
+export async function listLibrarySongs(limit: number, offset: number): Promise<Page<Song>> {
+  const rows = await sql<Song[]>`
+    select ${columns} from songs where project_id is null
+    order by name, id
+    limit ${limit + 1} offset ${offset}
   `;
+  return page(rows, limit, offset);
 }
 
-export async function listProjectSongs(projectId: ProjectId): Promise<Song[]> {
-  return sql<Song[]>`
-    select ${columns} from songs where project_id = ${projectId} order by name, id
+export async function listProjectSongs(
+  projectId: ProjectId,
+  limit: number,
+  offset: number,
+): Promise<Page<Song>> {
+  const rows = await sql<Song[]>`
+    select ${columns} from songs where project_id = ${projectId}
+    order by name, id
+    limit ${limit + 1} offset ${offset}
   `;
+  return page(rows, limit, offset);
 }
 
 export type NewSong = {

@@ -9,6 +9,7 @@ import {
 } from "../../domains/movie/movie.ts";
 import { accessOf, isAdmin } from "../../domains/project/access.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import type { MovieId, ProjectId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -41,9 +42,9 @@ async function view(movieId: MovieId, ttl: number) {
 }
 
 export function movieRoutes(app: FastifyInstance) {
-  app.get<{ Params: ProjectParams }>(
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/movies",
-    { preHandler: app.authenticate },
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
       if (!uuidPattern.test(request.params.projectId)) {
         return fail(reply, 404, "not_found");
@@ -54,8 +55,10 @@ export function movieRoutes(app: FastifyInstance) {
       );
       if (!access) return fail(reply, 404, "not_found");
       const ttl = config.media.downloadTtlSeconds();
-      const movies = await listMovies(request.params.projectId as ProjectId);
-      return Promise.all(movies.map((movie) => view(movie.id, ttl)));
+      const { limit, offset } = pageOf(request.query);
+      const found = await listMovies(request.params.projectId as ProjectId, limit, offset);
+      const items = await Promise.all(found.items.map((movie) => view(movie.id, ttl)));
+      return { items, nextOffset: found.nextOffset };
     },
   );
 

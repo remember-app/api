@@ -12,6 +12,15 @@ export const config = {
     port: () => Number(env("PORT")) || 3000,
     isTest: () => env("NODE_ENV") === "test",
     isProduction: () => (env("NODE_ENV") ?? "").toLowerCase().startsWith("prod"),
+    trustProxy: () => flag("TRUST_PROXY"),
+  },
+
+  rate: {
+    windowMs: () => positive("RATE_LIMIT_WINDOW_MINUTES", 15) * 60000,
+    write: () => positive("RATE_LIMIT_WRITE", 300),
+    uploads: () => positive("RATE_LIMIT_UPLOADS", 100),
+    montages: () => positive("RATE_LIMIT_MONTAGES", 5),
+    invites: () => positive("RATE_LIMIT_INVITES", 30),
   },
 
   postgres: {
@@ -29,6 +38,15 @@ export const config = {
     emailLoginMaxAttempts: () => positive("EMAIL_LOGIN_MAX_ATTEMPTS", 5),
     rateMaxPerEmail: () => positive("EMAIL_LOGIN_RATE_MAX", 5),
     rateMaxPerIp: () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50),
+    devLoginCode: () => {
+      const value = env("EMAIL_LOGIN_DEV_BYPASS");
+      if (!value) return undefined;
+      if ((env("NODE_ENV") ?? "").toLowerCase().startsWith("prod")) return undefined;
+      if (!/^\d{6}$/.test(value)) {
+        throw new Error("EMAIL_LOGIN_DEV_BYPASS must be six digits");
+      }
+      return value;
+    },
     reviewLogin: () => {
       const value = env("REVIEW_LOGIN");
       if (!value) return undefined;
