@@ -1,10 +1,11 @@
 import { sql } from "../../integrations/db/index.ts";
-import type { ProjectId, UserId } from "../../types/id.ts";
+import type { MediaId, ProjectId, UserId } from "../../types/id.ts";
 import type {
   ProjectContributionStatus,
   ProjectMember,
   ProjectMemberRole,
 } from "../../types/project.ts";
+import { deleteMediaRows } from "../media/media.ts";
 
 export async function listMembers(projectId: ProjectId): Promise<ProjectMember[]> {
   return sql<ProjectMember[]>`
@@ -107,15 +108,7 @@ export async function removeMember(
     if (itemIds.length > 0) {
       await tx`delete from project_items where id = any(${itemIds})`;
     }
-    const keys: string[] = [];
-    if (mediaIds.length > 0) {
-      const gone = await tx<{ storageKey: string }[]>`
-        delete from media_items
-        where id = any(${mediaIds}) and uploaded_by = ${userId}
-        returning storage_key as "storageKey"
-      `;
-      keys.push(...gone.map((row) => row.storageKey));
-    }
+    const keys = await deleteMediaRows(mediaIds as MediaId[], tx);
     await tx`
       delete from labels
       where project_id = ${projectId} and owner_id = ${userId} and not shared

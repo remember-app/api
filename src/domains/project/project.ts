@@ -8,6 +8,7 @@ import type {
   UserId,
 } from "../../types/id.ts";
 import type { Project, ProjectMember } from "../../types/project.ts";
+import { deleteMediaRows } from "../media/media.ts";
 import { accessOf } from "./access.ts";
 import { listMembers } from "./member.ts";
 
@@ -169,12 +170,13 @@ export async function deleteProject(id: ProjectId): Promise<ProjectDeletion | un
     `;
     if (gone.length === 0) return undefined;
     const refs = [...media.map((row) => row.id), ...montageIds.map((row) => row.id)];
-    if (media.length > 0) {
-      await tx`delete from media_items where id = any(${media.map((row) => row.id)})`;
-    }
+    const keys = await deleteMediaRows(
+      media.map((row) => row.id),
+      tx,
+    );
     if (refs.length > 0) await tx`delete from jobs where ref = any(${refs})`;
     return {
-      storageKeys: [...media.map((row) => row.storageKey), ...pending.map((row) => row.storageKey)],
+      storageKeys: [...keys, ...pending.map((row) => row.storageKey)],
       multiparts: pending.flatMap((row) =>
         row.multipartId === null ? [] : [{ key: row.storageKey, uploadId: row.multipartId }],
       ),

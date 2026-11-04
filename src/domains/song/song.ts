@@ -1,6 +1,7 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
+import { deleteMediaRows } from "../media/media.ts";
 
 const columns = sql`
   id,
@@ -57,11 +58,8 @@ export async function deleteSongWithMedia(
       returning media_id as "mediaId"
     `;
     if (!song) return undefined;
-    const [media] = await tx<{ storageKey: string }[]>`
-      delete from media_items where id = ${song.mediaId}
-      returning storage_key as "storageKey"
-    `;
-    return media?.storageKey;
+    const [key] = await deleteMediaRows([song.mediaId], tx);
+    return key;
   });
 }
 

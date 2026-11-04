@@ -1,6 +1,7 @@
 import { type Db, sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import type { ProjectItem, ProjectItemCommon } from "../../types/project.ts";
+import { deleteMediaRows } from "../media/media.ts";
 
 type ItemRow = ProjectItemCommon & {
   thumbnailId: MediaId | null;
@@ -118,10 +119,6 @@ export async function removeItemAndMedia(
     await tx`delete from project_items where project_id = ${projectId} and id = ${itemId}`;
     if (mediaIds.length === 0) return [];
     await tx`delete from jobs where ref = any(${mediaIds})`;
-    const rows = await tx<{ storageKey: string }[]>`
-      delete from media_items where id = any(${mediaIds})
-      returning storage_key as "storageKey"
-    `;
-    return rows.map((row) => row.storageKey);
+    return deleteMediaRows(mediaIds, tx);
   });
 }

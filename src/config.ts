@@ -64,6 +64,7 @@ export const config = {
 
   s3: {
     endpoint: () => env("S3_ENDPOINT")?.replace(/\/+$/, ""),
+    publicEndpoint: () => (env("S3_PUBLIC_ENDPOINT") ?? env("S3_ENDPOINT"))?.replace(/\/+$/, ""),
     bucket: () => env("S3_BUCKET"),
     accessKeyId: () => env("S3_ACCESS_KEY_ID"),
     secretAccessKey: () => env("S3_SECRET_ACCESS_KEY"),

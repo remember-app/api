@@ -1,6 +1,7 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { MediaId, MontageId, MovieId, ProjectId, UserId } from "../../types/id.ts";
 import type { Movie } from "../../types/movie.ts";
+import { deleteMediaRows } from "../media/media.ts";
 
 const columns = sql`
   id,
@@ -118,10 +119,6 @@ export async function deleteMovieWithMedia(
     const ids = [row.videoId, row.thumbnailId, row.previewId].filter(
       (mediaId): mediaId is MediaId => mediaId !== null,
     );
-    const gone = await tx<{ storageKey: string }[]>`
-      delete from media_items where id = any(${ids})
-      returning storage_key as "storageKey"
-    `;
-    return gone.map((media) => media.storageKey);
+    return deleteMediaRows(ids, tx);
   });
 }

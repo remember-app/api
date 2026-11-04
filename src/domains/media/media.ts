@@ -229,8 +229,15 @@ export async function setCapturedAt(id: MediaId, capturedAt: Date | null): Promi
 
 export async function deleteMediaRows(ids: MediaId[], db: Db = sql): Promise<string[]> {
   if (ids.length === 0) return [];
-  const rows = await db<{ storageKey: string }[]>`
-    delete from media_items where id = any(${ids}) returning storage_key as "storageKey"
+  const children = await db<{ storageKey: string }[]>`
+    delete from media_items
+    where parent_media_id = any(${ids}) and uploaded_by is not null
+    returning storage_key as "storageKey"
   `;
-  return rows.map((row) => row.storageKey);
+  const rows = await db<{ storageKey: string }[]>`
+    delete from media_items
+    where id = any(${ids}) and uploaded_by is not null
+    returning storage_key as "storageKey"
+  `;
+  return [...children, ...rows].map((row) => row.storageKey);
 }

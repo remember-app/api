@@ -109,6 +109,7 @@ create index labels_project_idx on labels (project_id);
 
 create table media_items (
     id              uuid primary key default gen_random_uuid(),
+    parent_media_id uuid references media_items (id),
     kind            text not null check (kind in ('photo', 'video', 'audio')),
     storage_key     text not null unique,
     uploaded_by     uuid references users (id) on delete set null,
@@ -137,6 +138,7 @@ create table media_items (
 );
 
 create index media_items_uploaded_by_idx on media_items (uploaded_by);
+create index media_items_parent_idx on media_items (parent_media_id);
 
 create table project_items (
     id           uuid primary key default gen_random_uuid(),

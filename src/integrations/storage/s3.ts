@@ -34,13 +34,15 @@ function s3Store(): Store {
   });
   const url = (key: string, query = "") =>
     `${config.s3.endpoint()}/${config.s3.bucket()}/${key}${query && `?${query}`}`;
+  const publicUrl = (key: string, query = "") =>
+    `${config.s3.publicEndpoint()}/${config.s3.bucket()}/${key}${query && `?${query}`}`;
   return {
     call: (method, key, query, init) => aws.fetch(url(key, query), { ...init, method }),
     link: async (method, key, ttl, query = {}) => {
       const params = Object.entries(query).map(
         ([name, value]) => `${name}=${encodeURIComponent(value)}`,
       );
-      const signed = await aws.sign(url(key, [...params, `X-Amz-Expires=${ttl}`].join("&")), {
+      const signed = await aws.sign(publicUrl(key, [...params, `X-Amz-Expires=${ttl}`].join("&")), {
         method,
         aws: { signQuery: true },
       });
@@ -48,8 +50,10 @@ function s3Store(): Store {
     },
   };
 }
-export async function createUpload(key: string): Promise<string> {
-  const response = await store().call("POST", key, "uploads");
+export async function createUpload(key: string, contentType: string): Promise<string> {
+  const response = await store().call("POST", key, "uploads", {
+    headers: { "content-type": contentType },
+  });
   const body = await response.text();
   if (!response.ok) {
     throw new Error(`storage refused a multipart upload: ${response.status} ${body}`);

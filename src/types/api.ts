@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | "conflict"
   | "limit_exceeded"
   | "cancelled"
+  | "expired"
   | "storage_unavailable"
   | "email_unavailable"
   | "internal";

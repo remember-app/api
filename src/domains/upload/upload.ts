@@ -72,6 +72,23 @@ const formatOf = (kind: MediaKind, fileName: string): string | undefined => {
   return audioFormats[extension];
 };
 
+const mimeOf = (format: string): string => {
+  const types: Record<string, string> = {
+    jpeg: "image/jpeg",
+    png: "image/png",
+    heic: "image/heic",
+    webp: "image/webp",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    mp3: "audio/mpeg",
+    m4a: "audio/mp4",
+    wav: "audio/wav",
+  };
+  return types[format] ?? "application/octet-stream";
+};
+
+const storageKeyOf = (format: string, id: MediaId): string => `remember/${format}/${id}`;
+
 async function ownedUpload(
   id: MediaId,
   projectId: ProjectId,
@@ -126,7 +143,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
     return { denial: "too_many_files" };
   }
   const id = randomUUID() as MediaId;
-  const storageKey = `originals/${id}`;
+  const storageKey = storageKeyOf(format, id);
   await sql`
     insert into uploads (
       id, project_id, uploaded_by, kind, storage_key, declared_bytes, file_name, format,
@@ -138,7 +155,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
       ${input.durationSeconds}, 'pending'
     )
   `;
-  const multipartId = await createUpload(storageKey);
+  const multipartId = await createUpload(storageKey, mimeOf(format));
   await sql`
     update uploads set multipart_id = ${multipartId}, status = 'uploading', updated_at = now()
     where id = ${id}
@@ -155,7 +172,7 @@ export async function resumeUpload(
 ): Promise<UploadPlan | undefined> {
   const row = await ownedUpload(id, projectId, userId);
   if (!row || row.status === "completed" || row.status === "failed") return undefined;
-  const multipartId = row.multipartId ?? (await createUpload(row.storageKey));
+  const multipartId = row.multipartId ?? (await createUpload(row.storageKey, mimeOf(row.format)));
   if (!row.multipartId) {
     await sql`
       update uploads set multipart_id = ${multipartId}, status = 'uploading', updated_at = now()
