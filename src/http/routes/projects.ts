@@ -273,7 +273,7 @@ export function projectRoutes(app: FastifyInstance) {
       const tokens = await tokensOfUser(member.userId);
       if (tokens.length > 0) {
         const title = (await projectTitle(request.params.projectId as ProjectId)) ?? "a project";
-        const message = inviteMessage(title);
+        const message = inviteMessage(title, request.params.projectId);
         const push = await sendPush(tokens.map((entry) => ({ token: entry.token, ...message })));
         if (!push.ok) {
           request.log.warn({ status: push.status, error: push.error }, "invite push not sent");

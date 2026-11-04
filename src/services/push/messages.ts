@@ -1,6 +1,6 @@
-export const inviteMessage = (projectTitle: string) => ({
+export const inviteMessage = (projectTitle: string, projectId: string) => ({
   body: `You were invited to “${projectTitle}”`,
-  data: { kind: "invite" },
+  data: { kind: "invite", projectId },
 });
 
 export const movieReadyMessage = (montageId: string) => ({
