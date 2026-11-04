@@ -8,8 +8,8 @@ export type Project = {
   eventEnd: Date | null;
   createdAt: Date;
   members: ProjectMember[];
-  coverMediaId: ProjectItemId | null;
-  mediaItemIds: ProjectItemId[];
+  coverItemId: ProjectItemId | null;
+  itemIds: ProjectItemId[];
   musicIds: MediaId[];
   movieIds: MovieId[];
 };
@@ -51,11 +51,12 @@ export type ProjectItemCommon = {
   projectId: ProjectId;
   description: string | null;
   labelIds: LabelId[];
-  analysis: ProjectAnalysis | null;
+  analysis: ProjectMediaItemAIAnalysis | null;
 };
 
-export type ProjectAnalysis = {
+export type ProjectMediaItemAIAnalysis = {
   description: string;
+  speech: string | null;
   tags: string[];
   score: number;
 };

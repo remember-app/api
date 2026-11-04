@@ -48,14 +48,19 @@ export type CreateMontageResult = { montage: Montage } | { denial: "invalid"; pr
 export async function createMontage(input: NewMontage): Promise<CreateMontageResult> {
   const problems = await validateConfig(input.projectId, input.config);
   if (problems.length > 0) return { denial: "invalid", problems };
-  const [row] = await sql<Montage[]>`
-    insert into montages (project_id, created_by, status, template_id, config)
-    values (${input.projectId}, ${input.createdBy}, 'queued', ${input.templateId}, ${sql.json(input.config)})
-    returning ${columns}
-  `;
-  if (!row) throw new Error("montage insert returned no row");
-  await enqueue("montage", row.id);
-  return { montage: row };
+  return sql.begin(async (tx) => {
+    const [row] = await tx<Montage[]>`
+      insert into montages (project_id, created_by, status, template_id, config)
+      values (
+        ${input.projectId}, ${input.createdBy}, 'queued', ${input.templateId},
+        ${sql.json(input.config)}
+      )
+      returning ${columns}
+    `;
+    if (!row) throw new Error("montage insert returned no row");
+    await enqueue("montage", row.id, tx);
+    return { montage: row };
+  });
 }
 
 export async function setMontageStatus(

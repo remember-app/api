@@ -1,16 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../../config.ts";
-import { deleteMedia, getMedia, setCapturedAt, setMediaPlace } from "../../domains/media/media.ts";
+import { getMedia, setCapturedAt, setMediaPlace } from "../../domains/media/media.ts";
 import { accessOf, canContribute, isAdmin } from "../../domains/project/access.ts";
 import {
   getItem,
   getItemByMedia,
   listItems,
-  removeItem,
+  removeItemAndMedia,
   setItemDescription,
 } from "../../domains/project/item.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
+import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -43,12 +44,12 @@ async function accessOr404(
 ) {
   const projectId = request.params.projectId;
   if (!uuidPattern.test(projectId)) {
-    await reply.code(404).send({ error: "not_found" });
+    await fail(reply, 404, "not_found");
     return undefined;
   }
   const access = await accessOf(projectId as ProjectId, request.authenticated!.user.id);
   if (!access) {
-    await reply.code(404).send({ error: "not_found" });
+    await fail(reply, 404, "not_found");
     return undefined;
   }
   return access;
@@ -93,11 +94,11 @@ export function mediaRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!(await accessOr404(request, reply))) return reply;
       const mediaId = request.params.mediaId;
-      if (!uuidPattern.test(mediaId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
       const item = await getItemByMedia(request.params.projectId as ProjectId, mediaId as MediaId);
-      if (!item) return reply.code(404).send({ error: "not_found" });
+      if (!item) return fail(reply, 404, "not_found");
       const media = await getMedia(mediaId as MediaId);
-      if (!media) return reply.code(404).send({ error: "not_found" });
+      if (!media) return fail(reply, 404, "not_found");
       return { url: await downloadUrl(media.storageKey, config.media.downloadTtlSeconds()) };
     },
   );
@@ -113,14 +114,14 @@ export function mediaRoutes(app: FastifyInstance) {
       if (!access) return reply;
       const projectId = request.params.projectId as ProjectId;
       const mediaId = request.params.mediaId as MediaId;
-      if (!uuidPattern.test(mediaId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
       const media = await getMedia(mediaId);
-      if (!media) return reply.code(404).send({ error: "not_found" });
+      if (!media) return fail(reply, 404, "not_found");
       if (!isAdmin(access) && media.uploadedBy !== request.authenticated!.user.id) {
-        return reply.code(403).send({ error: "forbidden" });
+        return fail(reply, 403, "forbidden");
       }
       if (!(await getItemByMedia(projectId, mediaId))) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       const body = request.body;
       if (body.capturedAt !== undefined) {
@@ -146,25 +147,18 @@ export function mediaRoutes(app: FastifyInstance) {
       if (!access) return reply;
       const projectId = request.params.projectId as ProjectId;
       const mediaId = request.params.mediaId as MediaId;
-      if (!uuidPattern.test(mediaId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
       const item = await getItemByMedia(projectId, mediaId);
-      if (!item) return reply.code(404).send({ error: "not_found" });
+      if (!item) return fail(reply, 404, "not_found");
       const media = await getMedia(mediaId);
       if (media && !isAdmin(access) && media.uploadedBy !== request.authenticated!.user.id) {
-        return reply.code(403).send({ error: "forbidden" });
+        return fail(reply, 403, "forbidden");
       }
       const derived = [
         item.derivedMedia.thumbnailId,
         "previewId" in item.derivedMedia ? item.derivedMedia.previewId : null,
       ].filter((id): id is MediaId => id !== null);
-      await removeItem(projectId, item.id);
-      const keys: string[] = [];
-      const originalKey = await deleteMedia(mediaId);
-      if (originalKey) keys.push(originalKey);
-      for (const id of derived) {
-        const key = await deleteMedia(id);
-        if (key) keys.push(key);
-      }
+      const keys = await removeItemAndMedia(projectId, item.id, [mediaId, ...derived]);
       if (keys.length > 0) await deleteObjects(keys);
       return { ok: true };
     },
@@ -176,13 +170,13 @@ export function mediaRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const access = await accessOr404(request, reply);
       if (!access) return reply;
-      if (!canContribute(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       const updated = await setItemDescription(
         request.params.projectId as ProjectId,
         request.params.itemId as ProjectItemId,
         request.body.description,
       );
-      if (!updated) return reply.code(404).send({ error: "not_found" });
+      if (!updated) return fail(reply, 404, "not_found");
       return getItem(request.params.projectId as ProjectId, request.params.itemId as ProjectItemId);
     },
   );

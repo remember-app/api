@@ -60,16 +60,22 @@ export async function updateLabel(
   projectId: ProjectId,
   patch: LabelPatch,
 ): Promise<Label | undefined> {
-  const current = await getLabel(id);
-  if (!current || current.projectId !== projectId) return undefined;
-  const next = { ...current, ...patch };
-  const [row] = await sql<Label[]>`
-    update labels
-    set name = ${next.name}, color_hex = ${next.colorHex}, description = ${next.description}
-    where id = ${id}
-    returning ${columns}
-  `;
-  return row;
+  return sql.begin(async (tx) => {
+    const [current] = await tx<Label[]>`
+      select ${columns} from labels
+      where id = ${id} and project_id = ${projectId}
+      for update
+    `;
+    if (!current) return undefined;
+    const next = { ...current, ...patch };
+    const [row] = await tx<Label[]>`
+      update labels
+      set name = ${next.name}, color_hex = ${next.colorHex}, description = ${next.description}
+      where id = ${id}
+      returning ${columns}
+    `;
+    return row;
+  });
 }
 
 export async function deleteLabel(id: LabelId, projectId: ProjectId): Promise<boolean> {
@@ -89,38 +95,44 @@ export async function labelsOfItem(itemId: ProjectItemId): Promise<LabelId[]> {
   return rows.map((row) => row.labelId);
 }
 
-export async function attachLabel(
+export async function attachLabels(
   projectId: ProjectId,
-  itemId: ProjectItemId,
   labelId: LabelId,
-): Promise<boolean> {
-  const rows = await sql`
-    insert into project_item_labels (project_item_id, label_id)
-    select pi.id, l.id
-    from project_items pi
-    join labels l on l.id = ${labelId} and l.project_id = pi.project_id
-    where pi.id = ${itemId} and pi.project_id = ${projectId}
-    on conflict do nothing
-    returning project_item_id
-  `;
-  return rows.length > 0;
+  itemIds: ProjectItemId[],
+): Promise<number> {
+  if (itemIds.length === 0) return 0;
+  return sql.begin(async (tx) => {
+    const rows = await tx`
+      insert into project_item_labels (project_item_id, label_id)
+      select pi.id, l.id
+      from project_items pi
+      join labels l on l.id = ${labelId} and l.project_id = pi.project_id
+      where pi.id = any(${itemIds}) and pi.project_id = ${projectId}
+      on conflict do nothing
+      returning project_item_id
+    `;
+    return rows.length;
+  });
 }
 
-export async function detachLabel(
+export async function detachLabels(
   projectId: ProjectId,
-  itemId: ProjectItemId,
   labelId: LabelId,
-): Promise<boolean> {
-  const rows = await sql`
-    delete from project_item_labels l
-    using project_items pi
-    where l.project_item_id = pi.id
-      and l.project_item_id = ${itemId}
-      and l.label_id = ${labelId}
-      and pi.project_id = ${projectId}
-    returning l.project_item_id
-  `;
-  return rows.length > 0;
+  itemIds: ProjectItemId[],
+): Promise<number> {
+  if (itemIds.length === 0) return 0;
+  return sql.begin(async (tx) => {
+    const rows = await tx`
+      delete from project_item_labels l
+      using project_items pi
+      where l.project_item_id = pi.id
+        and l.project_item_id = any(${itemIds})
+        and l.label_id = ${labelId}
+        and pi.project_id = ${projectId}
+      returning l.project_item_id
+    `;
+    return rows.length;
+  });
 }
 
 export async function handOverLabels(

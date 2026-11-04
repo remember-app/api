@@ -1,4 +1,4 @@
-import { sql } from "../../integrations/db/index.ts";
+import { type Db, sql } from "../../integrations/db/index.ts";
 import type { MediaId, UserId } from "../../types/id.ts";
 import type {
   MediaAudioFormat,
@@ -162,8 +162,8 @@ export async function getMedia(id: MediaId): Promise<MediaItem | undefined> {
   return row && toMedia(row);
 }
 
-export async function createMedia(input: NewMedia): Promise<MediaItem> {
-  const [row] = await sql<MediaRow[]>`
+export async function createMedia(input: NewMedia, db: Db = sql): Promise<MediaItem> {
+  const [row] = await db<MediaRow[]>`
     insert into media_items (
       kind,
       storage_key,
@@ -227,9 +227,10 @@ export async function setCapturedAt(id: MediaId, capturedAt: Date | null): Promi
   return rows.length > 0;
 }
 
-export async function deleteMedia(id: MediaId): Promise<string | undefined> {
-  const [row] = await sql<{ storageKey: string }[]>`
-    delete from media_items where id = ${id} returning storage_key as "storageKey"
+export async function deleteMediaRows(ids: MediaId[], db: Db = sql): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await db<{ storageKey: string }[]>`
+    delete from media_items where id = any(${ids}) returning storage_key as "storageKey"
   `;
-  return row?.storageKey;
+  return rows.map((row) => row.storageKey);
 }

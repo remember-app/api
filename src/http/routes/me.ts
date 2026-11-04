@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { setName, setUsername, usernameAvailable } from "../../domains/user/user.ts";
+import { fail } from "../errors.ts";
 
 const usernameBody = {
   type: "object",
@@ -43,9 +44,9 @@ export function meRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const result = await setUsername(request.authenticated!.user.id, request.body.username);
       if ("denial" in result) {
-        if (result.denial === "taken") return reply.code(409).send({ error: "conflict" });
-        if (result.denial === "not_found") return reply.code(404).send({ error: "not_found" });
-        return reply.code(400).send({ error: "bad_request" });
+        if (result.denial === "taken") return fail(reply, 409, "conflict");
+        if (result.denial === "not_found") return fail(reply, 404, "not_found");
+        return fail(reply, 400, "bad_request");
       }
       return result.user;
     },
@@ -56,7 +57,7 @@ export function meRoutes(app: FastifyInstance) {
     { schema: { body: nameBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const user = await setName(request.authenticated!.user.id, request.body.name);
-      if (!user) return reply.code(404).send({ error: "not_found" });
+      if (!user) return fail(reply, 404, "not_found");
       return user;
     },
   );

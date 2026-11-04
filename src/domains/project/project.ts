@@ -1,10 +1,17 @@
 import { sql } from "../../integrations/db/index.ts";
-import type { MediaId, MovieId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
+import type {
+  MediaId,
+  MontageId,
+  MovieId,
+  ProjectId,
+  ProjectItemId,
+  UserId,
+} from "../../types/id.ts";
 import type { Project, ProjectMember } from "../../types/project.ts";
 import { accessOf } from "./access.ts";
 import { listMembers } from "./member.ts";
 
-type ProjectCore = Omit<Project, "members" | "mediaItemIds" | "musicIds" | "movieIds">;
+type ProjectCore = Omit<Project, "members" | "itemIds" | "musicIds" | "movieIds">;
 
 async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
   const [row] = await sql<ProjectCore[]>`
@@ -14,7 +21,7 @@ async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
       event_start as "eventStart",
       event_end as "eventEnd",
       created_at as "createdAt",
-      cover_item_id as "coverMediaId"
+      cover_item_id as "coverItemId"
     from projects
     where id = ${id}
   `;
@@ -39,7 +46,7 @@ export async function loadProject(id: ProjectId): Promise<Project | undefined> {
   return {
     ...core,
     members,
-    mediaItemIds: items.map((item) => item.id),
+    itemIds: items.map((item) => item.id),
     musicIds: songs.map((song) => song.mediaId),
     movieIds: movies.map((movie) => movie.id),
   };
@@ -81,7 +88,7 @@ export async function createProject(input: NewProject): Promise<Project> {
         event_start as "eventStart",
         event_end as "eventEnd",
         created_at as "createdAt",
-        cover_item_id as "coverMediaId"
+        cover_item_id as "coverItemId"
     `;
     if (!core) throw new Error("project insert returned no row");
     const [member] = await tx<ProjectMember[]>`
@@ -95,12 +102,12 @@ export async function createProject(input: NewProject): Promise<Project> {
         invited_by as "invitedBy"
     `;
     if (!member) throw new Error("membership insert returned no row");
-    return { ...core, members: [member], mediaItemIds: [], musicIds: [], movieIds: [] };
+    return { ...core, members: [member], itemIds: [], musicIds: [], movieIds: [] };
   });
 }
 
 export type ProjectPatch = Partial<
-  Pick<Project, "title" | "eventStart" | "eventEnd" | "coverMediaId">
+  Pick<Project, "title" | "eventStart" | "eventEnd" | "coverItemId">
 >;
 
 export async function updateProject(
@@ -115,13 +122,62 @@ export async function updateProject(
     set title = ${next.title},
         event_start = ${next.eventStart},
         event_end = ${next.eventEnd},
-        cover_item_id = ${next.coverMediaId}
+        cover_item_id = ${next.coverItemId}
     where id = ${id}
   `;
   return loadProject(id);
 }
 
-export async function deleteProject(id: ProjectId): Promise<boolean> {
-  const rows = await sql`delete from projects where id = ${id} returning id`;
-  return rows.length > 0;
+export type ProjectDeletion = {
+  storageKeys: string[];
+  multiparts: { key: string; uploadId: string }[];
+};
+
+export async function deleteProject(id: ProjectId): Promise<ProjectDeletion | undefined> {
+  return sql.begin(async (tx) => {
+    const media = await tx<{ id: MediaId; storageKey: string }[]>`
+      select id, storage_key as "storageKey"
+      from media_items
+      where id in (
+        select media_id from project_items where project_id = ${id}
+        union
+        select thumbnail_id from project_items
+          where project_id = ${id} and thumbnail_id is not null
+        union
+        select preview_id from project_items
+          where project_id = ${id} and preview_id is not null
+        union
+        select video_id from movies where project_id = ${id}
+        union
+        select thumbnail_id from movies where project_id = ${id} and thumbnail_id is not null
+        union
+        select preview_id from movies where project_id = ${id} and preview_id is not null
+        union
+        select media_id from songs where project_id = ${id}
+      )
+    `;
+    const pending = await tx<{ storageKey: string; multipartId: string | null }[]>`
+      select storage_key as "storageKey", multipart_id as "multipartId"
+      from uploads
+      where project_id = ${id} and status in ('pending', 'uploading')
+    `;
+    const montageIds = await tx<{ id: MontageId }[]>`
+      select id from montages where project_id = ${id}
+    `;
+    const gone = await tx<{ id: ProjectId }[]>`
+      delete from projects where id = ${id} returning id
+    `;
+    if (gone.length === 0) return undefined;
+    const refs = [...media.map((row) => row.id), ...montageIds.map((row) => row.id)];
+    if (media.length > 0) {
+      await tx`delete from media_items where id = any(${media.map((row) => row.id)})`;
+    }
+    if (refs.length > 0) await tx`delete from jobs where ref = any(${refs})`;
+    return {
+      storageKeys: [...media.map((row) => row.storageKey), ...pending.map((row) => row.storageKey)],
+      multiparts: pending.flatMap((row) =>
+        row.multipartId === null ? [] : [{ key: row.storageKey, uploadId: row.multipartId }],
+      ),
+    };
+  });
 }

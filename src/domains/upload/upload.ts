@@ -19,7 +19,7 @@ import type {
   MediaVideoFormat,
 } from "../../types/mediaItem.ts";
 import type { Upload, UploadStatus } from "../../types/upload.ts";
-import { createMedia } from "../media/media.ts";
+import { createMedia, type NewMedia } from "../media/media.ts";
 import { countItems, createItem } from "../project/item.ts";
 import { enqueue } from "../queue/queue.ts";
 
@@ -118,7 +118,11 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if (input.sizeBytes > config.media.maxFileBytes()) return { denial: "too_large" };
   const format = formatOf(input.kind, input.fileName);
   if (!format) return { denial: "unsupported_format" };
-  if ((await countItems(input.projectId)) >= config.media.projectMaxFiles()) {
+  const [open] = await sql<{ count: number }[]>`
+    select count(*)::int as count from uploads
+    where project_id = ${input.projectId} and status in ('pending', 'uploading')
+  `;
+  if ((await countItems(input.projectId)) + (open?.count ?? 0) >= config.media.projectMaxFiles()) {
     return { denial: "too_many_files" };
   }
   const id = randomUUID() as MediaId;
@@ -170,7 +174,7 @@ export type CompleteUpload = {
 
 export type CompleteResult =
   | { media: MediaItem; itemId: ProjectItemId }
-  | { denial: "not_found" | "storage_error" | "too_large" | "unsupported_format" };
+  | { denial: "not_found" | "storage_error" | "too_large" };
 
 export async function completeMediaUpload(input: CompleteUpload): Promise<CompleteResult> {
   const row = await ownedUpload(input.id, input.projectId, input.userId);
@@ -182,12 +186,12 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
   if (bytes === null) return { denial: "storage_error" };
   if (bytes > config.media.maxFileBytes()) {
     await deleteObjects([row.storageKey]);
-    await sql`update uploads set status = 'failed', updated_at = now() where id = ${row.id}`;
+    await markFailed(row.id, "limit_exceeded", "file exceeds the size limit");
     return { denial: "too_large" };
   }
-  const media =
+  const newMedia: NewMedia =
     row.kind === "photo"
-      ? await createMedia({
+      ? {
           kind: "photo",
           storageKey: row.storageKey,
           uploadedBy: row.uploadedBy,
@@ -197,9 +201,9 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
           capturedAt: row.capturedAt,
           place: null,
           camera: null,
-        })
+        }
       : row.kind === "video"
-        ? await createMedia({
+        ? {
             kind: "video",
             storageKey: row.storageKey,
             uploadedBy: row.uploadedBy,
@@ -210,8 +214,8 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
             capturedAt: row.capturedAt,
             place: null,
             camera: null,
-          })
-        : await createMedia({
+          }
+        : {
             kind: "audio",
             storageKey: row.storageKey,
             uploadedBy: row.uploadedBy,
@@ -220,11 +224,67 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
             duration: row.durationSeconds,
             capturedAt: row.capturedAt,
             place: null,
-          });
-  await sql`update uploads set status = 'completed', updated_at = now() where id = ${row.id}`;
-  const itemId = await createItem(input.projectId, media.id, row.kind);
-  await enqueue("media_derive", media.id);
-  return { media, itemId };
+          };
+  return sql.begin(async (tx) => {
+    const media = await createMedia(newMedia, tx);
+    await tx`
+      update uploads
+      set status = 'completed', error_code = null, error = null, updated_at = now()
+      where id = ${row.id}
+    `;
+    const itemId = await createItem(input.projectId, media.id, row.kind, tx);
+    await enqueue("media_derive", media.id, tx);
+    return { media, itemId };
+  });
+}
+
+async function markFailed(id: MediaId, code: string, message: string | null): Promise<void> {
+  await sql`
+    update uploads
+    set status = 'failed', error_code = ${code}, error = ${message}, updated_at = now()
+    where id = ${id}
+  `;
+}
+
+export type UploadView = {
+  id: MediaId;
+  uploadedBy: UserId;
+  kind: MediaKind;
+  fileName: string;
+  declaredBytes: number;
+  status: UploadStatus;
+  createdAt: Date;
+  errorCode: string | null;
+  error: string | null;
+};
+
+const viewColumns = sql`
+  id,
+  uploaded_by as "uploadedBy",
+  kind,
+  file_name as "fileName",
+  declared_bytes as "declaredBytes",
+  status,
+  created_at as "createdAt",
+  error_code as "errorCode",
+  error
+`;
+
+export async function listUploads(projectId: ProjectId, onlyUser?: UserId): Promise<UploadView[]> {
+  if (onlyUser) {
+    return sql<UploadView[]>`
+      select ${viewColumns}
+      from uploads
+      where project_id = ${projectId} and uploaded_by = ${onlyUser}
+      order by created_at desc, id
+    `;
+  }
+  return sql<UploadView[]>`
+    select ${viewColumns}
+    from uploads
+    where project_id = ${projectId}
+    order by created_at desc, id
+  `;
 }
 
 export async function cancelUpload(
@@ -235,9 +295,7 @@ export async function cancelUpload(
   const row = await ownedUpload(id, projectId, userId);
   if (!row) return false;
   if (row.multipartId) await abortUploads([{ key: row.storageKey, uploadId: row.multipartId }]);
-  await sql`
-    update uploads set status = 'failed', updated_at = now() where id = ${id}
-  `;
+  await markFailed(id, "cancelled", "upload was cancelled");
   return true;
 }
 

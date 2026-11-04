@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { sql } from "../../integrations/db/index.ts";
+import { type Db, sql } from "../../integrations/db/index.ts";
 import type { InviteId, ProjectId, UserId } from "../../types/id.ts";
 import type { Invite, InviteApp, InviteProject } from "../../types/invite.ts";
 import type { ProjectMemberRole } from "../../types/project.ts";
@@ -96,10 +96,11 @@ export type NewProjectInvite = {
   expiresAt: Date | null;
 };
 
-export async function createProjectInvite(input: NewProjectInvite): Promise<InviteProject> {
-  const live = await liveProjectInvite(input.projectId);
-  if (live) return live;
-  const [row] = await sql<InviteRow[]>`
+async function insertProjectInvite(
+  db: Db,
+  input: NewProjectInvite,
+): Promise<InviteRow | undefined> {
+  const [row] = await db<InviteRow[]>`
     insert into invites (token, kind, created_by, max_uses, expires_at, project_id, role)
     values (
       ${mintToken()},
@@ -113,21 +114,38 @@ export async function createProjectInvite(input: NewProjectInvite): Promise<Invi
     on conflict do nothing
     returning ${columns}
   `;
+  return row;
+}
+
+export async function createProjectInvite(input: NewProjectInvite): Promise<InviteProject> {
+  const live = await liveProjectInvite(input.projectId);
+  if (live) return live;
+  const row = await insertProjectInvite(sql, input);
   if (!row) {
-    const live = await liveProjectInvite(input.projectId);
-    if (!live) throw new Error("project invite insert lost a race and no live invite is left");
-    return live;
+    const raced = await liveProjectInvite(input.projectId);
+    if (!raced) throw new Error("project invite insert lost a race and no live invite is left");
+    return raced;
   }
   return toInvite(row) as InviteProject;
 }
 
 export async function rotateProjectInvite(input: NewProjectInvite): Promise<InviteProject> {
-  await sql`
-    update invites
-    set revoked_at = now()
-    where project_id = ${input.projectId} and kind = 'memory' and revoked_at is null
-  `;
-  return createProjectInvite(input);
+  return sql.begin(async (tx) => {
+    await tx`
+      update invites
+      set revoked_at = now()
+      where project_id = ${input.projectId} and kind = 'memory' and revoked_at is null
+    `;
+    const row = await insertProjectInvite(tx, input);
+    if (row) return toInvite(row) as InviteProject;
+    const [live] = await tx<InviteRow[]>`
+      select ${columns}
+      from invites
+      where project_id = ${input.projectId} and kind = 'memory' and revoked_at is null
+    `;
+    if (!live) throw new Error("project invite rotation left no live invite");
+    return toInvite(live) as InviteProject;
+  });
 }
 
 export type NewAppInvite = {

@@ -3,6 +3,7 @@ import { verifySession } from "../../domains/auth/auth.ts";
 import { getUser } from "../../domains/user/user.ts";
 import type { AuthSession } from "../../types/auth.ts";
 import type { User } from "../../types/user.ts";
+import { fail } from "../errors.ts";
 
 export type Authenticated = {
   user: User;
@@ -26,11 +27,11 @@ export function authPlugin(app: FastifyInstance) {
   app.decorateRequest("authenticated", null);
   app.decorate("authenticate", async (request, reply) => {
     const token = bearer(request.headers.authorization);
-    if (!token) return reply.code(401).send({ error: "unauthorized" });
+    if (!token) return fail(reply, 401, "unauthorized");
     const session = await verifySession(token);
-    if (!session) return reply.code(401).send({ error: "unauthorized" });
+    if (!session) return fail(reply, 401, "unauthorized");
     const user = await getUser(session.userId);
-    if (!user) return reply.code(401).send({ error: "unauthorized" });
+    if (!user) return fail(reply, 401, "unauthorized");
     request.authenticated = { user, session, token };
   });
 }

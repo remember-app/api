@@ -1,4 +1,4 @@
-import { sql } from "../../integrations/db/index.ts";
+import { type Db, sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import type { ProjectItem, ProjectItemCommon } from "../../types/project.ts";
 
@@ -84,8 +84,9 @@ export async function createItem(
   projectId: ProjectId,
   mediaId: MediaId,
   kind: ProjectItemCommon["kind"],
+  db: Db = sql,
 ): Promise<ProjectItemId> {
-  const [row] = await sql<{ id: ProjectItemId }[]>`
+  const [row] = await db<{ id: ProjectItemId }[]>`
     insert into project_items (project_id, media_id, kind)
     values (${projectId}, ${mediaId}, ${kind})
     returning id
@@ -108,11 +109,19 @@ export async function setItemDescription(
   return rows.length > 0;
 }
 
-export async function removeItem(projectId: ProjectId, itemId: ProjectItemId): Promise<boolean> {
-  const rows = await sql`
-    delete from project_items
-    where project_id = ${projectId} and id = ${itemId}
-    returning id
-  `;
-  return rows.length > 0;
+export async function removeItemAndMedia(
+  projectId: ProjectId,
+  itemId: ProjectItemId,
+  mediaIds: MediaId[],
+): Promise<string[]> {
+  return sql.begin(async (tx) => {
+    await tx`delete from project_items where project_id = ${projectId} and id = ${itemId}`;
+    if (mediaIds.length === 0) return [];
+    await tx`delete from jobs where ref = any(${mediaIds})`;
+    const rows = await tx<{ storageKey: string }[]>`
+      delete from media_items where id = any(${mediaIds})
+      returning storage_key as "storageKey"
+    `;
+    return rows.map((row) => row.storageKey);
+  });
 }

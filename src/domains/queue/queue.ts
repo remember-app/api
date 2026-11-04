@@ -1,9 +1,9 @@
-import { sql } from "../../integrations/db/index.ts";
+import { type Db, sql } from "../../integrations/db/index.ts";
 
 export type JobKind = "media_derive" | "montage";
 
-export async function enqueue(kind: JobKind, ref: string): Promise<number> {
-  const [row] = await sql<{ id: number }[]>`
+export async function enqueue(kind: JobKind, ref: string, db: Db = sql): Promise<number> {
+  const [row] = await db<{ id: number }[]>`
     insert into jobs (kind, ref) values (${kind}, ${ref}) returning id
   `;
   if (!row) throw new Error("job insert returned no row");

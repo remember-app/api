@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import {
-  attachLabel,
+  attachLabels,
   createLabel,
   deleteLabel,
-  detachLabel,
+  detachLabels,
   getLabel,
   listLabels,
   updateLabel,
@@ -12,6 +12,7 @@ import type { ProjectAccess } from "../../domains/project/access.ts";
 import { accessOf, canContribute } from "../../domains/project/access.ts";
 import type { LabelId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { Label } from "../../types/label.ts";
+import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -69,7 +70,7 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       return listLabels(request.params.projectId as ProjectId, userId);
     },
   );
@@ -88,9 +89,9 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       if (request.body.shared && !canContribute(access)) {
-        return reply.code(403).send({ error: "forbidden" });
+        return fail(reply, 403, "forbidden");
       }
       return createLabel({
         projectId: request.params.projectId as ProjectId,
@@ -112,12 +113,12 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       const label = await getLabel(request.params.labelId as LabelId);
       if (!label || label.projectId !== request.params.projectId) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return reply.code(403).send({ error: "forbidden" });
+      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
       return updateLabel(label.id, label.projectId, request.body);
     },
   );
@@ -128,12 +129,12 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       const label = await getLabel(request.params.labelId as LabelId);
       if (!label || label.projectId !== request.params.projectId) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return reply.code(403).send({ error: "forbidden" });
+      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
       await deleteLabel(label.id, label.projectId);
       return { ok: true };
     },
@@ -145,17 +146,20 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       const label = await getLabel(request.params.labelId as LabelId);
       if (!label || label.projectId !== request.params.projectId) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return reply.code(403).send({ error: "forbidden" });
-      let attached = 0;
-      for (const itemId of request.body.itemIds) {
-        if (!uuidPattern.test(itemId)) return reply.code(400).send({ error: "bad_request" });
-        if (await attachLabel(label.projectId, itemId as ProjectItemId, label.id)) attached++;
+      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
+      if (request.body.itemIds.some((itemId) => !uuidPattern.test(itemId))) {
+        return fail(reply, 400, "bad_request");
       }
+      const attached = await attachLabels(
+        label.projectId,
+        label.id,
+        request.body.itemIds as ProjectItemId[],
+      );
       return { attached };
     },
   );
@@ -166,17 +170,20 @@ export function labelRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const userId = request.authenticated!.user.id;
       const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       const label = await getLabel(request.params.labelId as LabelId);
       if (!label || label.projectId !== request.params.projectId) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return reply.code(403).send({ error: "forbidden" });
-      let detached = 0;
-      for (const itemId of request.body.itemIds) {
-        if (!uuidPattern.test(itemId)) return reply.code(400).send({ error: "bad_request" });
-        if (await detachLabel(label.projectId, itemId as ProjectItemId, label.id)) detached++;
+      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
+      if (request.body.itemIds.some((itemId) => !uuidPattern.test(itemId))) {
+        return fail(reply, 400, "bad_request");
       }
+      const detached = await detachLabels(
+        label.projectId,
+        label.id,
+        request.body.itemIds as ProjectItemId[],
+      );
       return { detached };
     },
   );

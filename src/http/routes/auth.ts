@@ -15,6 +15,7 @@ import {
 import { getUser } from "../../domains/user/user.ts";
 import { mailConfigured, sendLoginCode } from "../../integrations/mail/index.ts";
 import type { SessionId } from "../../types/id.ts";
+import { fail } from "../errors.ts";
 
 const emailBody = {
   type: "object",
@@ -53,7 +54,7 @@ export function authRoutes(app: FastifyInstance) {
       const email = normalizeEmail(request.body.email);
       const review = config.auth.reviewLogin();
       if (!review && !mailConfigured()) {
-        return reply.code(503).send({ error: "email_unavailable" });
+        return fail(reply, 503, "email_unavailable");
       }
       const userId = await findOrCreateUser(email);
       const code = review?.email === email ? review.code : mintCode();
@@ -70,11 +71,11 @@ export function authRoutes(app: FastifyInstance) {
       const email = normalizeEmail(request.body.email);
       const userId = await findUserByEmail(email);
       if (!userId || !(await verifyLoginCode(userId, request.body.code))) {
-        return reply.code(401).send({ error: "unauthorized" });
+        return fail(reply, 401, "unauthorized");
       }
       const token = await issueSession(userId);
       const user = await getUser(userId);
-      if (!user) return reply.code(401).send({ error: "unauthorized" });
+      if (!user) return fail(reply, 401, "unauthorized");
       return { token, user };
     },
   );
@@ -104,7 +105,7 @@ export function authRoutes(app: FastifyInstance) {
         request.params.id as SessionId,
         request.authenticated!.user.id,
       );
-      if (!revoked) return reply.code(404).send({ error: "not_found" });
+      if (!revoked) return fail(reply, 404, "not_found");
       return { ok: true };
     },
   );

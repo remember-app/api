@@ -104,21 +104,24 @@ export async function renameMovie(
   return row && toMovie(row);
 }
 
-export type DeletedMovie = {
-  videoId: MediaId;
-  thumbnailId: MediaId | null;
-  previewId: MediaId | null;
-};
-
-export async function deleteMovie(
+export async function deleteMovieWithMedia(
   id: MovieId,
   projectId: ProjectId,
-): Promise<DeletedMovie | undefined> {
-  const [row] = await sql<MovieRow[]>`
-    delete from movies
-    where id = ${id} and project_id = ${projectId}
-    returning ${columns}
-  `;
-  if (!row) return undefined;
-  return { videoId: row.videoId, thumbnailId: row.thumbnailId, previewId: row.previewId };
+): Promise<string[] | undefined> {
+  return sql.begin(async (tx) => {
+    const [row] = await tx<MovieRow[]>`
+      delete from movies
+      where id = ${id} and project_id = ${projectId}
+      returning ${columns}
+    `;
+    if (!row) return undefined;
+    const ids = [row.videoId, row.thumbnailId, row.previewId].filter(
+      (mediaId): mediaId is MediaId => mediaId !== null,
+    );
+    const gone = await tx<{ storageKey: string }[]>`
+      delete from media_items where id = any(${ids})
+      returning storage_key as "storageKey"
+    `;
+    return gone.map((media) => media.storageKey);
+  });
 }

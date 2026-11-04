@@ -3,10 +3,12 @@ import { accessOf, canContribute } from "../../domains/project/access.ts";
 import {
   cancelUpload,
   completeMediaUpload,
+  listUploads,
   resumeUpload,
   startUpload,
 } from "../../domains/upload/upload.ts";
-import type { MediaId, ProjectId } from "../../types/id.ts";
+import type { MediaId, ProjectId, UserId } from "../../types/id.ts";
+import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -24,6 +26,12 @@ const startBody = {
     capturedAt: { type: ["string", "null"], format: "date-time" },
     durationSeconds: { type: ["number", "null"], minimum: 0 },
   },
+} as const;
+
+const listQuery = {
+  type: "object",
+  additionalProperties: false,
+  properties: { userId: { type: "string" } },
 } as const;
 
 const completeBody = {
@@ -48,6 +56,22 @@ const completeBody = {
 } as const;
 
 export function uploadRoutes(app: FastifyInstance) {
+  app.get<{ Params: ProjectParams; Querystring: { userId?: string } }>(
+    "/projects/:projectId/uploads",
+    { schema: { querystring: listQuery }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const projectId = request.params.projectId;
+      if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
+      const access = await accessOf(projectId as ProjectId, request.authenticated!.user.id);
+      if (!access) return fail(reply, 404, "not_found");
+      const userId = request.query.userId;
+      if (userId !== undefined && !uuidPattern.test(userId)) {
+        return fail(reply, 400, "bad_request");
+      }
+      return listUploads(projectId as ProjectId, userId as UserId | undefined);
+    },
+  );
+
   app.post<{
     Params: ProjectParams;
     Body: {
@@ -62,10 +86,10 @@ export function uploadRoutes(app: FastifyInstance) {
     { schema: { body: startBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const projectId = request.params.projectId;
-      if (!uuidPattern.test(projectId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
       const access = await accessOf(projectId as ProjectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
-      if (!canContribute(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!access) return fail(reply, 404, "not_found");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       const result = await startUpload({
         projectId: projectId as ProjectId,
         userId: request.authenticated!.user.id,
@@ -76,14 +100,14 @@ export function uploadRoutes(app: FastifyInstance) {
         durationSeconds: request.body.durationSeconds ?? null,
       });
       if ("denial" in result) {
-        if (result.denial === "too_large") return reply.code(413).send({ error: "limit_exceeded" });
+        if (result.denial === "too_large") return fail(reply, 413, "limit_exceeded");
         if (result.denial === "unsupported_format") {
-          return reply.code(400).send({ error: "bad_request" });
+          return fail(reply, 400, "bad_request");
         }
         if (result.denial === "storage_unavailable") {
-          return reply.code(503).send({ error: "storage_unavailable" });
+          return fail(reply, 503, "storage_unavailable");
         }
-        return reply.code(409).send({ error: "limit_exceeded" });
+        return fail(reply, 409, "limit_exceeded");
       }
       return result.plan;
     },
@@ -97,16 +121,16 @@ export function uploadRoutes(app: FastifyInstance) {
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
       );
-      if (!access) return reply.code(404).send({ error: "not_found" });
-      if (!canContribute(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!access) return fail(reply, 404, "not_found");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
       const plan = await resumeUpload(
         uploadId as MediaId,
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
       );
-      if (!plan) return reply.code(404).send({ error: "not_found" });
+      if (!plan) return fail(reply, 404, "not_found");
       return plan;
     },
   );
@@ -122,10 +146,10 @@ export function uploadRoutes(app: FastifyInstance) {
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
       );
-      if (!access) return reply.code(404).send({ error: "not_found" });
-      if (!canContribute(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!access) return fail(reply, 404, "not_found");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
       const result = await completeMediaUpload({
         id: uploadId as MediaId,
         projectId: request.params.projectId as ProjectId,
@@ -133,14 +157,11 @@ export function uploadRoutes(app: FastifyInstance) {
         parts: request.body.parts,
       });
       if ("denial" in result) {
-        if (result.denial === "too_large") return reply.code(413).send({ error: "limit_exceeded" });
+        if (result.denial === "too_large") return fail(reply, 413, "limit_exceeded");
         if (result.denial === "storage_error") {
-          return reply.code(502).send({ error: "storage_unavailable" });
+          return fail(reply, 502, "storage_unavailable");
         }
-        if (result.denial === "unsupported_format") {
-          return reply.code(400).send({ error: "bad_request" });
-        }
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       return { id: result.media.id, itemId: result.itemId, status: "processing" };
     },
@@ -154,16 +175,16 @@ export function uploadRoutes(app: FastifyInstance) {
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
       );
-      if (!access) return reply.code(404).send({ error: "not_found" });
-      if (!canContribute(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!access) return fail(reply, 404, "not_found");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
       const cancelled = await cancelUpload(
         uploadId as MediaId,
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
       );
-      if (!cancelled) return reply.code(404).send({ error: "not_found" });
+      if (!cancelled) return fail(reply, 404, "not_found");
       return { ok: true };
     },
   );

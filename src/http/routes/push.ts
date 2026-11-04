@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { registerToken, removeToken } from "../../domains/push/push.ts";
 import type { PushPlatform } from "../../types/push.ts";
+import { fail } from "../errors.ts";
 
 const tokenBody = {
   type: "object",
@@ -38,7 +39,7 @@ export function pushRoutes(app: FastifyInstance) {
     { schema: { body: tokenBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const removed = await removeToken(request.authenticated!.user.id, request.body.token);
-      if (!removed) return reply.code(404).send({ error: "not_found" });
+      if (!removed) return fail(reply, 404, "not_found");
       return { ok: true };
     },
   );

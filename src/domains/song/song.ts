@@ -46,13 +46,23 @@ export async function createSong(input: NewSong): Promise<Song> {
   return row;
 }
 
-export async function deleteSong(id: SongId, projectId: ProjectId): Promise<boolean> {
-  const rows = await sql`
-    delete from songs
-    where id = ${id} and project_id = ${projectId}
-    returning id
-  `;
-  return rows.length > 0;
+export async function deleteSongWithMedia(
+  id: SongId,
+  projectId: ProjectId,
+): Promise<string | undefined> {
+  return sql.begin(async (tx) => {
+    const [song] = await tx<{ mediaId: MediaId }[]>`
+      delete from songs
+      where id = ${id} and project_id = ${projectId}
+      returning media_id as "mediaId"
+    `;
+    if (!song) return undefined;
+    const [media] = await tx<{ storageKey: string }[]>`
+      delete from media_items where id = ${song.mediaId}
+      returning storage_key as "storageKey"
+    `;
+    return media?.storageKey;
+  });
 }
 
 export async function songsForOrder(projectId: ProjectId, mediaIds: MediaId[]): Promise<Song[]> {

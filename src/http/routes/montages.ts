@@ -14,6 +14,7 @@ import { removeTokens, tokensOfProject } from "../../domains/push/push.ts";
 import { sendPush } from "../../integrations/push/index.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type { MontageConfig } from "../../types/montage.ts";
+import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -76,7 +77,7 @@ export function montageRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       return listTemplates();
     },
   );
@@ -89,8 +90,8 @@ export function montageRoutes(app: FastifyInstance) {
     { schema: { body: createBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
-      if (!isAdmin(access)) return reply.code(403).send({ error: "forbidden" });
+      if (!access) return fail(reply, 404, "not_found");
+      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
       const result = await createMontage({
         projectId: request.params.projectId as ProjectId,
         createdBy: request.authenticated!.user.id,
@@ -104,7 +105,7 @@ export function montageRoutes(app: FastifyInstance) {
         },
       });
       if ("denial" in result) {
-        return reply.code(400).send({ error: "bad_request", details: result.problems });
+        return fail(reply, 400, "bad_request", result.problems);
       }
       return result.montage;
     },
@@ -115,7 +116,7 @@ export function montageRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       return listMontages(request.params.projectId as ProjectId);
     },
   );
@@ -125,13 +126,13 @@ export function montageRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       if (!uuidPattern.test(request.params.montageId)) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       const montage = await getMontage(request.params.montageId as MontageId);
       if (!montage || montage.projectId !== request.params.projectId) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       return montage;
     },
@@ -142,9 +143,9 @@ export function montageRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return reply.code(404).send({ error: "not_found" });
+      if (!access) return fail(reply, 404, "not_found");
       if (!uuidPattern.test(request.params.montageId)) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       return listJournal(request.params.montageId as MontageId);
     },
@@ -154,12 +155,12 @@ export function montageRoutes(app: FastifyInstance) {
     "/internal/montages/:montageId/ready",
     async (request, reply) => {
       if (!secretMatches(request.headers.authorization)) {
-        return reply.code(401).send({ error: "unauthorized" });
+        return fail(reply, 401, "unauthorized");
       }
       const montageId = request.params.montageId;
-      if (!uuidPattern.test(montageId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(montageId)) return fail(reply, 404, "not_found");
       const montage = await getMontage(montageId as MontageId);
-      if (!montage) return reply.code(404).send({ error: "not_found" });
+      if (!montage) return fail(reply, 404, "not_found");
       const tokens = await tokensOfProject(montage.projectId);
       if (tokens.length > 0) {
         const result = await sendPush(
@@ -190,12 +191,12 @@ export function montageRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       if (!secretMatches(request.headers.authorization)) {
-        return reply.code(401).send({ error: "unauthorized" });
+        return fail(reply, 401, "unauthorized");
       }
       const montageId = request.params.montageId;
-      if (!uuidPattern.test(montageId)) return reply.code(404).send({ error: "not_found" });
+      if (!uuidPattern.test(montageId)) return fail(reply, 404, "not_found");
       const montage = await getMontage(montageId as MontageId);
-      if (!montage) return reply.code(404).send({ error: "not_found" });
+      if (!montage) return fail(reply, 404, "not_found");
       const tokens = await tokensOfProject(montage.projectId);
       if (tokens.length > 0) {
         const result = await sendPush(

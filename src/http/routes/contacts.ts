@@ -7,6 +7,7 @@ import {
 } from "../../domains/contact/contact.ts";
 import { findByUsername } from "../../domains/user/user.ts";
 import type { UserId } from "../../types/id.ts";
+import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
@@ -37,9 +38,9 @@ export function contactRoutes(app: FastifyInstance) {
     { schema: { body: addBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const target = await findByUsername(request.body.username);
-      if (!target) return reply.code(404).send({ error: "not_found" });
+      if (!target) return fail(reply, 404, "not_found");
       if (target.id === request.authenticated!.user.id) {
-        return reply.code(400).send({ error: "bad_request" });
+        return fail(reply, 400, "bad_request");
       }
       return addContact(request.authenticated!.user.id, target.id, request.body.name ?? null);
     },
@@ -50,14 +51,14 @@ export function contactRoutes(app: FastifyInstance) {
     { schema: { body: renameBody }, preHandler: app.authenticate },
     async (request, reply) => {
       if (!uuidPattern.test(request.params.userId)) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       const contact = await renameContact(
         request.authenticated!.user.id,
         request.params.userId as UserId,
         request.body.name,
       );
-      if (!contact) return reply.code(404).send({ error: "not_found" });
+      if (!contact) return fail(reply, 404, "not_found");
       return contact;
     },
   );
@@ -67,13 +68,13 @@ export function contactRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       if (!uuidPattern.test(request.params.userId)) {
-        return reply.code(404).send({ error: "not_found" });
+        return fail(reply, 404, "not_found");
       }
       const removed = await removeContact(
         request.authenticated!.user.id,
         request.params.userId as UserId,
       );
-      if (!removed) return reply.code(404).send({ error: "not_found" });
+      if (!removed) return fail(reply, 404, "not_found");
       return { ok: true };
     },
   );

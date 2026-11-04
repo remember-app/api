@@ -130,9 +130,9 @@ create table media_items (
     created_at      timestamptz not null default now(),
     check ((latitude is null) = (longitude is null)),
     check (
-        (kind = 'photo' and width is not null and height is not null and duration is null)
-        or (kind = 'video' and width is not null and height is not null and duration is not null)
-        or (kind = 'audio' and width is null and height is null and duration is not null)
+        (kind = 'photo' and duration is null)
+        or (kind = 'video')
+        or (kind = 'audio' and width is null and height is null)
     )
 );
 
@@ -178,6 +178,8 @@ create table uploads (
     duration_seconds double precision,
     status           text not null default 'pending'
         check (status in ('pending', 'uploading', 'completed', 'failed')),
+    error_code       text,
+    error            text,
     multipart_id     text,
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now()
