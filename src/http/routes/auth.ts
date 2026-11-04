@@ -1,20 +1,19 @@
 import { randomInt } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { config } from "../../config.ts";
+import { mailConfigured, sendLoginCode } from "../../integrations/mail/index.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   findOrCreateUser,
-  findUserByEmail,
   issueSession,
-  listSessions,
-  normalizeEmail,
   revokeSession,
   revokeSessionByToken,
   setLoginCode,
   verifyLoginCode,
-} from "../../domains/auth/auth.ts";
-import { getUser } from "../../domains/user/user.ts";
-import { mailConfigured, sendLoginCode } from "../../integrations/mail/index.ts";
-import { pageOf, pageQuerySchema } from "../../pagination.ts";
+} from "../../services/auth/commands.ts";
+import { normalizeEmail } from "../../services/auth/internal.ts";
+import { findUserByEmail, listSessions } from "../../services/auth/queries.ts";
+import { getUser } from "../../services/user/queries.ts";
 import type { SessionId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 import { allow } from "../rate-limit.ts";

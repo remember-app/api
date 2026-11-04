@@ -1,18 +1,19 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { config } from "../../config.ts";
+import { sendPush } from "../../integrations/push/index.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   createMontage,
   getMontage,
   listJournal,
   listMontages,
   listTemplates,
-} from "../../domains/montage/montage.ts";
-import { accessOf, isAdmin } from "../../domains/project/access.ts";
-import { montageFailedMessage, movieReadyMessage } from "../../domains/push/messages.ts";
-import { removeTokens, tokensOfProject } from "../../domains/push/push.ts";
-import { sendPush } from "../../integrations/push/index.ts";
-import { pageOf, pageQuerySchema } from "../../pagination.ts";
+} from "../../services/montage/montage.ts";
+import { accessOf, isAdmin } from "../../services/project/access.ts";
+import { removeTokens } from "../../services/push/commands.ts";
+import { montageFailedMessage, movieReadyMessage } from "../../services/push/messages.ts";
+import { tokensOfProject } from "../../services/push/queries.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type { MontageConfig } from "../../types/montage.ts";
 import { fail } from "../errors.ts";

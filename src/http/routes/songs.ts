@@ -1,17 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../../config.ts";
-import { getMedia } from "../../domains/media/media.ts";
-import { accessOf, isAdmin } from "../../domains/project/access.ts";
-import {
-  createSong,
-  deleteSongWithMedia,
-  getSong,
-  listLibrarySongs,
-  listProjectSongs,
-} from "../../domains/song/song.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
-import type { ProjectId, SongId } from "../../types/id.ts";
+import { getMedia } from "../../services/media/queries.ts";
+import { createSong, deleteSongWithMedia } from "../../services/song/commands.ts";
+import { getSong, listLibrarySongs, listProjectSongs } from "../../services/song/queries.ts";
+import type { MediaId, ProjectId, SongId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
 const createBody = {
@@ -47,13 +41,15 @@ export function songRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.params.projectId)) {
         return fail(reply, 404, "not_found");
       }
-      const access = await accessOf(
+      const { limit, offset } = pageOf(request.query);
+      const page = await listProjectSongs(
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
+        limit,
+        offset,
       );
-      if (!access) return fail(reply, 404, "not_found");
-      const { limit, offset } = pageOf(request.query);
-      return listProjectSongs(request.params.projectId as ProjectId, limit, offset);
+      if (!page) return fail(reply, 404, "not_found");
+      return page;
     },
   );
 
@@ -67,26 +63,24 @@ export function songRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.params.projectId)) {
         return fail(reply, 404, "not_found");
       }
-      const access = await accessOf(
-        request.params.projectId as ProjectId,
-        request.authenticated!.user.id,
-      );
-      if (!access) return fail(reply, 404, "not_found");
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
       if (!uuidPattern.test(request.body.mediaId)) {
         return fail(reply, 404, "not_found");
       }
-      const media = await getMedia(request.body.mediaId as never);
-      if (!media || media.kind !== "audio") {
-        return fail(reply, 400, "bad_request");
+      const result = await createSong(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        {
+          name: request.body.name,
+          author: request.body.author,
+          mediaId: request.body.mediaId as MediaId,
+        },
+      );
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "bad_request") return fail(reply, 400, "bad_request");
+        return fail(reply, 404, "not_found");
       }
-      return createSong({
-        name: request.body.name,
-        author: request.body.author,
-        mediaId: media.id,
-        projectId: request.params.projectId as ProjectId,
-        uploadedBy: request.authenticated!.user.id,
-      });
+      return result.song;
     },
   );
 
@@ -112,24 +106,21 @@ export function songRoutes(app: FastifyInstance) {
     "/projects/:projectId/songs/:songId",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      if (!uuidPattern.test(request.params.projectId)) {
+      if (!uuidPattern.test(request.params.projectId) || !uuidPattern.test(request.params.songId)) {
         return fail(reply, 404, "not_found");
       }
-      const access = await accessOf(
+      const result = await deleteSongWithMedia(
         request.params.projectId as ProjectId,
+        request.params.songId as SongId,
         request.authenticated!.user.id,
       );
-      if (!access) return fail(reply, 404, "not_found");
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
-      if (!uuidPattern.test(request.params.songId)) {
-        return fail(reply, 404, "not_found");
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
       }
-      const key = await deleteSongWithMedia(
-        request.params.songId as SongId,
-        request.params.projectId as ProjectId,
-      );
-      if (key === undefined) return fail(reply, 404, "not_found");
-      await deleteObjects([key]);
+      if (result.key === undefined) return fail(reply, 404, "not_found");
+      await deleteObjects([result.key]);
       return { ok: true };
     },
   );

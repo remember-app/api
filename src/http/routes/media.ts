@@ -1,16 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../../config.ts";
-import { getMedia, setCapturedAt, setMediaPlace } from "../../domains/media/media.ts";
-import { accessOf, canContribute, isAdmin } from "../../domains/project/access.ts";
-import {
-  getItem,
-  getItemByMedia,
-  listItems,
-  removeItemAndMedia,
-  setItemDescription,
-} from "../../domains/project/item.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import { cursorQuerySchema, decodeCursor, limitOf } from "../../pagination.ts";
+import { type MediaPatch, removeMedia, updateMedia } from "../../services/media/commands.ts";
+import {
+  downloadLinks,
+  galleryPage,
+  getMedia,
+  itemView,
+  mediaView,
+} from "../../services/media/queries.ts";
+import { accessOf } from "../../services/project/access.ts";
+import { updateItemDescription } from "../../services/project/item/commands.ts";
+import { getItemByMedia } from "../../services/project/item/queries.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -39,6 +41,21 @@ const mediaBody = {
   },
 } as const;
 
+const downloadBody = {
+  type: "object",
+  required: ["itemIds"],
+  additionalProperties: false,
+  properties: {
+    itemIds: {
+      type: "array",
+      minItems: 1,
+      maxItems: 200,
+      uniqueItems: true,
+      items: { type: "string" },
+    },
+  },
+} as const;
+
 async function accessOr404(
   request: FastifyRequest<{ Params: ProjectParams }>,
   reply: FastifyReply,
@@ -56,44 +73,62 @@ async function accessOr404(
   return access;
 }
 
-const sign = (key: string | undefined | null, ttl: number) =>
-  key ? downloadUrl(key, ttl) : Promise.resolve(null);
-
 export function mediaRoutes(app: FastifyInstance) {
   app.get<{ Params: ProjectParams; Querystring: { limit?: number; cursor?: string } }>(
-    "/projects/:projectId/media",
+    "/projects/:projectId/gallery",
     { schema: { querystring: cursorQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
-      if (!(await accessOr404(request, reply))) return reply;
-      const ttl = config.media.downloadTtlSeconds();
+      const projectId = request.params.projectId;
+      if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
       const cursor = request.query.cursor;
       const after = cursor ? (decodeCursor(cursor) ?? null) : null;
       if (cursor && !after) return fail(reply, 400, "bad_request");
-      const found = await listItems(
-        request.params.projectId as ProjectId,
+      const page = await galleryPage(
+        projectId as ProjectId,
+        request.authenticated!.user.id,
         limitOf(request.query.limit),
         after,
       );
-      const items = await Promise.all(
-        found.items.map(async (item) => {
-          const media = await getMedia(item.mediaId);
-          const thumbnail = item.derivedMedia.thumbnailId
-            ? await getMedia(item.derivedMedia.thumbnailId)
-            : undefined;
-          const preview =
-            "previewId" in item.derivedMedia && item.derivedMedia.previewId
-              ? await getMedia(item.derivedMedia.previewId)
-              : undefined;
-          return {
-            item,
-            media,
-            original_url: await sign(media?.storageKey, ttl),
-            thumbnail_url: await sign(thumbnail?.storageKey, ttl),
-            preview_url: await sign(preview?.storageKey, ttl),
-          };
-        }),
+      if (!page) return fail(reply, 404, "not_found");
+      return page;
+    },
+  );
+
+  app.get<{ Params: ItemParams }>(
+    "/projects/:projectId/items/:itemId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const projectId = request.params.projectId;
+      const itemId = request.params.itemId;
+      if (!uuidPattern.test(projectId) || !uuidPattern.test(itemId)) {
+        return fail(reply, 404, "not_found");
+      }
+      const view = await itemView(
+        projectId as ProjectId,
+        itemId as ProjectItemId,
+        request.authenticated!.user.id,
       );
-      return { items, nextCursor: found.nextCursor };
+      if (!view) return fail(reply, 404, "not_found");
+      return view;
+    },
+  );
+
+  app.post<{ Params: ProjectParams; Body: { itemIds: string[] } }>(
+    "/projects/:projectId/download-links",
+    { schema: { body: downloadBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const projectId = request.params.projectId;
+      if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
+      if (request.body.itemIds.some((id) => !uuidPattern.test(id))) {
+        return fail(reply, 400, "bad_request");
+      }
+      const items = await downloadLinks(
+        projectId as ProjectId,
+        request.authenticated!.user.id,
+        request.body.itemIds as ProjectItemId[],
+      );
+      if (!items) return fail(reply, 404, "not_found");
+      return { items };
     },
   );
 
@@ -119,32 +154,24 @@ export function mediaRoutes(app: FastifyInstance) {
     "/projects/:projectId/media/:mediaId",
     { schema: { body: mediaBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
       const projectId = request.params.projectId as ProjectId;
       const mediaId = request.params.mediaId as MediaId;
       if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
-      const media = await getMedia(mediaId);
-      if (!media) return fail(reply, 404, "not_found");
-      if (!isAdmin(access) && media.uploadedBy !== request.authenticated!.user.id) {
-        return fail(reply, 403, "forbidden");
-      }
-      if (!(await getItemByMedia(projectId, mediaId))) {
-        return fail(reply, 404, "not_found");
-      }
       const body = request.body;
-      if (body.capturedAt !== undefined) {
-        await setCapturedAt(mediaId, body.capturedAt === null ? null : new Date(body.capturedAt));
+      const patch: MediaPatch = {
+        ...(body.capturedAt === undefined
+          ? {}
+          : { capturedAt: body.capturedAt === null ? null : new Date(body.capturedAt) }),
+        ...(body.latitude === undefined ? {} : { latitude: body.latitude }),
+        ...(body.longitude === undefined ? {} : { longitude: body.longitude }),
+      };
+      const result = await updateMedia(projectId, mediaId, request.authenticated!.user.id, patch);
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
       }
-      if (body.latitude !== undefined && body.longitude !== undefined) {
-        await setMediaPlace(
-          mediaId,
-          body.latitude === null || body.longitude === null
-            ? null
-            : { latitude: body.latitude, longitude: body.longitude, editedAt: new Date() },
-        );
-      }
-      return getMedia(mediaId);
+      return mediaView(result.media);
     },
   );
 
@@ -152,23 +179,16 @@ export function mediaRoutes(app: FastifyInstance) {
     "/projects/:projectId/media/:mediaId",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
       const projectId = request.params.projectId as ProjectId;
       const mediaId = request.params.mediaId as MediaId;
       if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
-      const item = await getItemByMedia(projectId, mediaId);
-      if (!item) return fail(reply, 404, "not_found");
-      const media = await getMedia(mediaId);
-      if (media && !isAdmin(access) && media.uploadedBy !== request.authenticated!.user.id) {
-        return fail(reply, 403, "forbidden");
+      const result = await removeMedia(projectId, mediaId, request.authenticated!.user.id);
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
       }
-      const derived = [
-        item.derivedMedia.thumbnailId,
-        "previewId" in item.derivedMedia ? item.derivedMedia.previewId : null,
-      ].filter((id): id is MediaId => id !== null);
-      const keys = await removeItemAndMedia(projectId, item.id, [mediaId, ...derived]);
-      if (keys.length > 0) await deleteObjects(keys);
+      if (result.keys.length > 0) await deleteObjects(result.keys);
       return { ok: true };
     },
   );
@@ -177,16 +197,21 @@ export function mediaRoutes(app: FastifyInstance) {
     "/projects/:projectId/items/:itemId",
     { schema: { body: itemBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!canContribute(access)) return fail(reply, 403, "forbidden");
-      const updated = await setItemDescription(
-        request.params.projectId as ProjectId,
-        request.params.itemId as ProjectItemId,
+      const projectId = request.params.projectId as ProjectId;
+      const itemId = request.params.itemId as ProjectItemId;
+      if (!uuidPattern.test(itemId)) return fail(reply, 404, "not_found");
+      const result = await updateItemDescription(
+        projectId,
+        itemId,
+        request.authenticated!.user.id,
         request.body.description,
       );
-      if (!updated) return fail(reply, 404, "not_found");
-      return getItem(request.params.projectId as ProjectId, request.params.itemId as ProjectItemId);
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return itemView(projectId, itemId, request.authenticated!.user.id);
     },
   );
 }

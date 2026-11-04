@@ -1,15 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../../config.ts";
-import { getMedia } from "../../domains/media/media.ts";
+import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
+import { getMedia } from "../../services/media/queries.ts";
 import {
   deleteMovieWithMedia,
   getMovie,
   listMovies,
   renameMovie,
-} from "../../domains/movie/movie.ts";
-import { accessOf, isAdmin } from "../../domains/project/access.ts";
-import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
-import { pageOf, pageQuerySchema } from "../../pagination.ts";
+} from "../../services/movie/movie.ts";
+import { accessOf, isAdmin } from "../../services/project/access.ts";
 import type { MovieId, ProjectId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 

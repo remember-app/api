@@ -1,33 +1,26 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../../config.ts";
+import { sendPush } from "../../integrations/push/index.ts";
+import { abortUploads, deleteObjects } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   acceptInvite,
   createAppInvite,
   createProjectInvite,
   rotateProjectInvite,
-} from "../../domains/invite/invite.ts";
-import { accessOf, canContribute, isAdmin } from "../../domains/project/access.ts";
+} from "../../services/invite/commands.ts";
+import { accessOf } from "../../services/project/access.ts";
+import { createProject, deleteProject, updateProject } from "../../services/project/commands.ts";
 import {
   addMember,
-  adminOf,
-  listMembers,
   removeMember,
   setContribution,
-} from "../../domains/project/member.ts";
-import {
-  createProject,
-  deleteProject,
-  getProject,
-  listProjects,
-  projectTitle,
-  updateProject,
-} from "../../domains/project/project.ts";
-import { inviteMessage } from "../../domains/push/messages.ts";
-import { removeTokens, tokensOfUser } from "../../domains/push/push.ts";
-import { findByUsername } from "../../domains/user/user.ts";
-import { sendPush } from "../../integrations/push/index.ts";
-import { abortUploads, deleteObjects } from "../../integrations/storage/s3.ts";
-import { pageOf, pageQuerySchema } from "../../pagination.ts";
+} from "../../services/project/member/commands.ts";
+import { listMembers } from "../../services/project/member/queries.ts";
+import { homeCards, projectTitle, projectView } from "../../services/project/queries.ts";
+import { removeTokens } from "../../services/push/commands.ts";
+import { inviteMessage } from "../../services/push/messages.ts";
+import { tokensOfUser } from "../../services/push/queries.ts";
 import type { ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
 import { fail } from "../errors.ts";
@@ -142,13 +135,13 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects",
     { schema: { body: projectBody }, preHandler: app.authenticate },
     async (request) => {
-      const project = await createProject({
+      const projectId = await createProject({
         title: request.body.title,
         eventStart: new Date(request.body.eventStart),
         eventEnd: request.body.eventEnd ? new Date(request.body.eventEnd) : null,
         creatorId: request.authenticated!.user.id,
       });
-      return project;
+      return projectView(projectId, request.authenticated!.user.id);
     },
   );
 
@@ -157,7 +150,7 @@ export function projectRoutes(app: FastifyInstance) {
     { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request) => {
       const { limit, offset } = pageOf(request.query);
-      return listProjects(request.authenticated!.user.id, limit, offset);
+      return homeCards(request.authenticated!.user.id, limit, offset);
     },
   );
 
@@ -166,7 +159,12 @@ export function projectRoutes(app: FastifyInstance) {
     { preHandler: app.authenticate },
     async (request, reply) => {
       if (!(await accessOr404(request, reply))) return reply;
-      return getProject(request.params.projectId as ProjectId, request.authenticated!.user.id);
+      const view = await projectView(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+      );
+      if (!view) return fail(reply, 404, "not_found");
+      return view;
     },
   );
 
@@ -182,9 +180,6 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId",
     { schema: { body: patchBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
       const body = request.body;
       const patch = {
         ...(body.title === undefined ? {} : { title: body.title }),
@@ -198,9 +193,14 @@ export function projectRoutes(app: FastifyInstance) {
               coverItemId: body.coverItemId === null ? null : (body.coverItemId as ProjectItemId),
             }),
       };
-      const project = await updateProject(request.params.projectId as ProjectId, patch);
-      if (!project) return fail(reply, 404, "not_found");
-      return project;
+      const projectId = request.params.projectId as ProjectId;
+      const result = await updateProject(projectId, request.authenticated!.user.id, patch);
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return projectView(projectId, request.authenticated!.user.id);
     },
   );
 
@@ -208,24 +208,16 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId/members/:userId",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
       const targetId = request.params.userId;
       if (!uuidPattern.test(targetId)) return fail(reply, 404, "not_found");
-      const self = targetId === request.authenticated!.user.id;
-      if (!self && !isAdmin(access)) return fail(reply, 403, "forbidden");
-      if (self && access.role === "admin") {
-        return fail(reply, 409, "conflict");
-      }
-      const adminId = await adminOf(request.params.projectId as ProjectId);
-      if (!adminId) return fail(reply, 409, "conflict");
       const result = await removeMember(
         request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
         targetId as UserId,
-        adminId,
       );
       if ("denial" in result) {
-        if (result.denial === "admin") return fail(reply, 409, "conflict");
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "conflict") return fail(reply, 409, "conflict");
         return fail(reply, 404, "not_found");
       }
       if (result.storageKeys.length > 0) await deleteObjects(result.storageKeys);
@@ -237,13 +229,17 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
-      const deleted = await deleteProject(request.params.projectId as ProjectId);
-      if (!deleted) return fail(reply, 404, "not_found");
-      if (deleted.multiparts.length > 0) await abortUploads(deleted.multiparts);
-      if (deleted.storageKeys.length > 0) await deleteObjects(deleted.storageKeys);
+      const result = await deleteProject(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+      );
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      if (result.deletion.multiparts.length > 0) await abortUploads(result.deletion.multiparts);
+      if (result.deletion.storageKeys.length > 0) await deleteObjects(result.deletion.storageKeys);
       return { ok: true };
     },
   );
@@ -262,22 +258,19 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId/members",
     { schema: { body: memberBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!canContribute(access)) return fail(reply, 403, "forbidden");
-      if (request.body.role === "admin" && !isAdmin(access)) {
-        return fail(reply, 403, "forbidden");
-      }
-      const target = await findByUsername(request.body.username);
-      if (!target) return fail(reply, 404, "not_found");
-      const member = await addMember(
+      const added = await addMember(
         request.params.projectId as ProjectId,
-        target.id,
-        request.body.role,
         request.authenticated!.user.id,
+        request.body.username,
+        request.body.role,
       );
-      if (!member) return fail(reply, 409, "conflict");
-      const tokens = await tokensOfUser(target.id);
+      if ("denial" in added) {
+        if (added.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (added.denial === "conflict") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      const member = added.member;
+      const tokens = await tokensOfUser(member.userId);
       if (tokens.length > 0) {
         const title = (await projectTitle(request.params.projectId as ProjectId)) ?? "a project";
         const message = inviteMessage(title);
@@ -291,19 +284,24 @@ export function projectRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Params: ProjectParams; Body: { status: ProjectContributionStatus } }>(
+  app.post<{
+    Params: ProjectParams;
+    Body: { status: Exclude<ProjectContributionStatus, "not_started"> };
+  }>(
     "/projects/:projectId/contribution",
     { schema: { body: contributionBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (access.role === "viewer") return fail(reply, 403, "forbidden");
-      const contribution = await setContribution(
+      const result = await setContribution(
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
         request.body.status,
       );
-      return { status: contribution };
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { status: result.status };
     },
   );
 
@@ -311,17 +309,19 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId/invite",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!canContribute(access)) return fail(reply, 403, "forbidden");
-      const invite = await createProjectInvite({
+      const result = await createProjectInvite({
         projectId: request.params.projectId as ProjectId,
         role: "contributor",
         createdBy: request.authenticated!.user.id,
         maxUses: null,
         expiresAt: null,
       });
-      return { token: invite.token, role: invite.role };
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { token: result.invite.token, role: result.invite.role };
     },
   );
 
@@ -332,9 +332,6 @@ export function projectRoutes(app: FastifyInstance) {
     "/projects/:projectId/invite",
     { schema: { body: inviteBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const access = await accessOr404(request, reply);
-      if (!access) return reply;
-      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       if (
         !allow(
           "invites",
@@ -345,14 +342,19 @@ export function projectRoutes(app: FastifyInstance) {
       ) {
         return fail(reply, 429, "limit_exceeded");
       }
-      const invite = await rotateProjectInvite({
+      const result = await rotateProjectInvite({
         projectId: request.params.projectId as ProjectId,
         role: request.body?.role ?? "contributor",
         createdBy: request.authenticated!.user.id,
         maxUses: request.body?.maxUses ?? null,
         expiresAt: null,
       });
-      return { token: invite.token, role: invite.role };
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { token: result.invite.token, role: result.invite.role };
     },
   );
 
@@ -398,7 +400,7 @@ export function projectRoutes(app: FastifyInstance) {
         return fail(reply, 404, "not_found");
       }
       if (result.invite.kind === "memory") {
-        return getProject(result.invite.projectId, request.authenticated!.user.id);
+        return projectView(result.invite.projectId, request.authenticated!.user.id);
       }
       return { ok: true };
     },

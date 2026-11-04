@@ -1,18 +1,14 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   attachLabels,
   createLabel,
   deleteLabel,
   detachLabels,
-  getLabel,
-  listLabels,
   updateLabel,
-} from "../../domains/label/label.ts";
-import type { ProjectAccess } from "../../domains/project/access.ts";
-import { accessOf, canContribute } from "../../domains/project/access.ts";
-import { pageOf, pageQuerySchema } from "../../pagination.ts";
-import type { LabelId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
-import type { Label } from "../../types/label.ts";
+} from "../../services/label/commands.ts";
+import { listLabels } from "../../services/label/queries.ts";
+import type { LabelId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
@@ -56,24 +52,24 @@ const itemsBody = {
   },
 } as const;
 
-const canEditLabel = (label: Label, access: ProjectAccess, userId: UserId): boolean =>
-  label.shared ? canContribute(access) : label.ownerId === userId;
-
-async function projectAccess(projectId: string, userId: UserId) {
-  if (!uuidPattern.test(projectId)) return undefined;
-  return accessOf(projectId as ProjectId, userId);
-}
+const denial = (reply: FastifyReply, reason: "not_found" | "forbidden") =>
+  reason === "forbidden" ? fail(reply, 403, "forbidden") : fail(reply, 404, "not_found");
 
 export function labelRoutes(app: FastifyInstance) {
   app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
     "/projects/:projectId/labels",
     { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
+      if (!uuidPattern.test(request.params.projectId)) return fail(reply, 404, "not_found");
       const { limit, offset } = pageOf(request.query);
-      return listLabels(request.params.projectId as ProjectId, userId, limit, offset);
+      const page = await listLabels(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        limit,
+        offset,
+      );
+      if (!page) return fail(reply, 404, "not_found");
+      return page;
     },
   );
 
@@ -89,20 +85,19 @@ export function labelRoutes(app: FastifyInstance) {
     "/projects/:projectId/labels",
     { schema: { body: createBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
-      if (request.body.shared && !canContribute(access)) {
-        return fail(reply, 403, "forbidden");
-      }
-      return createLabel({
-        projectId: request.params.projectId as ProjectId,
-        ownerId: userId,
-        name: request.body.name,
-        colorHex: request.body.colorHex,
-        description: request.body.description ?? null,
-        shared: request.body.shared,
-      });
+      if (!uuidPattern.test(request.params.projectId)) return fail(reply, 404, "not_found");
+      const result = await createLabel(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        {
+          name: request.body.name,
+          colorHex: request.body.colorHex,
+          description: request.body.description ?? null,
+          shared: request.body.shared,
+        },
+      );
+      if ("denial" in result) return denial(reply, result.denial);
+      return result.label;
     },
   );
 
@@ -113,15 +108,20 @@ export function labelRoutes(app: FastifyInstance) {
     "/projects/:projectId/labels/:labelId",
     { schema: { body: patchBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
-      const label = await getLabel(request.params.labelId as LabelId);
-      if (!label || label.projectId !== request.params.projectId) {
+      if (
+        !uuidPattern.test(request.params.projectId) ||
+        !uuidPattern.test(request.params.labelId)
+      ) {
         return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
-      return updateLabel(label.id, label.projectId, request.body);
+      const result = await updateLabel(
+        request.params.projectId as ProjectId,
+        request.params.labelId as LabelId,
+        request.authenticated!.user.id,
+        request.body,
+      );
+      if ("denial" in result) return denial(reply, result.denial);
+      return result.label;
     },
   );
 
@@ -129,15 +129,18 @@ export function labelRoutes(app: FastifyInstance) {
     "/projects/:projectId/labels/:labelId",
     { preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
-      const label = await getLabel(request.params.labelId as LabelId);
-      if (!label || label.projectId !== request.params.projectId) {
+      if (
+        !uuidPattern.test(request.params.projectId) ||
+        !uuidPattern.test(request.params.labelId)
+      ) {
         return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
-      await deleteLabel(label.id, label.projectId);
+      const result = await deleteLabel(
+        request.params.projectId as ProjectId,
+        request.params.labelId as LabelId,
+        request.authenticated!.user.id,
+      );
+      if ("denial" in result) return denial(reply, result.denial);
       return { ok: true };
     },
   );
@@ -146,23 +149,23 @@ export function labelRoutes(app: FastifyInstance) {
     "/projects/:projectId/labels/:labelId/items",
     { schema: { body: itemsBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
-      const label = await getLabel(request.params.labelId as LabelId);
-      if (!label || label.projectId !== request.params.projectId) {
+      if (
+        !uuidPattern.test(request.params.projectId) ||
+        !uuidPattern.test(request.params.labelId)
+      ) {
         return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
       if (request.body.itemIds.some((itemId) => !uuidPattern.test(itemId))) {
         return fail(reply, 400, "bad_request");
       }
-      const attached = await attachLabels(
-        label.projectId,
-        label.id,
+      const result = await attachLabels(
+        request.params.projectId as ProjectId,
+        request.params.labelId as LabelId,
+        request.authenticated!.user.id,
         request.body.itemIds as ProjectItemId[],
       );
-      return { attached };
+      if ("denial" in result) return denial(reply, result.denial);
+      return result;
     },
   );
 
@@ -170,23 +173,23 @@ export function labelRoutes(app: FastifyInstance) {
     "/projects/:projectId/labels/:labelId/items",
     { schema: { body: itemsBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const userId = request.authenticated!.user.id;
-      const access = await projectAccess(request.params.projectId, userId);
-      if (!access) return fail(reply, 404, "not_found");
-      const label = await getLabel(request.params.labelId as LabelId);
-      if (!label || label.projectId !== request.params.projectId) {
+      if (
+        !uuidPattern.test(request.params.projectId) ||
+        !uuidPattern.test(request.params.labelId)
+      ) {
         return fail(reply, 404, "not_found");
       }
-      if (!canEditLabel(label, access, userId)) return fail(reply, 403, "forbidden");
       if (request.body.itemIds.some((itemId) => !uuidPattern.test(itemId))) {
         return fail(reply, 400, "bad_request");
       }
-      const detached = await detachLabels(
-        label.projectId,
-        label.id,
+      const result = await detachLabels(
+        request.params.projectId as ProjectId,
+        request.params.labelId as LabelId,
+        request.authenticated!.user.id,
         request.body.itemIds as ProjectItemId[],
       );
-      return { detached };
+      if ("denial" in result) return denial(reply, result.denial);
+      return result;
     },
   );
 }

@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from "fastify";
 import { config } from "../../config.ts";
-import { verifySession } from "../../domains/auth/auth.ts";
-import { getUser } from "../../domains/user/user.ts";
+import { verifySession } from "../../services/auth/queries.ts";
+import { getUser } from "../../services/user/queries.ts";
 import type { AuthSession } from "../../types/auth.ts";
 import type { User } from "../../types/user.ts";
 import { fail } from "../errors.ts";

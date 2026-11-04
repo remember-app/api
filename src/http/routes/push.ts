@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { registerToken, removeToken } from "../../domains/push/push.ts";
+import { registerToken, removeToken } from "../../services/push/commands.ts";
 import type { PushPlatform } from "../../types/push.ts";
 import { fail } from "../errors.ts";
 

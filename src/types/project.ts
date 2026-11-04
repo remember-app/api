@@ -16,6 +16,8 @@ export type Project = {
 
 export type ProjectMember = {
   userId: UserId;
+  username: string | null;
+  name: string | null;
   role: ProjectMemberRole;
   contribution: ProjectContributionStatus;
   joinedAt: Date;

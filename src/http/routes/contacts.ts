@@ -1,12 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import {
-  addContact,
-  listContacts,
-  removeContact,
-  renameContact,
-} from "../../domains/contact/contact.ts";
-import { findByUsername } from "../../domains/user/user.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
+import { addContact, removeContact, renameContact } from "../../services/contact/commands.ts";
+import { listContacts } from "../../services/contact/queries.ts";
 import type { UserId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -43,12 +38,17 @@ export function contactRoutes(app: FastifyInstance) {
     "/me/contacts",
     { schema: { body: addBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      const target = await findByUsername(request.body.username);
-      if (!target) return fail(reply, 404, "not_found");
-      if (target.id === request.authenticated!.user.id) {
-        return fail(reply, 400, "bad_request");
+      const result = await addContact(
+        request.authenticated!.user.id,
+        request.body.username,
+        request.body.name ?? null,
+      );
+      if ("denial" in result) {
+        return result.denial === "bad_request"
+          ? fail(reply, 400, "bad_request")
+          : fail(reply, 404, "not_found");
       }
-      return addContact(request.authenticated!.user.id, target.id, request.body.name ?? null);
+      return result.contact;
     },
   );
 
