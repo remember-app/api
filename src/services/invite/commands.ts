@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { type Db, sql } from "../../integrations/db/index.ts";
 import type { InviteId, ProjectId, UserId } from "../../types/id.ts";
 import type { Invite, InviteApp, InviteProject } from "../../types/invite.ts";
@@ -8,7 +8,10 @@ import { accessOf, canContribute } from "../project/access.ts";
 import { columns, type InviteRow, toInvite } from "./internal.ts";
 import { liveProjectInvite } from "./queries.ts";
 
-const mintToken = () => randomBytes(32).toString("base64url");
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+const mintToken = () =>
+  Array.from({ length: 6 }, () => ALPHABET.charAt(randomInt(ALPHABET.length))).join("");
 
 export type InviteDenial = { denial: "not_found" | "forbidden" };
 
@@ -58,13 +61,13 @@ export async function createProjectInvite(
   if ("denial" in allowed) return allowed;
   const live = await liveProjectInvite(input.projectId);
   if (live) return { invite: live };
-  const row = await insertProjectInvite(sql, input);
-  if (!row) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const row = await insertProjectInvite(sql, input);
+    if (row) return { invite: toInvite(row) as InviteProject };
     const raced = await liveProjectInvite(input.projectId);
-    if (!raced) throw new Error("project invite insert lost a race and no live invite is left");
-    return { invite: raced };
+    if (raced) return { invite: raced };
   }
-  return { invite: toInvite(row) as InviteProject };
+  throw new Error("could not mint a unique project invite");
 }
 
 export async function rotateProjectInvite(
@@ -78,8 +81,10 @@ export async function rotateProjectInvite(
       set revoked_at = now()
       where project_id = ${input.projectId} and kind = 'memory' and revoked_at is null
     `;
-    const row = await insertProjectInvite(tx, input);
-    if (row) return toInvite(row) as InviteProject;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const row = await insertProjectInvite(tx, input);
+      if (row) return toInvite(row) as InviteProject;
+    }
     const [live] = await tx<InviteRow[]>`
       select ${columns}
       from invites
@@ -100,33 +105,36 @@ export type NewAppInvite = {
 };
 
 export async function createAppInvite(input: NewAppInvite): Promise<InviteApp> {
-  const [row] = await sql<InviteRow[]>`
-    insert into invites (
-      token,
-      kind,
-      created_by,
-      max_uses,
-      expires_at,
-      sender_reward_tokens,
-      sender_reward_storage_bytes,
-      invitee_reward_tokens,
-      invitee_reward_storage_bytes
-    )
-    values (
-      ${mintToken()},
-      'app',
-      ${input.createdBy},
-      ${input.maxUses},
-      ${input.expiresAt},
-      ${input.senderReward.tokens},
-      ${input.senderReward.storageBytes},
-      ${input.inviteeReward.tokens},
-      ${input.inviteeReward.storageBytes}
-    )
-    returning ${columns}
-  `;
-  if (!row) throw new Error("app invite insert returned no row");
-  return toInvite(row) as InviteApp;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const [row] = await sql<InviteRow[]>`
+      insert into invites (
+        token,
+        kind,
+        created_by,
+        max_uses,
+        expires_at,
+        sender_reward_tokens,
+        sender_reward_storage_bytes,
+        invitee_reward_tokens,
+        invitee_reward_storage_bytes
+      )
+      values (
+        ${mintToken()},
+        'app',
+        ${input.createdBy},
+        ${input.maxUses},
+        ${input.expiresAt},
+        ${input.senderReward.tokens},
+        ${input.senderReward.storageBytes},
+        ${input.inviteeReward.tokens},
+        ${input.inviteeReward.storageBytes}
+      )
+      on conflict do nothing
+      returning ${columns}
+    `;
+    if (row) return toInvite(row) as InviteApp;
+  }
+  throw new Error("could not mint a unique app invite");
 }
 
 export type InviteDenialReason = "not_found" | "expired" | "exhausted";
@@ -177,6 +185,12 @@ export async function acceptInvite(token: string, userId: UserId): Promise<Accep
     } else {
       await grant(userId, invite.inviteeReward);
       await grant(invite.createdBy, invite.senderReward);
+      await tx`
+        insert into contacts (owner_id, contact_id) values
+          (${userId}, ${invite.createdBy}),
+          (${invite.createdBy}, ${userId})
+        on conflict do nothing
+      `;
     }
     return { invite };
   });

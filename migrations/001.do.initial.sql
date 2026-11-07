@@ -2,10 +2,11 @@ create extension if not exists citext;
 
 create table users (
     id               uuid primary key default gen_random_uuid(),
-    username         citext unique,
-    name             text,
-    email            text,
+    username         citext not null unique,
+    name             text not null default '',
+    email            text not null,
     language         text not null default 'en' check (language in ('en', 'ru')),
+    registered       boolean not null default false,
     profile_media_id uuid,
     tokens           bigint not null default 0 check (tokens >= 0),
     tokens_spend     bigint not null default 0 check (tokens_spend >= 0),
@@ -77,7 +78,7 @@ create index project_members_user_idx on project_members (user_id);
 
 create table invites (
     id                            uuid primary key default gen_random_uuid(),
-    token                         text not null unique,
+    token                         text not null unique check (char_length(token) = 6),
     kind                          text not null check (kind in ('memory', 'app')),
     created_by                    uuid not null references users (id) on delete cascade,
     created_at                    timestamptz not null default now(),

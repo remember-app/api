@@ -4,25 +4,32 @@ import { sql } from "../../integrations/db/index.ts";
 import type { SessionId, UserId } from "../../types/id.ts";
 import { codeHash, hashToken, normalizeEmail } from "./internal.ts";
 
-export async function findOrCreateUser(email: string): Promise<UserId> {
+export type FoundUser = {
+  userId: UserId;
+  registered: boolean;
+};
+
+export async function findOrCreateUser(email: string): Promise<FoundUser> {
   const address = normalizeEmail(email);
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${address}, 0))`;
-    const [identity] = await tx<{ userId: UserId }[]>`
-      select user_id as "userId"
-      from auth_identities
-      where provider = 'email' and provider_account_id = ${address}
+    const [identity] = await tx<{ userId: UserId; registered: boolean }[]>`
+      select i.user_id as "userId", u.registered
+      from auth_identities i
+      join users u on u.id = i.user_id
+      where i.provider = 'email' and i.provider_account_id = ${address}
     `;
-    if (identity) return identity.userId;
+    if (identity) return { userId: identity.userId, registered: identity.registered };
+    const username = `u_${randomBytes(8).toString("hex")}`;
     const [user] = await tx<{ id: UserId }[]>`
-      insert into users (email) values (${address}) returning id
+      insert into users (email, username) values (${address}, ${username}) returning id
     `;
     if (!user) throw new Error("user insert returned no row");
     await tx`
       insert into auth_identities (provider, provider_account_id, user_id)
       values ('email', ${address}, ${user.id})
     `;
-    return user.id;
+    return { userId: user.id, registered: false };
   });
 }
 

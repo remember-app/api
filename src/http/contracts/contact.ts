@@ -1,4 +1,5 @@
 import type { PageResponse } from "./common.ts";
+import type { PublicUserResponse } from "./user.ts";
 
 export type ContactResponse = {
   contactId: string;
@@ -7,6 +8,8 @@ export type ContactResponse = {
 };
 
 export type ContactsPageResponse = PageResponse<ContactResponse>;
+
+export type SuggestionsPageResponse = PageResponse<PublicUserResponse>;
 
 export type AddContactRequest = {
   username: string;

@@ -102,6 +102,18 @@ export async function headSize(key: string): Promise<number | null> {
 }
 export const downloadUrl = (key: string, ttlSeconds: number): Promise<string> =>
   store().link("GET", key, ttlSeconds);
+
+export const uploadUrl = (key: string, ttlSeconds: number): Promise<string> =>
+  store().link("PUT", key, ttlSeconds);
+export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  const response = await store().call("PUT", key, "", {
+    body,
+    headers: { "content-type": contentType },
+  });
+  if (!response.ok) {
+    throw new Error(`storage refused a PUT: ${response.status} ${await response.text()}`);
+  }
+}
 export const abortUploads = (
   uploads: {
     key: string;

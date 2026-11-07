@@ -65,15 +65,15 @@ export function authRoutes(app: FastifyInstance) {
       if (!review && !devCode && !mailConfigured()) {
         return fail(reply, 503, "email_unavailable");
       }
-      const userId = await findOrCreateUser(email);
+      const { userId, registered } = await findOrCreateUser(email);
       const code = review?.email === email ? review.code : (devCode ?? mintCode());
       await setLoginCode(userId, code, config.auth.emailLoginTtlMinutes());
       if (review?.email !== email && !devCode) await sendLoginCode(email, code);
       if (devCode && review?.email !== email) {
         request.log.warn({ email }, "dev login code returned without email");
-        return { ok: true, code: devCode };
+        return { ok: true, registered, code: devCode };
       }
-      return { ok: true };
+      return { ok: true, registered };
     },
   );
 

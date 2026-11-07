@@ -13,17 +13,18 @@ export type ConsumableResponse = {
 
 export type UserResponse = {
   id: string;
-  username: string | null;
-  name: string | null;
-  email: string | null;
+  username: string;
+  name: string;
+  email: string;
   language: Language;
+  registered: boolean;
   profileMediaId: string | null;
 };
 
 export type PublicUserResponse = {
   id: string;
-  username: string | null;
-  name: string | null;
+  username: string;
+  name: string;
   profileMediaId: string | null;
 };
 

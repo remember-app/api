@@ -4,10 +4,11 @@ export type Language = "en" | "ru";
 
 export type User = {
   id: UserId;
-  username: string | null;
-  name: string | null;
-  email: string | null;
+  username: string;
+  name: string;
+  email: string;
   language: Language;
+  registered: boolean;
   profileMediaId: MediaId | null;
 };
 

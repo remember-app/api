@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { authPlugin } from "./plugins/auth.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { avatarRoutes } from "./routes/avatar.ts";
 import { contactRoutes } from "./routes/contacts.ts";
 import { labelRoutes } from "./routes/labels.ts";
 import { mediaRoutes } from "./routes/media.ts";
@@ -19,6 +20,7 @@ export function registerRoutes(app: FastifyInstance): void {
   app.register(
     async (v1) => {
       authRoutes(v1);
+      avatarRoutes(v1);
       userRoutes(v1);
       projectRoutes(v1);
       mediaRoutes(v1);

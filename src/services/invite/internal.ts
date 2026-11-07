@@ -15,10 +15,10 @@ export const columns = sql`
   used_count as "usedCount",
   project_id as "projectId",
   role,
-  sender_reward_tokens as "senderRewardTokens",
-  sender_reward_storage_bytes as "senderRewardStorageBytes",
-  invitee_reward_tokens as "inviteeRewardTokens",
-  invitee_reward_storage_bytes as "inviteeRewardStorageBytes"
+  sender_reward_tokens::float8 as "senderRewardTokens",
+  sender_reward_storage_bytes::float8 as "senderRewardStorageBytes",
+  invitee_reward_tokens::float8 as "inviteeRewardTokens",
+  invitee_reward_storage_bytes::float8 as "inviteeRewardStorageBytes"
 `;
 
 export type InviteRow = {

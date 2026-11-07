@@ -9,7 +9,9 @@ export async function setUsername(userId: UserId, username: string): Promise<Set
   if (!isValidUsername(username)) return { denial: "invalid" };
   try {
     const [row] = await sql<User[]>`
-      update users set username = ${username} where id = ${userId} returning ${userColumns}
+      update users set username = ${username}, registered = true
+      where id = ${userId}
+      returning ${userColumns}
     `;
     if (!row) return { denial: "not_found" };
     return { user: row };
@@ -21,7 +23,7 @@ export async function setUsername(userId: UserId, username: string): Promise<Set
 
 export async function setName(userId: UserId, name: string | null): Promise<User | undefined> {
   const [row] = await sql<User[]>`
-    update users set name = ${name} where id = ${userId} returning ${userColumns}
+    update users set name = ${name ?? ""} where id = ${userId} returning ${userColumns}
   `;
   return row;
 }

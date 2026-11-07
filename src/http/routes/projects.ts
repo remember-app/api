@@ -117,7 +117,7 @@ const acceptBody = {
   type: "object",
   required: ["token"],
   additionalProperties: false,
-  properties: { token: { type: "string", minLength: 1, maxLength: 200 } },
+  properties: { token: { type: "string", pattern: "^[0-9A-Za-z]{6}$" } },
 } as const;
 
 type ProjectParams = { projectId: string };

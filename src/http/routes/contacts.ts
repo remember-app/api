@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import { addContact, removeContact, renameContact } from "../../services/contact/commands.ts";
-import { listContacts } from "../../services/contact/queries.ts";
+import { listContacts, listSuggestions } from "../../services/contact/queries.ts";
 import type { UserId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -31,6 +31,15 @@ export function contactRoutes(app: FastifyInstance) {
     async (request) => {
       const { limit, offset } = pageOf(request.query);
       return listContacts(request.authenticated!.user.id, limit, offset);
+    },
+  );
+
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/me/contacts/suggestions",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      return listSuggestions(request.authenticated!.user.id, limit, offset);
     },
   );
 

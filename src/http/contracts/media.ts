@@ -96,6 +96,10 @@ export type DownloadLinksRequest = {
   itemIds: string[];
 };
 
+export type DownloadLinksResponse = {
+  items: DownloadLinkResponse[];
+};
+
 export type MediaPatchRequest = {
   capturedAt?: string | null;
   latitude?: number | null;
