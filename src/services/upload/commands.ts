@@ -19,6 +19,7 @@ import type {
   MediaVideoFormat,
 } from "../../types/mediaItem.ts";
 import type { Upload } from "../../types/upload.ts";
+import { StorageFullError, spendProjectStorage } from "../consumable/commands.ts";
 import { createMedia, type NewMedia } from "../media/commands.ts";
 import { accessOf, canContribute } from "../project/access.ts";
 import { createItem } from "../project/item/commands.ts";
@@ -140,6 +141,7 @@ export type StartResult =
         | "storage_unavailable"
         | "too_large"
         | "too_many_files"
+        | "insufficient_storage"
         | "unsupported_format";
     };
 
@@ -163,6 +165,12 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   `;
   if ((await countItems(input.projectId)) + (open?.count ?? 0) >= config.media.projectMaxFiles()) {
     return { denial: "too_many_files" };
+  }
+  const [space] = await sql<{ available: string }[]>`
+    select storage_bytes - storage_spend as available from projects where id = ${input.projectId}
+  `;
+  if (!space || Number(space.available) < input.sizeBytes) {
+    return { denial: "insufficient_storage" };
   }
   const id = randomUUID() as UploadId;
   const storageKey = storageKeyOf(format, id);
@@ -215,7 +223,9 @@ export type CompleteUpload = {
 
 export type CompleteResult =
   | { media: MediaItem; itemId: ProjectItemId }
-  | { denial: "not_found" | "forbidden" | "storage_error" | "too_large" };
+  | {
+      denial: "not_found" | "forbidden" | "storage_error" | "too_large" | "insufficient_storage";
+    };
 
 export async function completeMediaUpload(input: CompleteUpload): Promise<CompleteResult> {
   const allowed = await mayUpload(input.projectId, input.userId);
@@ -229,7 +239,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
   if (bytes === null) return { denial: "storage_error" };
   if (bytes > config.media.maxFileBytes()) {
     await deleteObjects([row.storageKey]);
-    await markFailed(row.id, "limit_exceeded", "file exceeds the size limit");
+    await markFailed(row.id, "capacity_exceeded", "file exceeds the maximum size");
     return { denial: "too_large" };
   }
   const newMedia: NewMedia =
@@ -268,18 +278,29 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
             capturedAt: row.capturedAt,
             place: null,
           };
-  return sql.begin(async (tx) => {
-    const media = await createMedia(newMedia, tx);
-    await tx`
-      update uploads
-      set status = 'completed', error_code = null, error = null,
-          media_id = ${media.id}, updated_at = now()
-      where id = ${row.id}
-    `;
-    const itemId = await createItem(input.projectId, media.id, row.kind, tx);
-    await enqueue("media_derive", row.id, tx);
-    return { media, itemId };
-  });
+  try {
+    return await sql.begin(async (tx) => {
+      const media = await createMedia(newMedia, tx);
+      await tx`
+        update uploads
+        set status = 'completed', error_code = null, error = null,
+            media_id = ${media.id}, updated_at = now()
+        where id = ${row.id}
+      `;
+      const itemId = await createItem(input.projectId, media.id, row.kind, tx);
+      const spent = await spendProjectStorage(tx, input.projectId, input.userId, bytes);
+      if (!spent) throw new StorageFullError();
+      await enqueue("media_derive", row.id, tx);
+      return { media, itemId };
+    });
+  } catch (error) {
+    if (error instanceof StorageFullError) {
+      await deleteObjects([row.storageKey]);
+      await markFailed(row.id, "capacity_exceeded", "project storage is exhausted");
+      return { denial: "insufficient_storage" };
+    }
+    throw error;
+  }
 }
 
 async function markFailed(id: UploadId, code: string, message: string | null): Promise<void> {

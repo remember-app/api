@@ -58,7 +58,7 @@ export function authRoutes(app: FastifyInstance) {
         !allow("email", email, config.auth.rateMaxPerEmail(), windowMs) ||
         !allow("email-ip", request.ip, config.auth.rateMaxPerIp(), windowMs)
       ) {
-        return fail(reply, 429, "limit_exceeded");
+        return fail(reply, 429, "capacity_exceeded");
       }
       const review = config.auth.reviewLogin();
       const devCode = config.auth.devLoginCode();

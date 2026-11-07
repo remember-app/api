@@ -1,3 +1,4 @@
+import type { Consumable } from "./consumables.ts";
 import type { LabelId, MediaId, MovieId, ProjectId, ProjectItemId, UserId } from "./id.ts";
 import type { MediaKind } from "./mediaItem.ts";
 
@@ -7,9 +8,10 @@ export type Project = {
   eventStart: Date;
   eventEnd: Date | null;
   createdAt: Date;
+  consumables: Consumable;
   members: ProjectMember[];
-  coverItemId: ProjectItemId | null;
   itemIds: ProjectItemId[];
+  labelIds: LabelId[];
   musicIds: MediaId[];
   movieIds: MovieId[];
 };
@@ -19,6 +21,7 @@ export type ProjectMember = {
   username: string | null;
   name: string | null;
   role: ProjectMemberRole;
+  consumables: Consumable; // donated and spent(used)
   contribution: ProjectContributionStatus;
   joinedAt: Date;
   invitedBy: UserId | null;
@@ -66,4 +69,4 @@ export type ProjectMediaItemAIAnalysis = {
 
 export type ProjectMemberRole = "admin" | "contributor" | "viewer";
 
-export type ProjectContributionStatus = "not_started" | "more_coming" | "done" | "nothing";
+export type ProjectContributionStatus = "not_started" | "more_coming" | "done";

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { setName, setUsername } from "../../services/user/commands.ts";
+import { setLanguage, setName, setUsername } from "../../services/user/commands.ts";
 import { accountView, findByUsername, usernameAvailable } from "../../services/user/queries.ts";
 import { fail } from "../errors.ts";
 
@@ -15,6 +15,13 @@ const usernameQuery = {
   required: ["username"],
   additionalProperties: false,
   properties: { username: { type: "string", minLength: 3, maxLength: 30 } },
+} as const;
+
+const languageBody = {
+  type: "object",
+  required: ["language"],
+  additionalProperties: false,
+  properties: { language: { type: "string", enum: ["en", "ru"] } },
 } as const;
 
 const nameBody = {
@@ -70,6 +77,16 @@ export function userRoutes(app: FastifyInstance) {
     { schema: { body: nameBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const user = await setName(request.authenticated!.user.id, request.body.name);
+      if (!user) return fail(reply, 404, "not_found");
+      return user;
+    },
+  );
+
+  app.post<{ Body: { language: "en" | "ru" } }>(
+    "/me/language",
+    { schema: { body: languageBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const user = await setLanguage(request.authenticated!.user.id, request.body.language);
       if (!user) return fail(reply, 404, "not_found");
       return user;
     },

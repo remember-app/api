@@ -113,7 +113,7 @@ export function uploadRoutes(app: FastifyInstance) {
           config.rate.windowMs(),
         )
       ) {
-        return fail(reply, 429, "limit_exceeded");
+        return fail(reply, 429, "capacity_exceeded");
       }
       const result = await startUpload({
         projectId: projectId as ProjectId,
@@ -127,14 +127,17 @@ export function uploadRoutes(app: FastifyInstance) {
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
         if (result.denial === "not_found") return fail(reply, 404, "not_found");
-        if (result.denial === "too_large") return fail(reply, 413, "limit_exceeded");
+        if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
+        if (result.denial === "insufficient_storage") {
+          return fail(reply, 409, "capacity_exceeded");
+        }
         if (result.denial === "unsupported_format") {
           return fail(reply, 400, "bad_request");
         }
         if (result.denial === "storage_unavailable") {
           return fail(reply, 503, "storage_unavailable");
         }
-        return fail(reply, 409, "limit_exceeded");
+        return fail(reply, 409, "capacity_exceeded");
       }
       return result.plan;
     },
@@ -173,7 +176,10 @@ export function uploadRoutes(app: FastifyInstance) {
       });
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
-        if (result.denial === "too_large") return fail(reply, 413, "limit_exceeded");
+        if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
+        if (result.denial === "insufficient_storage") {
+          return fail(reply, 409, "capacity_exceeded");
+        }
         if (result.denial === "storage_error") {
           return fail(reply, 502, "storage_unavailable");
         }

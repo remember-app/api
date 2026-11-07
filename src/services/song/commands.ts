@@ -1,6 +1,7 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
+import { adjustStorageSpend } from "../consumable/commands.ts";
 import { deleteMediaRows } from "../media/commands.ts";
 import { getMedia } from "../media/queries.ts";
 import { accessOf, isAdmin } from "../project/access.ts";
@@ -42,6 +43,10 @@ export async function deleteSongWithMedia(
       returning media_id as "mediaId"
     `;
     if (!song) return undefined;
+    const media = await getMedia(song.mediaId);
+    if (media?.uploadedBy) {
+      await adjustStorageSpend(tx, projectId, media.uploadedBy, -media.bytes);
+    }
     const [key] = await deleteMediaRows([song.mediaId], tx);
     return { key };
   });

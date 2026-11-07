@@ -3,7 +3,7 @@ import { type Db, sql } from "../../integrations/db/index.ts";
 import type { InviteId, ProjectId, UserId } from "../../types/id.ts";
 import type { Invite, InviteApp, InviteProject } from "../../types/invite.ts";
 import type { ProjectMemberRole } from "../../types/project.ts";
-import { grant } from "../limit/commands.ts";
+import { grant } from "../consumable/commands.ts";
 import { accessOf, canContribute } from "../project/access.ts";
 import { columns, type InviteRow, toInvite } from "./internal.ts";
 import { liveProjectInvite } from "./queries.ts";

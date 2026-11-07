@@ -103,7 +103,7 @@ export function montageRoutes(app: FastifyInstance) {
           config.rate.windowMs(),
         )
       ) {
-        return fail(reply, 429, "limit_exceeded");
+        return fail(reply, 429, "capacity_exceeded");
       }
       const result = await createMontage({
         projectId: request.params.projectId as ProjectId,

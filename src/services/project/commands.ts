@@ -10,7 +10,6 @@ type ProjectCore = {
   eventStart: Date;
   eventEnd: Date | null;
   createdAt: Date;
-  coverItemId: Project["coverItemId"];
 };
 
 async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
@@ -20,8 +19,7 @@ async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
       title,
       event_start as "eventStart",
       event_end as "eventEnd",
-      created_at as "createdAt",
-      cover_item_id as "coverItemId"
+      created_at as "createdAt"
     from projects
     where id = ${id}
   `;
@@ -33,27 +31,51 @@ export type NewProject = {
   eventStart: Date;
   eventEnd: Date | null;
   creatorId: UserId;
+  storageBytes?: number;
 };
 
-export async function createProject(input: NewProject): Promise<ProjectId> {
+export type CreateProjectResult =
+  | { id: ProjectId }
+  | { denial: "invalid" | "insufficient_storage" };
+
+export async function createProject(input: NewProject): Promise<CreateProjectResult> {
+  const storageBytes = input.storageBytes ?? 0;
+  if (!Number.isSafeInteger(storageBytes) || storageBytes < 0) {
+    return { denial: "invalid" };
+  }
   return sql.begin(async (tx) => {
+    if (storageBytes > 0) {
+      const [user] = await tx<{ available: string }[]>`
+        select storage_bytes - storage_spend as available
+        from users where id = ${input.creatorId}
+        for update
+      `;
+      if (!user || Number(user.available) < storageBytes) {
+        return { denial: "insufficient_storage" } as const;
+      }
+    }
     const [created] = await tx<{ id: ProjectId }[]>`
-      insert into projects (title, event_start, event_end)
-      values (${input.title}, ${input.eventStart}, ${input.eventEnd})
+      insert into projects (title, event_start, event_end, storage_bytes)
+      values (${input.title}, ${input.eventStart}, ${input.eventEnd}, ${storageBytes})
       returning id
     `;
     if (!created) throw new Error("project insert returned no row");
     await tx`
-      insert into project_members (project_id, user_id, role)
-      values (${created.id}, ${input.creatorId}, 'admin')
+      insert into project_members (project_id, user_id, role, storage_bytes)
+      values (${created.id}, ${input.creatorId}, 'admin', ${storageBytes})
     `;
-    return created.id;
+    if (storageBytes > 0) {
+      await tx`
+        update users
+        set storage_spend = users.storage_spend + ${storageBytes}
+        where id = ${input.creatorId}
+      `;
+    }
+    return { id: created.id } as const;
   });
 }
 
-export type ProjectPatch = Partial<
-  Pick<Project, "title" | "eventStart" | "eventEnd" | "coverItemId">
->;
+export type ProjectPatch = Partial<Pick<Project, "title" | "eventStart" | "eventEnd">>;
 
 export type Denial = { denial: "not_found" | "forbidden" };
 
@@ -72,8 +94,7 @@ export async function updateProject(
     update projects
     set title = ${next.title},
         event_start = ${next.eventStart},
-        event_end = ${next.eventEnd},
-        cover_item_id = ${next.coverItemId}
+        event_end = ${next.eventEnd}
     where id = ${id}
   `;
   return { ok: true };

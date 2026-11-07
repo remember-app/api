@@ -36,7 +36,7 @@ export function authPlugin(app: FastifyInstance) {
     if (!user) return fail(reply, 401, "unauthorized");
     if (request.method !== "GET" && request.method !== "HEAD") {
       const within = allow("write", user.id, config.rate.write(), config.rate.windowMs());
-      if (!within) return fail(reply, 429, "limit_exceeded");
+      if (!within) return fail(reply, 429, "capacity_exceeded");
     }
     request.authenticated = { user, session, token };
   });

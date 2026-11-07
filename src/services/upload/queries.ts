@@ -7,6 +7,7 @@ import { accessOf } from "../project/access.ts";
 
 export type UploadView = {
   id: UploadId;
+  projectId: ProjectId;
   kind: MediaKind;
   fileName: string;
   declaredBytes: string;
@@ -16,17 +17,24 @@ export type UploadView = {
   error: string | null;
   mediaId: MediaId | null;
   derive: "queued" | "running" | "done" | "failed" | null;
-  uploader: { id: UserId; username: string | null; name: string | null };
+  uploader: {
+    id: UserId;
+    username: string | null;
+    name: string | null;
+    profileMediaId: string | null;
+  };
 };
 
 type UploadListRow = Omit<UploadView, "uploader"> & {
   uploaderId: UserId;
   uploaderUsername: string | null;
   uploaderName: string | null;
+  uploaderProfileMediaId: string | null;
 };
 
 const viewColumns = sql`
   u.id,
+  u.project_id as "projectId",
   u.kind,
   u.file_name as "fileName",
   u.declared_bytes as "declaredBytes",
@@ -38,7 +46,8 @@ const viewColumns = sql`
   j.status as "derive",
   u.uploaded_by as "uploaderId",
   pu.username as "uploaderUsername",
-  pu.name as "uploaderName"
+  pu.name as "uploaderName",
+  pu.profile_media_id as "uploaderProfileMediaId"
 `;
 
 const afterClause = (after: Cursor | null) => sql`
@@ -78,9 +87,16 @@ export async function listUploads(
         order by date_trunc('milliseconds', u.created_at) desc, u.id desc
         limit ${limit + 1}
       `;
-  const views = rows.map(({ uploaderId, uploaderUsername, uploaderName, ...row }) => ({
-    ...row,
-    uploader: { id: uploaderId, username: uploaderUsername, name: uploaderName },
-  }));
+  const views = rows.map(
+    ({ uploaderId, uploaderUsername, uploaderName, uploaderProfileMediaId, ...row }) => ({
+      ...row,
+      uploader: {
+        id: uploaderId,
+        username: uploaderUsername,
+        name: uploaderName,
+        profileMediaId: uploaderProfileMediaId,
+      },
+    }),
+  );
   return cursorPage(views, limit, (row) => ({ at: row.createdAt, id: row.id }));
 }

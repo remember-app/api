@@ -1,11 +1,17 @@
 create extension if not exists citext;
 
 create table users (
-    id         uuid primary key default gen_random_uuid(),
-    username   citext unique,
-    name       text,
-    email      text,
-    created_at timestamptz not null default now()
+    id               uuid primary key default gen_random_uuid(),
+    username         citext unique,
+    name             text,
+    email            text,
+    language         text not null default 'en' check (language in ('en', 'ru')),
+    profile_media_id uuid,
+    tokens           bigint not null default 0 check (tokens >= 0),
+    tokens_spend     bigint not null default 0 check (tokens_spend >= 0),
+    storage_bytes    bigint not null default 0 check (storage_bytes >= 0),
+    storage_spend    bigint not null default 0 check (storage_spend >= 0),
+    created_at       timestamptz not null default now()
 );
 
 create table auth_identities (
@@ -40,11 +46,15 @@ create table auth_login_codes (
 );
 
 create table projects (
-    id          uuid primary key default gen_random_uuid(),
-    title       text not null,
-    event_start timestamptz not null,
-    event_end   timestamptz,
-    created_at  timestamptz not null default now(),
+    id             uuid primary key default gen_random_uuid(),
+    title          text not null,
+    event_start    timestamptz not null,
+    event_end      timestamptz,
+    tokens         bigint not null default 0 check (tokens >= 0),
+    tokens_spend   bigint not null default 0 check (tokens_spend >= 0),
+    storage_bytes  bigint not null default 0 check (storage_bytes >= 0),
+    storage_spend  bigint not null default 0 check (storage_spend >= 0),
+    created_at     timestamptz not null default now(),
     check (event_end is null or event_end >= event_start)
 );
 
@@ -53,7 +63,11 @@ create table project_members (
     user_id      uuid not null references users (id) on delete cascade,
     role         text not null check (role in ('admin', 'contributor', 'viewer')),
     contribution text not null default 'not_started'
-        check (contribution in ('not_started', 'more_coming', 'done', 'nothing')),
+        check (contribution in ('not_started', 'more_coming', 'done')),
+    tokens        bigint not null default 0 check (tokens >= 0),
+    tokens_spend  bigint not null default 0 check (tokens_spend >= 0),
+    storage_bytes bigint not null default 0 check (storage_bytes >= 0),
+    storage_spend bigint not null default 0 check (storage_spend >= 0),
     joined_at    timestamptz not null default now(),
     invited_by   uuid references users (id) on delete set null,
     primary key (project_id, user_id)
@@ -140,6 +154,10 @@ create table media_items (
 create index media_items_uploaded_by_idx on media_items (uploaded_by);
 create index media_items_parent_idx on media_items (parent_media_id);
 
+alter table users
+    add constraint users_profile_media_fk
+    foreign key (profile_media_id) references media_items (id) on delete set null;
+
 create table project_items (
     id           uuid primary key default gen_random_uuid(),
     project_id   uuid not null references projects (id) on delete cascade,
@@ -155,9 +173,6 @@ create table project_items (
 
 create index project_items_project_idx on project_items (project_id);
 create index project_items_media_idx on project_items (media_id);
-
-alter table projects
-    add column cover_item_id uuid references project_items (id) on delete set null;
 
 create table project_item_labels (
     project_item_id uuid not null references project_items (id) on delete cascade,
@@ -290,10 +305,4 @@ create table contacts (
     created_at timestamptz not null default now(),
     primary key (owner_id, contact_id),
     check (owner_id <> contact_id)
-);
-
-create table user_limits (
-    user_id       uuid primary key references users (id) on delete cascade,
-    tokens        bigint not null default 0 check (tokens >= 0),
-    storage_bytes bigint not null default 0 check (storage_bytes >= 0)
 );

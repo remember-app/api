@@ -3,6 +3,7 @@ import { config } from "../../config.ts";
 import { sendPush } from "../../integrations/push/index.ts";
 import { abortUploads, deleteObjects } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
+import { donateToProject } from "../../services/consumable/commands.ts";
 import {
   acceptInvite,
   createAppInvite,
@@ -21,7 +22,7 @@ import { homeCards, projectTitle, projectView } from "../../services/project/que
 import { removeTokens } from "../../services/push/commands.ts";
 import { inviteMessage } from "../../services/push/messages.ts";
 import { tokensOfUser } from "../../services/push/queries.ts";
-import type { ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
+import type { ProjectId, UserId } from "../../types/id.ts";
 import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
 import { fail } from "../errors.ts";
 import { allow } from "../rate-limit.ts";
@@ -36,6 +37,7 @@ const projectBody = {
     title: { type: "string", minLength: 1, maxLength: 200 },
     eventStart: { type: "string", format: "date-time" },
     eventEnd: { type: ["string", "null"], format: "date-time" },
+    storageBytes: { type: "integer", minimum: 0 },
   },
 } as const;
 
@@ -46,7 +48,6 @@ const patchBody = {
     title: { type: "string", minLength: 1, maxLength: 200 },
     eventStart: { type: "string", format: "date-time" },
     eventEnd: { type: ["string", "null"], format: "date-time" },
-    coverItemId: { type: ["string", "null"] },
   },
 } as const;
 
@@ -65,7 +66,16 @@ const contributionBody = {
   required: ["status"],
   additionalProperties: false,
   properties: {
-    status: { type: "string", enum: ["more_coming", "done", "nothing"] },
+    status: { type: "string", enum: ["not_started", "more_coming", "done"] },
+  },
+} as const;
+
+const consumablesBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    tokens: { type: "integer", minimum: 0 },
+    storageBytes: { type: "integer", minimum: 0 },
   },
 } as const;
 
@@ -130,18 +140,29 @@ async function accessOr404(
 
 export function projectRoutes(app: FastifyInstance) {
   app.post<{
-    Body: { title: string; eventStart: string; eventEnd?: string | null };
+    Body: {
+      title: string;
+      eventStart: string;
+      eventEnd?: string | null;
+      storageBytes?: number;
+    };
   }>(
     "/projects",
     { schema: { body: projectBody }, preHandler: app.authenticate },
-    async (request) => {
-      const projectId = await createProject({
+    async (request, reply) => {
+      const created = await createProject({
         title: request.body.title,
         eventStart: new Date(request.body.eventStart),
         eventEnd: request.body.eventEnd ? new Date(request.body.eventEnd) : null,
         creatorId: request.authenticated!.user.id,
+        storageBytes: request.body.storageBytes,
       });
-      return projectView(projectId, request.authenticated!.user.id);
+      if ("denial" in created) {
+        return created.denial === "invalid"
+          ? fail(reply, 400, "bad_request")
+          : fail(reply, 409, "capacity_exceeded");
+      }
+      return projectView(created.id, request.authenticated!.user.id);
     },
   );
 
@@ -174,7 +195,6 @@ export function projectRoutes(app: FastifyInstance) {
       title?: string;
       eventStart?: string;
       eventEnd?: string | null;
-      coverItemId?: string | null;
     };
   }>(
     "/projects/:projectId",
@@ -187,11 +207,6 @@ export function projectRoutes(app: FastifyInstance) {
         ...(body.eventEnd === undefined
           ? {}
           : { eventEnd: body.eventEnd === null ? null : new Date(body.eventEnd) }),
-        ...(body.coverItemId === undefined
-          ? {}
-          : {
-              coverItemId: body.coverItemId === null ? null : (body.coverItemId as ProjectItemId),
-            }),
       };
       const projectId = request.params.projectId as ProjectId;
       const result = await updateProject(projectId, request.authenticated!.user.id, patch);
@@ -286,7 +301,7 @@ export function projectRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: ProjectParams;
-    Body: { status: Exclude<ProjectContributionStatus, "not_started"> };
+    Body: { status: ProjectContributionStatus };
   }>(
     "/projects/:projectId/contribution",
     { schema: { body: contributionBody }, preHandler: app.authenticate },
@@ -302,6 +317,27 @@ export function projectRoutes(app: FastifyInstance) {
           : fail(reply, 404, "not_found");
       }
       return { status: result.status };
+    },
+  );
+
+  app.post<{
+    Params: ProjectParams;
+    Body: { tokens?: number; storageBytes?: number };
+  }>(
+    "/projects/:projectId/consumables",
+    { schema: { body: consumablesBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await donateToProject(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        request.body,
+      );
+      if ("denial" in result) {
+        if (result.denial === "invalid") return fail(reply, 400, "bad_request");
+        if (result.denial === "insufficient") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      return { project: result.project, member: result.member };
     },
   );
 
@@ -340,7 +376,7 @@ export function projectRoutes(app: FastifyInstance) {
           config.rate.windowMs(),
         )
       ) {
-        return fail(reply, 429, "limit_exceeded");
+        return fail(reply, 429, "capacity_exceeded");
       }
       const result = await rotateProjectInvite({
         projectId: request.params.projectId as ProjectId,
@@ -402,7 +438,7 @@ export function projectRoutes(app: FastifyInstance) {
       if (result.invite.kind === "memory") {
         return projectView(result.invite.projectId, request.authenticated!.user.id);
       }
-      return { ok: true };
+      return { joined: true };
     },
   );
 }

@@ -9,6 +9,7 @@ import type {
   MediaPlace,
   MediaVideoFormat,
 } from "../../types/mediaItem.ts";
+import { adjustStorageSpend } from "../consumable/commands.ts";
 import { accessOf, isAdmin } from "../project/access.ts";
 import { getItemByMedia } from "../project/item/queries.ts";
 import { type MediaRow, mediaColumns, toMedia } from "./internal.ts";
@@ -186,6 +187,9 @@ export async function removeMedia(
       : []),
   ];
   const keys = await sql.begin(async (tx) => {
+    if (mediaId === item.mediaId && media.uploadedBy) {
+      await adjustStorageSpend(tx, projectId, media.uploadedBy, -media.bytes);
+    }
     await tx`delete from project_items where project_id = ${projectId} and id = ${item.id}`;
     await tx`
       delete from jobs

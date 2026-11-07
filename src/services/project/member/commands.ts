@@ -5,6 +5,8 @@ import type {
   ProjectMember,
   ProjectMemberRole,
 } from "../../../types/project.ts";
+import { adjustStorageSpend } from "../../consumable/commands.ts";
+import { type ConsumableRow, toConsumable } from "../../consumable/queries.ts";
 import { deleteMediaRows } from "../../media/commands.ts";
 import { findByUsername } from "../../user/queries.ts";
 import { accessOf, canContribute, isAdmin } from "../access.ts";
@@ -23,12 +25,15 @@ export async function addMember(
   if (role === "admin" && !isAdmin(access)) return { denial: "forbidden" };
   const target = await findByUsername(username);
   if (!target) return { denial: "not_found" };
-  const [member] = await sql<ProjectMember[]>`
+  const [row] = await sql<(Omit<ProjectMember, "consumables"> & ConsumableRow)[]>`
     with member as (
       insert into project_members (project_id, user_id, role, invited_by)
       values (${projectId}, ${target.id}, ${role}, ${viewerId})
       on conflict (project_id, user_id) do nothing
-      returning user_id, role, contribution, joined_at, invited_by
+      returning
+        user_id, role, contribution,
+        tokens, tokens_spend, storage_bytes, storage_spend,
+        joined_at, invited_by
     )
     select
       m.user_id as "userId",
@@ -36,19 +41,29 @@ export async function addMember(
       u.name,
       m.role,
       m.contribution,
+      m.tokens,
+      m.tokens_spend as "tokensSpend",
+      m.storage_bytes as "storageBytes",
+      m.storage_spend as "storageSpend",
       m.joined_at as "joinedAt",
       m.invited_by as "invitedBy"
     from member m
     join users u on u.id = m.user_id
   `;
-  if (!member) return { denial: "conflict" };
-  return { member };
+  if (!row) return { denial: "conflict" };
+  const { tokens, tokensSpend, storageBytes, storageSpend, ...member } = row;
+  return {
+    member: {
+      ...member,
+      consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
+    },
+  };
 }
 
 export async function setContribution(
   projectId: ProjectId,
   viewerId: UserId,
-  status: Exclude<ProjectContributionStatus, "not_started">,
+  status: ProjectContributionStatus,
 ): Promise<{ status: ProjectContributionStatus } | MemberDenial> {
   const access = await accessOf(projectId, viewerId);
   if (!access) return { denial: "not_found" };
@@ -121,6 +136,14 @@ export async function removeMember(
       ...(row.previewId ? [row.previewId] : []),
     ]);
     if (itemIds.length > 0) {
+      const [spent] = await tx<{ bytes: string }[]>`
+        select coalesce(sum(bytes), 0)::text as bytes
+        from media_items
+        where id = any(${mediaIds}) and parent_media_id is null and uploaded_by = ${targetId}
+      `;
+      if (spent && Number(spent.bytes) > 0) {
+        await adjustStorageSpend(tx, projectId, targetId, -Number(spent.bytes));
+      }
       await tx`delete from project_items where id = any(${itemIds})`;
     }
     await tx`

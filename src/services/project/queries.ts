@@ -2,15 +2,37 @@ import { config } from "../../config.ts";
 import { sql } from "../../integrations/db/index.ts";
 import { downloadUrl } from "../../integrations/storage/s3.ts";
 import type { Page } from "../../types/api.ts";
+import type { Consumable } from "../../types/consumables.ts";
 import type { ProjectId, UserId } from "../../types/id.ts";
 import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
+
+type ConsumableRow = {
+  tokens: string;
+  tokensSpend: string;
+  storageBytes: string;
+  storageSpend: string;
+};
+
+const consumableColumns = sql`
+  p.tokens,
+  p.tokens_spend as "tokensSpend",
+  p.storage_bytes as "storageBytes",
+  p.storage_spend as "storageSpend"
+`;
+
+function toConsumable(row: ConsumableRow): Consumable {
+  return {
+    tokens: { tokens: Number(row.tokens), spend: Number(row.tokensSpend) },
+    storage: { bytes: Number(row.storageBytes), spend: Number(row.storageSpend) },
+  };
+}
 
 export type ProjectCardView = {
   id: ProjectId;
   title: string;
   eventStart: Date;
   eventEnd: Date | null;
-  coverUrl: string | null;
+  consumables: Consumable;
   previewUrls: string[];
   itemCount: number;
   memberCount: number;
@@ -19,10 +41,8 @@ export type ProjectCardView = {
   myContribution: ProjectContributionStatus;
 };
 
-type CardRow = Omit<ProjectCardView, "coverUrl" | "previewUrls"> & {
-  coverKey: string | null;
-  previewKeys: string[];
-};
+type CardRow = Omit<ProjectCardView, "consumables" | "previewUrls"> &
+  ConsumableRow & { previewKeys: string[] };
 
 export async function homeCards(
   viewerId: UserId,
@@ -35,6 +55,7 @@ export async function homeCards(
       p.title,
       p.event_start as "eventStart",
       p.event_end as "eventEnd",
+      ${consumableColumns},
       pm.role as "myRole",
       pm.contribution as "myContribution",
       (
@@ -46,18 +67,11 @@ export async function homeCards(
       (
         select count(*)::int
         from project_members m
-        where m.project_id = p.id and m.contribution in ('done', 'nothing')
+        where m.project_id = p.id and m.contribution = 'done'
       ) as "sharedCount",
-      cover.storage_key as "coverKey",
       coalesce(previews.keys, '{}') as "previewKeys"
     from projects p
     join project_members pm on pm.project_id = p.id and pm.user_id = ${viewerId}
-    left join lateral (
-      select m.storage_key
-      from project_items ci
-      join media_items m on m.id = ci.thumbnail_id
-      where ci.id = p.cover_item_id
-    ) cover on true
     left join lateral (
       select array_agg(key) as keys
       from (
@@ -74,18 +88,21 @@ export async function homeCards(
   `;
   const ttl = config.media.downloadTtlSeconds();
   const items = await Promise.all(
-    rows.slice(0, limit).map(async ({ coverKey, previewKeys, ...card }) => ({
-      ...card,
-      coverUrl: coverKey ? await downloadUrl(coverKey, ttl) : null,
-      previewUrls: await Promise.all(previewKeys.map((key) => downloadUrl(key, ttl))),
-    })),
+    rows.slice(0, limit).map(async (row) => {
+      const { previewKeys, tokens, tokensSpend, storageBytes, storageSpend, ...card } = row;
+      return {
+        ...card,
+        consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
+        previewUrls: await Promise.all(previewKeys.map((key) => downloadUrl(key, ttl))),
+      };
+    }),
   );
   return { items, nextOffset: rows.length > limit ? offset + limit : null };
 }
 
 export type ProjectView = Omit<ProjectCardView, "previewUrls">;
 
-type ProjectRow = Omit<ProjectView, "coverUrl"> & { coverKey: string | null };
+type ProjectRow = Omit<ProjectView, "consumables"> & ConsumableRow;
 
 export async function projectView(
   projectId: ProjectId,
@@ -97,6 +114,7 @@ export async function projectView(
       p.title,
       p.event_start as "eventStart",
       p.event_end as "eventEnd",
+      ${consumableColumns},
       pm.role as "myRole",
       pm.contribution as "myContribution",
       (
@@ -108,24 +126,17 @@ export async function projectView(
       (
         select count(*)::int
         from project_members m
-        where m.project_id = p.id and m.contribution in ('done', 'nothing')
-      ) as "sharedCount",
-      cover.storage_key as "coverKey"
+        where m.project_id = p.id and m.contribution = 'done'
+      ) as "sharedCount"
     from projects p
     join project_members pm on pm.project_id = p.id and pm.user_id = ${viewerId}
-    left join lateral (
-      select m.storage_key
-      from project_items ci
-      join media_items m on m.id = ci.thumbnail_id
-      where ci.id = p.cover_item_id
-    ) cover on true
     where p.id = ${projectId}
   `;
   if (!row) return undefined;
-  const { coverKey, ...view } = row;
+  const { tokens, tokensSpend, storageBytes, storageSpend, ...view } = row;
   return {
     ...view,
-    coverUrl: coverKey ? await downloadUrl(coverKey, config.media.downloadTtlSeconds()) : null,
+    consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
   };
 }
 

@@ -1,24 +1,18 @@
 import { sql } from "../../integrations/db/index.ts";
+import type { Consumable } from "../../types/consumables.ts";
 import type { UserId } from "../../types/id.ts";
 import type { User, UserPublic } from "../../types/user.ts";
-import { getLimit } from "../limit/queries.ts";
+import { getConsumables } from "../consumable/queries.ts";
 import { isValidUsername, publicColumns, userColumns } from "./internal.ts";
 
 export type AccountView = User & {
-  limits: { tokens: string; storageBytes: string };
+  consumables: Consumable;
 };
 
 export async function accountView(userId: UserId): Promise<AccountView | undefined> {
   const user = await getUser(userId);
   if (!user) return undefined;
-  const limits = await getLimit(userId);
-  return {
-    ...user,
-    limits: {
-      tokens: String(limits.tokens),
-      storageBytes: String(limits.storageBytes),
-    },
-  };
+  return { ...user, consumables: await getConsumables(userId) };
 }
 
 export async function getUser(id: UserId): Promise<User | undefined> {
