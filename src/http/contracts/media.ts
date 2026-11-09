@@ -55,12 +55,33 @@ export type MediaResponse =
       camera: null;
     });
 
-export type AnalysisResponse = {
-  description: string;
-  speech: string | null;
-  tags: string[];
-  score: number;
+export type AnalysisSegment = {
+  secStart: number;
+  secEnd: number;
+  text: string;
 };
+
+export type AnalysisFrame = {
+  second: number;
+  text: string;
+};
+
+export type AnalysisResponse =
+  | {
+      description: string;
+      score: number;
+      transcription: AnalysisSegment[];
+      frames: AnalysisFrame[];
+    }
+  | {
+      description: string;
+      score: number;
+      transcription: AnalysisSegment[];
+    }
+  | {
+      description: string;
+      score: number;
+    };
 
 export type ItemResponse = {
   item: {

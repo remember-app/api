@@ -1,11 +1,4 @@
-import type {
-  MediaId,
-  MontageId,
-  ProjectId,
-  ProjectItemId,
-  TemplateId,
-  UserId,
-} from "./id.ts";
+import type { MediaId, MontageId, ProjectId, ProjectItemId, TemplateId, UserId } from "./id.ts";
 import type { MediaDimension } from "./mediaItem.ts";
 
 export type MontageStatus = "queued" | "processing" | "done" | "failed";
@@ -28,9 +21,10 @@ export type MontageManifest = {
   editingParams: MontageEditingStageParams | null;
 };
 
-export type MontagePreparationStageConfig = MontageSetting & MontageSource & {
-  templateId: TemplateId | null;
-};
+export type MontagePreparationStageConfig = MontageSetting &
+  MontageSource & {
+    templateId: TemplateId | null;
+  };
 
 export type MontageDirectingStageInput = {
   mergedMontageData: Record<string, unknown>;

@@ -6,10 +6,11 @@ import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   createMontage,
   getMontage,
-  listJournal,
-  listMontages,
+  getMontageView,
+  listMontageViews,
   listTemplates,
   type MontagePaySource,
+  montageView,
 } from "../../services/montage/montage.ts";
 import { accessOf, isAdmin } from "../../services/project/access.ts";
 import { removeTokens } from "../../services/push/commands.ts";
@@ -132,7 +133,7 @@ export function montageRoutes(app: FastifyInstance) {
         }
         return fail(reply, 400, "bad_request", result.problems);
       }
-      return result.montage;
+      return montageView(result.montage);
     },
   );
 
@@ -143,7 +144,7 @@ export function montageRoutes(app: FastifyInstance) {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
       const { limit, offset } = pageOf(request.query);
-      return listMontages(request.params.projectId as ProjectId, limit, offset);
+      return listMontageViews(request.params.projectId as ProjectId, limit, offset);
     },
   );
 
@@ -156,28 +157,11 @@ export function montageRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.params.montageId)) {
         return fail(reply, 404, "not_found");
       }
-      const montage = await getMontage(request.params.montageId as MontageId);
+      const montage = await getMontageView(request.params.montageId as MontageId);
       if (!montage || montage.projectId !== request.params.projectId) {
         return fail(reply, 404, "not_found");
       }
       return montage;
-    },
-  );
-
-  app.get<{
-    Params: MontageParams;
-    Querystring: { limit?: number; offset?: number };
-  }>(
-    "/projects/:projectId/montages/:montageId/journal",
-    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
-    async (request, reply) => {
-      const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
-      if (!access) return fail(reply, 404, "not_found");
-      if (!uuidPattern.test(request.params.montageId)) {
-        return fail(reply, 404, "not_found");
-      }
-      const { limit, offset } = pageOf(request.query);
-      return listJournal(request.params.montageId as MontageId, limit, offset);
     },
   );
 

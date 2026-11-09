@@ -1,7 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
 import { page } from "../../pagination.ts";
-import type { Page } from "../../types/api.ts";
-import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
+import type { MontageId, MovieId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type {
   Montage,
   MontageManifest,
@@ -26,24 +25,65 @@ const columns = sql`
   error
 `;
 
+const viewColumns = sql`
+  m.id,
+  m.project_id as "projectId",
+  m.created_by as "createdBy",
+  m.status,
+  m.manifest,
+  m.created_at as "createdAt",
+  m.error,
+  mv.id as "movieId"
+`;
+
+type MontageRow = Montage & { movieId: MovieId | null };
+
+const stageOf = (montage: Montage): MontageStage => {
+  if (montage.status === "queued") return "analysis";
+  if (!montage.manifest?.directingInput) return "preparation";
+  if (!montage.manifest?.editingParams) return "directing";
+  return "editing";
+};
+
+export const montageView = (montage: Montage, movieId: MovieId | null = null) => ({
+  id: montage.id,
+  projectId: montage.projectId,
+  createdBy: montage.createdBy,
+  status: montage.status,
+  stage: stageOf(montage),
+  createdAt: montage.createdAt,
+  error: montage.error,
+  itemIds: montage.manifest?.preparationConfig?.includeItemIds ?? [],
+  movieId,
+});
+
 export async function getMontage(id: MontageId): Promise<Montage | undefined> {
   const [row] = await sql<Montage[]>`select ${columns} from montages where id = ${id}`;
   return row;
 }
 
-export async function listMontages(
-  projectId: ProjectId,
-  limit: number,
-  offset: number,
-): Promise<Page<Montage>> {
-  const rows = await sql<Montage[]>`
-    select ${columns}
-    from montages
-    where project_id = ${projectId}
-    order by created_at desc
+export async function getMontageView(id: MontageId) {
+  const [row] = await sql<MontageRow[]>`
+    select ${viewColumns}
+    from montages m left join movies mv on mv.montage_id = m.id
+    where m.id = ${id}
+  `;
+  return row && montageView(row, row.movieId);
+}
+
+export async function listMontageViews(projectId: ProjectId, limit: number, offset: number) {
+  const rows = await sql<MontageRow[]>`
+    select ${viewColumns}
+    from montages m left join movies mv on mv.montage_id = m.id
+    where m.project_id = ${projectId}
+    order by m.created_at desc, m.id
     limit ${limit + 1} offset ${offset}
   `;
-  return page(rows, limit, offset);
+  return page(
+    rows.map((row) => montageView(row, row.movieId)),
+    limit,
+    offset,
+  );
 }
 
 export type MontagePaySource = "project" | "user";
@@ -128,41 +168,6 @@ export async function setMontageStatus(
     update montages set status = ${status}, error = ${error} where id = ${id} returning id
   `;
   return rows.length > 0;
-}
-
-export async function addJournalEntry(
-  montageId: MontageId,
-  stage: MontageStage,
-  entry: unknown,
-): Promise<number> {
-  const [row] = await sql<{ id: number }[]>`
-    insert into montage_journal_entries (montage_id, stage, entry)
-    values (${montageId}, ${stage}, ${sql.json(entry as never)})
-    returning id
-  `;
-  if (!row) throw new Error("journal insert returned no row");
-  return row.id;
-}
-
-type JournalRow = {
-  id: number;
-  stage: MontageStage;
-  entry: unknown;
-};
-
-export async function listJournal(
-  montageId: MontageId,
-  limit: number,
-  offset: number,
-): Promise<Page<{ id: number; stage: MontageStage; entry: unknown }>> {
-  const rows = await sql<JournalRow[]>`
-    select id, stage, entry
-    from montage_journal_entries
-    where montage_id = ${montageId}
-    order by id
-    limit ${limit + 1} offset ${offset}
-  `;
-  return page(rows, limit, offset);
 }
 
 export async function listTemplates(): Promise<MontageTemplate[]> {

@@ -4,6 +4,8 @@ export * from "./common.ts";
 export * from "./contact.ts";
 export * from "./label.ts";
 export * from "./media.ts";
+export * from "./montage.ts";
+export * from "./movie.ts";
 export * from "./project.ts";
 export * from "./push.ts";
 export * from "./song.ts";
