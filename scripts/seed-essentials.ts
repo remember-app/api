@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { sql } from "../src/integrations/db/index.ts";
 import { putObject, storageConfigured } from "../src/integrations/storage/s3.ts";
-import { DEFAULT_INVITE_REWARDS, INVITE_REWARDS_KEY } from "../src/services/settings/defaults.ts";
+import {
+  ANALYSIS_PRICE_KEY,
+  DEFAULT_ANALYSIS_PRICE,
+  DEFAULT_INVITE_REWARDS,
+  INVITE_REWARDS_KEY,
+} from "../src/services/settings/defaults.ts";
 import { SYSTEM_MEDIA, systemMediaKey } from "../src/services/system/media.ts";
 
 async function main(): Promise<void> {
@@ -37,6 +42,12 @@ async function main(): Promise<void> {
     on conflict (key) do nothing
   `;
   console.log(`essentials: setting ${INVITE_REWARDS_KEY}`);
+  await sql`
+    insert into settings (key, value)
+    values (${ANALYSIS_PRICE_KEY}, ${sql.json(DEFAULT_ANALYSIS_PRICE)})
+    on conflict (key) do nothing
+  `;
+  console.log(`essentials: setting ${ANALYSIS_PRICE_KEY}`);
 }
 
 main()

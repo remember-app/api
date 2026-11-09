@@ -7,4 +7,10 @@ export type Song = {
   mediaId: MediaId;
   projectId: ProjectId | null;
   uploadedBy: UserId | null;
+  analysis: SongAnalysis | null;
+};
+
+export type SongAnalysis = {
+  transcription: { secStart: number; secEnd: number; text: string }[];
+  melody: { secStart: number; secEnd: number; text: string }[];
 };

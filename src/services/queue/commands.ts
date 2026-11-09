@@ -1,10 +1,17 @@
 import { type Db, sql } from "../../integrations/db/index.ts";
 
-export type JobKind = "media_derive" | "montage";
+export type JobKind = "media_derive" | "media_analysis" | "montage";
 
-export async function enqueue(kind: JobKind, ref: string, db: Db = sql): Promise<number> {
+export async function enqueue(
+  kind: JobKind,
+  ref: string,
+  db: Db = sql,
+  dependsOn: number[] = [],
+): Promise<number> {
   const [row] = await db<{ id: number }[]>`
-    insert into jobs (kind, ref) values (${kind}, ${ref}) returning id
+    insert into jobs (kind, ref, depends_on)
+    values (${kind}, ${ref}, ${dependsOn}::bigint[])
+    returning id
   `;
   if (!row) throw new Error("job insert returned no row");
   return row.id;

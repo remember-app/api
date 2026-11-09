@@ -60,10 +60,21 @@ export type ProjectItemCommon = {
   createdAt: Date;
 };
 
-export type ProjectMediaItemAIAnalysis = {
+export type ProjectMediaItemAIAnalysis = ProjectMediaItemAIAnalysisPhoto | ProjectMediaItemAIAnalysisVideo | ProjectMediaItemAIAnalysisAudio;
+
+export type ProjectMediaItemAIAnalysisAudio = ProjectMediaItemAIAnalysisCommon & {
+  transcription: { secStart: number; secEnd: number; text: string }[];
+};
+
+export type ProjectMediaItemAIAnalysisVideo = ProjectMediaItemAIAnalysisCommon & {
+  transcription: { secStart: number; secEnd: number; text: string }[];
+  frames: { second: number; text: string }[];
+};
+
+export type ProjectMediaItemAIAnalysisPhoto = ProjectMediaItemAIAnalysisCommon & {};
+
+export type ProjectMediaItemAIAnalysisCommon = {
   description: string;
-  speech: string | null;
-  tags: string[];
   score: number;
 };
 

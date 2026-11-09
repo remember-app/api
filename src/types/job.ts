@@ -1,10 +1,15 @@
-import type { MontageId, UploadId } from "./id.ts";
+import type { JobId, MediaId, MontageId, UploadId } from "./id.ts";
 
-export type Job = JobMediaDerive | JobMontage;
+export type Job = JobMediaDerive | JobMediaAnalysis | JobMontage;
 
 export type JobMediaDerive = JobBase & {
   kind: "media_derive";
   ref: UploadId;
+};
+
+export type JobMediaAnalysis = JobBase & {
+  kind: "media_analysis";
+  ref: MediaId;
 };
 
 export type JobMontage = JobBase & {
@@ -13,11 +18,12 @@ export type JobMontage = JobBase & {
 };
 
 export type JobBase = {
-  id: number;
+  id: JobId;
   status: JobStatus;
   attempts: number;
   runAfter: Date;
   error: string | null;
+  dependsOn: JobId[] | null;
   createdAt: Date;
   updatedAt: Date;
 };
