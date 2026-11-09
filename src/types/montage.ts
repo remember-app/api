@@ -33,7 +33,7 @@ export type MontagePreparationStageConfig = MontageSetting & MontageSource & {
 };
 
 export type MontageDirectingStageInput = {
-  mergedMontageData: string;
+  mergedMontageData: Record<string, unknown>;
 };
 
 export type MontageEditingStageParams = {
