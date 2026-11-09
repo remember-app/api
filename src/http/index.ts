@@ -11,6 +11,7 @@ import { privacyRoutes } from "./routes/privacy.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { pushRoutes } from "./routes/push.ts";
 import { songRoutes } from "./routes/songs.ts";
+import { systemRoutes } from "./routes/system.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
 import { userRoutes } from "./routes/users.ts";
 
@@ -31,6 +32,7 @@ export function registerRoutes(app: FastifyInstance): void {
       movieRoutes(v1);
       pushRoutes(v1);
       contactRoutes(v1);
+      systemRoutes(v1);
     },
     { prefix: "/v1" },
   );

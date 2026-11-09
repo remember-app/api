@@ -7,5 +7,6 @@ export * from "./media.ts";
 export * from "./project.ts";
 export * from "./push.ts";
 export * from "./song.ts";
+export * from "./system.ts";
 export * from "./upload.ts";
 export * from "./user.ts";

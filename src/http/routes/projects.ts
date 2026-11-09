@@ -94,22 +94,6 @@ const appInviteBody = {
   properties: {
     maxUses: { type: ["integer", "null"], minimum: 1 },
     expiresAt: { type: ["string", "null"], format: "date-time" },
-    senderReward: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        tokens: { type: "integer", minimum: 0 },
-        storageBytes: { type: "integer", minimum: 0 },
-      },
-    },
-    inviteeReward: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        tokens: { type: "integer", minimum: 0 },
-        storageBytes: { type: "integer", minimum: 0 },
-      },
-    },
   },
 } as const;
 
@@ -398,8 +382,6 @@ export function projectRoutes(app: FastifyInstance) {
     Body: {
       maxUses?: number | null;
       expiresAt?: string | null;
-      senderReward?: { tokens?: number; storageBytes?: number };
-      inviteeReward?: { tokens?: number; storageBytes?: number };
     };
   }>(
     "/invites/app",
@@ -409,14 +391,6 @@ export function projectRoutes(app: FastifyInstance) {
         createdBy: request.authenticated!.user.id,
         maxUses: request.body.maxUses ?? null,
         expiresAt: request.body.expiresAt ? new Date(request.body.expiresAt) : null,
-        senderReward: {
-          tokens: request.body.senderReward?.tokens ?? 0,
-          storageBytes: request.body.senderReward?.storageBytes ?? 0,
-        },
-        inviteeReward: {
-          tokens: request.body.inviteeReward?.tokens ?? 0,
-          storageBytes: request.body.inviteeReward?.storageBytes ?? 0,
-        },
       });
       return { token: invite.token, maxUses: invite.maxUses };
     },

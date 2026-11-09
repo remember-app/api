@@ -5,8 +5,9 @@ import type { Invite, InviteApp, InviteProject } from "../../types/invite.ts";
 import type { ProjectMemberRole } from "../../types/project.ts";
 import { grant } from "../consumable/commands.ts";
 import { accessOf, canContribute } from "../project/access.ts";
+import { inviteRewards } from "../settings/settings.ts";
 import { columns, type InviteRow, toInvite } from "./internal.ts";
-import { liveProjectInvite } from "./queries.ts";
+import { liveAppInvite, liveProjectInvite } from "./queries.ts";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -100,39 +101,21 @@ export type NewAppInvite = {
   createdBy: UserId;
   maxUses: number | null;
   expiresAt: Date | null;
-  senderReward: { tokens: number; storageBytes: number };
-  inviteeReward: { tokens: number; storageBytes: number };
 };
 
 export async function createAppInvite(input: NewAppInvite): Promise<InviteApp> {
+  const live = await liveAppInvite(input.createdBy);
+  if (live) return live;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const [row] = await sql<InviteRow[]>`
-      insert into invites (
-        token,
-        kind,
-        created_by,
-        max_uses,
-        expires_at,
-        sender_reward_tokens,
-        sender_reward_storage_bytes,
-        invitee_reward_tokens,
-        invitee_reward_storage_bytes
-      )
-      values (
-        ${mintToken()},
-        'app',
-        ${input.createdBy},
-        ${input.maxUses},
-        ${input.expiresAt},
-        ${input.senderReward.tokens},
-        ${input.senderReward.storageBytes},
-        ${input.inviteeReward.tokens},
-        ${input.inviteeReward.storageBytes}
-      )
+      insert into invites (token, kind, created_by, max_uses, expires_at)
+      values (${mintToken()}, 'app', ${input.createdBy}, ${input.maxUses}, ${input.expiresAt})
       on conflict do nothing
       returning ${columns}
     `;
     if (row) return toInvite(row) as InviteApp;
+    const raced = await liveAppInvite(input.createdBy);
+    if (raced) return raced;
   }
   throw new Error("could not mint a unique app invite");
 }
@@ -142,6 +125,7 @@ export type InviteDenialReason = "not_found" | "expired" | "exhausted";
 export type AcceptResult = { invite: Invite } | { denial: InviteDenialReason };
 
 export async function acceptInvite(token: string, userId: UserId): Promise<AcceptResult> {
+  const rewards = await inviteRewards();
   return sql.begin(async (tx) => {
     const [row] = await tx<InviteRow[]>`
       select ${columns} from invites where token = ${token} for update
@@ -152,6 +136,10 @@ export async function acceptInvite(token: string, userId: UserId): Promise<Accep
     if (invite.expiresAt !== null && invite.expiresAt <= new Date()) {
       return { denial: "expired" };
     }
+    const [prior] = await tx`
+      select 1 from invite_uses where invite_id = ${invite.id} and user_id = ${userId}
+    `;
+    if (prior) return { invite };
     if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) {
       return { denial: "exhausted" };
     }
@@ -164,6 +152,11 @@ export async function acceptInvite(token: string, userId: UserId): Promise<Accep
       `;
       if (already) return { invite };
     }
+    await tx`
+      insert into invite_uses (invite_id, user_id)
+      values (${invite.id}, ${userId})
+      on conflict do nothing
+    `;
     const [used] = await tx<{ id: InviteId }[]>`
       update invites
       set used_count = used_count + 1
@@ -171,11 +164,6 @@ export async function acceptInvite(token: string, userId: UserId): Promise<Accep
       returning id
     `;
     if (!used) return { denial: "exhausted" };
-    await tx`
-      insert into invite_uses (invite_id, user_id)
-      values (${invite.id}, ${userId})
-      on conflict do nothing
-    `;
     if (invite.kind === "memory") {
       await tx`
         insert into project_members (project_id, user_id, role, invited_by)
@@ -183,8 +171,8 @@ export async function acceptInvite(token: string, userId: UserId): Promise<Accep
         on conflict (project_id, user_id) do nothing
       `;
     } else {
-      await grant(userId, invite.inviteeReward);
-      await grant(invite.createdBy, invite.senderReward);
+      await grant(userId, rewards.invitee);
+      await grant(invite.createdBy, rewards.sender);
       await tx`
         insert into contacts (owner_id, contact_id) values
           (${userId}, ${invite.createdBy}),

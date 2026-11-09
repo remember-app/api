@@ -12,4 +12,4 @@ const run = (script: string): void => {
 };
 
 run("scripts/migrate.ts");
-run("scripts/seed.ts");
+run("scripts/seed-essentials.ts");

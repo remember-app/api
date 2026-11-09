@@ -14,11 +14,7 @@ export const columns = sql`
   max_uses as "maxUses",
   used_count as "usedCount",
   project_id as "projectId",
-  role,
-  sender_reward_tokens::float8 as "senderRewardTokens",
-  sender_reward_storage_bytes::float8 as "senderRewardStorageBytes",
-  invitee_reward_tokens::float8 as "inviteeRewardTokens",
-  invitee_reward_storage_bytes::float8 as "inviteeRewardStorageBytes"
+  role
 `;
 
 export type InviteRow = {
@@ -33,10 +29,6 @@ export type InviteRow = {
   usedCount: number;
   projectId: ProjectId | null;
   role: ProjectMemberRole | null;
-  senderRewardTokens: number | null;
-  senderRewardStorageBytes: number | null;
-  inviteeRewardTokens: number | null;
-  inviteeRewardStorageBytes: number | null;
 };
 
 export const toInvite = (row: InviteRow): Invite => {
@@ -56,16 +48,5 @@ export const toInvite = (row: InviteRow): Invite => {
     }
     return { ...base, kind: "memory", projectId: row.projectId, role: row.role };
   }
-  return {
-    ...base,
-    kind: "app",
-    senderReward: {
-      tokens: row.senderRewardTokens ?? 0,
-      storageBytes: row.senderRewardStorageBytes ?? 0,
-    },
-    inviteeReward: {
-      tokens: row.inviteeRewardTokens ?? 0,
-      storageBytes: row.inviteeRewardStorageBytes ?? 0,
-    },
-  };
+  return { ...base, kind: "app" };
 };

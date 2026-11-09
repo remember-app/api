@@ -83,16 +83,9 @@ export type ProjectInviteResponse = {
   role: Role;
 };
 
-export type AppInviteReward = {
-  tokens?: number;
-  storageBytes?: number;
-};
-
 export type AppInviteRequest = {
   maxUses?: number | null;
   expiresAt?: string | null;
-  senderReward?: AppInviteReward;
-  inviteeReward?: AppInviteReward;
 };
 
 export type AppInviteResponse = {

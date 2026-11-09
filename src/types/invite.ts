@@ -11,19 +11,12 @@ export type InviteProject = InviteBase & {
 
 export type InviteApp = InviteBase & {
   kind: "app";
-  senderReward: InviteReward;
-  inviteeReward: InviteReward;
 };
 
 export type InviteUse = {
   inviteId: InviteId;
   userId: UserId;
   usedAt: Date;
-};
-
-export type InviteReward = {
-  tokens: number;
-  storageBytes: number;
 };
 
 export type InviteBase = {
