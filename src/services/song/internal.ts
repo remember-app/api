@@ -6,5 +6,6 @@ export const songColumns = sql`
   author,
   media_id as "mediaId",
   project_id as "projectId",
-  uploaded_by as "uploadedBy"
+  uploaded_by as "uploadedBy",
+  analysis
 `;

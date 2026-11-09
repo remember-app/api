@@ -1,12 +1,41 @@
 import { sql } from "../../integrations/db/index.ts";
-import type { ProjectId, ProjectItemId } from "../../types/id.ts";
-import type { MontageConfig } from "../../types/montage.ts";
+import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
+import type { MediaKind } from "../../types/mediaItem.ts";
+import type { MontageSetting, MontageSource } from "../../types/montage.ts";
 import { songsForOrder } from "../song/queries.ts";
 
-export async function validateConfig(
+export type ResolvedOrderItem = {
+  itemId: ProjectItemId;
+  mediaId: MediaId;
+  kind: MediaKind;
+  analyzed: boolean;
+};
+
+export type ResolvedOrderSong = {
+  mediaId: MediaId;
+  analyzed: boolean;
+};
+
+export type ResolvedOrder = {
+  problems: string[];
+  items: ResolvedOrderItem[];
+  songs: ResolvedOrderSong[];
+};
+
+const repeated = (values: readonly string[]): string[] => {
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) twice.add(value);
+    seen.add(value);
+  }
+  return [...twice];
+};
+
+export async function validateOrder(
   projectId: ProjectId,
-  config: MontageConfig,
-): Promise<string[]> {
+  config: MontageSetting & MontageSource,
+): Promise<ResolvedOrder> {
   const problems: string[] = [];
   if (!Number.isInteger(config.targetSeconds) || config.targetSeconds <= 0) {
     problems.push("targetSeconds must be a positive integer");
@@ -14,29 +43,46 @@ export async function validateConfig(
   if (config.dimensions.width <= 0 || config.dimensions.height <= 0) {
     problems.push("dimensions must be positive");
   }
-  const required = new Set(config.requiredMediaIds);
-  for (const id of required) {
-    if (!config.includeMediaIds.includes(id)) {
-      problems.push(`required item ${id} is not among the included items`);
-    }
+  if (config.includeItemIds.length === 0) {
+    problems.push("no items are included");
   }
-  const named = [...new Set([...config.includeMediaIds, ...config.requiredMediaIds])];
-  if (named.length > 0) {
-    const known = await sql<{ id: ProjectItemId }[]>`
-      select id from project_items
-      where project_id = ${projectId} and id = any(${named})
-    `;
-    const found = new Set(known.map((row) => row.id));
-    for (const id of named) {
-      if (!found.has(id)) problems.push(`item ${id} does not belong to this project`);
-    }
+  for (const id of repeated(config.includeItemIds)) {
+    problems.push(`item ${id} is included more than once`);
   }
-  if (config.musicIds !== null && config.musicIds.length > 0) {
-    const songs = await songsForOrder(projectId, config.musicIds);
-    const found = new Set(songs.map((song) => song.mediaId));
-    for (const id of config.musicIds) {
-      if (!found.has(id)) problems.push(`song ${id} is not available to this project`);
-    }
+  for (const id of repeated(config.requiredItemIds)) {
+    problems.push(`required item ${id} is listed more than once`);
   }
-  return problems;
+  for (const id of repeated(config.musicIds)) {
+    problems.push(`song ${id} is listed more than once`);
+  }
+  const included = new Set(config.includeItemIds);
+  for (const id of config.requiredItemIds) {
+    if (!included.has(id)) problems.push(`required item ${id} is not among the included items`);
+  }
+
+  const items = await sql<ResolvedOrderItem[]>`
+    select
+      pi.id as "itemId",
+      pi.media_id as "mediaId",
+      pi.kind,
+      (pi.analysis is not null) as analyzed
+    from project_items pi
+    where pi.project_id = ${projectId} and pi.id = any(${config.includeItemIds})
+  `;
+  const found = new Set(items.map((item) => item.itemId));
+  for (const id of config.includeItemIds) {
+    if (!found.has(id)) problems.push(`item ${id} does not belong to this project`);
+  }
+
+  const songs = await songsForOrder(projectId, config.musicIds);
+  const foundSongs = new Set(songs.map((song) => song.mediaId));
+  for (const id of config.musicIds) {
+    if (!foundSongs.has(id)) problems.push(`song ${id} is not available to this project`);
+  }
+
+  return {
+    problems,
+    items,
+    songs: songs.map((song) => ({ mediaId: song.mediaId, analyzed: song.analysis !== null })),
+  };
 }

@@ -334,7 +334,7 @@ create table jobs (
         )
     ),
     ref uuid not null,
-    depends_on bigint[] not null default '{}',
+    depends_on bigint[],
     status text not null default 'queued' check (
         status in (
             'queued',

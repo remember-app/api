@@ -6,7 +6,7 @@ export async function enqueue(
   kind: JobKind,
   ref: string,
   db: Db = sql,
-  dependsOn: number[] = [],
+  dependsOn: number[] | null = null,
 ): Promise<number> {
   const [row] = await db<{ id: number }[]>`
     insert into jobs (kind, ref, depends_on)
@@ -15,6 +15,20 @@ export async function enqueue(
   `;
   if (!row) throw new Error("job insert returned no row");
   return row.id;
+}
+
+export async function liveJobId(
+  kind: JobKind,
+  ref: string,
+  db: Db = sql,
+): Promise<number | undefined> {
+  const [row] = await db<{ id: number }[]>`
+    select id from jobs
+    where kind = ${kind} and ref = ${ref} and status in ('queued', 'running')
+    order by id
+    limit 1
+  `;
+  return row?.id;
 }
 
 export async function cancelJobs(ref: string): Promise<number> {

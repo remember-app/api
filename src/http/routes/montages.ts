@@ -9,13 +9,14 @@ import {
   listJournal,
   listMontages,
   listTemplates,
+  type MontagePaySource,
 } from "../../services/montage/montage.ts";
 import { accessOf, isAdmin } from "../../services/project/access.ts";
 import { removeTokens } from "../../services/push/commands.ts";
 import { montageFailedMessage, movieReadyMessage } from "../../services/push/messages.ts";
 import { tokensOfProject } from "../../services/push/queries.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
-import type { MontageConfig } from "../../types/montage.ts";
+import type { MontageSetting, MontageSource } from "../../types/montage.ts";
 import { fail } from "../errors.ts";
 import { allow } from "../rate-limit.ts";
 
@@ -26,18 +27,19 @@ type MontageParams = { projectId: string; montageId: string };
 
 const configBody = {
   type: "object",
-  required: ["targetSeconds", "dimensions"],
+  required: ["targetSeconds", "dimensions", "includeItemIds", "musicIds"],
   additionalProperties: false,
   properties: {
     targetSeconds: { type: "integer", minimum: 1 },
     prompt: { type: ["string", "null"], maxLength: 4000 },
-    includeMediaIds: { type: "array", uniqueItems: true, items: { type: "string" } },
-    requiredMediaIds: { type: "array", uniqueItems: true, items: { type: "string" } },
-    musicIds: {
-      type: ["array", "null"],
+    includeItemIds: {
+      type: "array",
+      minItems: 1,
       uniqueItems: true,
       items: { type: "string" },
     },
+    requiredItemIds: { type: "array", uniqueItems: true, items: { type: "string" } },
+    musicIds: { type: "array", uniqueItems: true, items: { type: "string" } },
     dimensions: {
       type: "object",
       required: ["width", "height"],
@@ -52,10 +54,11 @@ const configBody = {
 
 const createBody = {
   type: "object",
-  required: ["config"],
+  required: ["config", "payFrom"],
   additionalProperties: false,
   properties: {
     templateId: { type: ["string", "null"] },
+    payFrom: { type: "string", enum: ["project", "user"] },
     config: configBody,
   },
 } as const;
@@ -87,7 +90,11 @@ export function montageRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: ProjectParams;
-    Body: { templateId?: string | null; config: MontageConfig };
+    Body: {
+      templateId?: string | null;
+      payFrom: MontagePaySource;
+      config: MontageSetting & MontageSource;
+    };
   }>(
     "/projects/:projectId/montages",
     { schema: { body: createBody }, preHandler: app.authenticate },
@@ -109,15 +116,20 @@ export function montageRoutes(app: FastifyInstance) {
         projectId: request.params.projectId as ProjectId,
         createdBy: request.authenticated!.user.id,
         templateId: (request.body.templateId as TemplateId | null | undefined) ?? null,
+        payFrom: request.body.payFrom,
         config: {
-          ...request.body.config,
+          targetSeconds: request.body.config.targetSeconds,
           prompt: request.body.config.prompt ?? null,
-          includeMediaIds: request.body.config.includeMediaIds ?? [],
-          requiredMediaIds: request.body.config.requiredMediaIds ?? [],
-          musicIds: request.body.config.musicIds ?? null,
+          dimensions: request.body.config.dimensions,
+          includeItemIds: request.body.config.includeItemIds,
+          requiredItemIds: request.body.config.requiredItemIds ?? [],
+          musicIds: request.body.config.musicIds,
         },
       });
       if ("denial" in result) {
+        if (result.denial === "insufficient_tokens") {
+          return fail(reply, 409, "capacity_exceeded");
+        }
         return fail(reply, 400, "bad_request", result.problems);
       }
       return result.montage;

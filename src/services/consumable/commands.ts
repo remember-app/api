@@ -66,6 +66,39 @@ export async function spendProjectStorage(
   return true;
 }
 
+export async function spendProjectTokens(
+  db: Db,
+  projectId: ProjectId,
+  userId: UserId,
+  tokens: number,
+): Promise<boolean> {
+  if (!Number.isSafeInteger(tokens) || tokens <= 0) return true;
+  const [row] = await db<{ ok: boolean }[]>`
+    update projects
+    set tokens_spend = tokens_spend + ${tokens}
+    where id = ${projectId} and tokens - tokens_spend >= ${tokens}
+    returning true as ok
+  `;
+  if (!row) return false;
+  await db`
+    update project_members
+    set tokens_spend = tokens_spend + ${tokens}
+    where project_id = ${projectId} and user_id = ${userId}
+  `;
+  return true;
+}
+
+export async function spendUserTokens(db: Db, userId: UserId, tokens: number): Promise<boolean> {
+  if (!Number.isSafeInteger(tokens) || tokens <= 0) return true;
+  const [row] = await db<{ ok: boolean }[]>`
+    update users
+    set tokens_spend = tokens_spend + ${tokens}
+    where id = ${userId} and tokens - tokens_spend >= ${tokens}
+    returning true as ok
+  `;
+  return Boolean(row);
+}
+
 export async function adjustStorageSpend(
   db: Db,
   projectId: ProjectId,

@@ -4,24 +4,26 @@ import type { Page } from "../../types/api.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type {
   Montage,
-  MontageConfig,
-  MontageJournalEntry,
+  MontageManifest,
+  MontageSetting,
+  MontageSource,
   MontageStage,
   MontageStatus,
   MontageTemplate,
 } from "../../types/montage.ts";
-import { enqueue } from "../queue/commands.ts";
-import { validateConfig } from "./validate.ts";
+import { spendProjectTokens, spendUserTokens } from "../consumable/commands.ts";
+import { enqueue, liveJobId } from "../queue/commands.ts";
+import { analysisPrice } from "../settings/settings.ts";
+import { validateOrder } from "./validate.ts";
 
 const columns = sql`
   id,
   project_id as "projectId",
   created_by as "createdBy",
   status,
+  manifest,
   created_at as "createdAt",
-  error,
-  template_id as "templateId",
-  config
+  error
 `;
 
 export async function getMontage(id: MontageId): Promise<Montage | undefined> {
@@ -44,31 +46,77 @@ export async function listMontages(
   return page(rows, limit, offset);
 }
 
+export type MontagePaySource = "project" | "user";
+
 export type NewMontage = {
   projectId: ProjectId;
   createdBy: UserId;
   templateId: TemplateId | null;
-  config: MontageConfig;
+  config: MontageSetting & MontageSource;
+  payFrom: MontagePaySource;
 };
 
-export type CreateMontageResult = { montage: Montage } | { denial: "invalid"; problems: string[] };
+export type CreateMontageResult =
+  | { montage: Montage }
+  | { denial: "invalid"; problems: string[] }
+  | { denial: "insufficient_tokens" };
+
+class InsufficientTokensError extends Error {}
 
 export async function createMontage(input: NewMontage): Promise<CreateMontageResult> {
-  const problems = await validateConfig(input.projectId, input.config);
+  const order = await validateOrder(input.projectId, input.config);
+  const problems = [...order.problems];
+  if (input.templateId !== null && !(await getTemplate(input.templateId))) {
+    problems.push(`template ${input.templateId} does not exist`);
+  }
   if (problems.length > 0) return { denial: "invalid", problems };
-  return sql.begin(async (tx) => {
-    const [row] = await tx<Montage[]>`
-      insert into montages (project_id, created_by, status, template_id, config)
-      values (
-        ${input.projectId}, ${input.createdBy}, 'queued', ${input.templateId},
-        ${sql.json(input.config)}
-      )
+
+  const price = await analysisPrice();
+  try {
+    return await sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext(${input.projectId}::text))`;
+      const manifest: MontageManifest = {
+        preparationConfig: { ...input.config, templateId: input.templateId },
+        directingInput: null,
+        editingParams: null,
+      };
+      const [row] = await tx<Montage[]>`
+      insert into montages (project_id, created_by, status, manifest)
+      values (${input.projectId}, ${input.createdBy}, 'queued', ${sql.json(manifest as never)})
       returning ${columns}
     `;
-    if (!row) throw new Error("montage insert returned no row");
-    await enqueue("montage", row.id, tx);
-    return { montage: row };
-  });
+      if (!row) throw new Error("montage insert returned no row");
+
+      const targets = new Set<string>([
+        ...order.items.filter((item) => !item.analyzed).map((item) => item.mediaId),
+        ...order.songs.filter((song) => !song.analyzed).map((song) => song.mediaId),
+      ]);
+      const dependencies: number[] = [];
+      let fresh = 0;
+      for (const mediaId of targets) {
+        const live = await liveJobId("media_analysis", mediaId, tx);
+        if (live !== undefined) {
+          dependencies.push(live);
+          continue;
+        }
+        dependencies.push(await enqueue("media_analysis", mediaId, tx));
+        fresh += 1;
+      }
+      if (fresh > 0) {
+        const total = price.tokens * fresh;
+        const paid =
+          input.payFrom === "project"
+            ? await spendProjectTokens(tx, input.projectId, input.createdBy, total)
+            : await spendUserTokens(tx, input.createdBy, total);
+        if (!paid) throw new InsufficientTokensError();
+      }
+      await enqueue("montage", row.id, tx, dependencies.length > 0 ? dependencies : null);
+      return { montage: row };
+    });
+  } catch (error) {
+    if (error instanceof InsufficientTokensError) return { denial: "insufficient_tokens" };
+    throw error;
+  }
 }
 
 export async function setMontageStatus(
@@ -85,11 +133,11 @@ export async function setMontageStatus(
 export async function addJournalEntry(
   montageId: MontageId,
   stage: MontageStage,
-  entry: MontageJournalEntry,
+  entry: unknown,
 ): Promise<number> {
   const [row] = await sql<{ id: number }[]>`
     insert into montage_journal_entries (montage_id, stage, entry)
-    values (${montageId}, ${stage}, ${sql.json(entry)})
+    values (${montageId}, ${stage}, ${sql.json(entry as never)})
     returning id
   `;
   if (!row) throw new Error("journal insert returned no row");
@@ -99,14 +147,14 @@ export async function addJournalEntry(
 type JournalRow = {
   id: number;
   stage: MontageStage;
-  entry: MontageJournalEntry;
+  entry: unknown;
 };
 
 export async function listJournal(
   montageId: MontageId,
   limit: number,
   offset: number,
-): Promise<Page<{ id: number; stage: MontageStage; entry: MontageJournalEntry }>> {
+): Promise<Page<{ id: number; stage: MontageStage; entry: unknown }>> {
   const rows = await sql<JournalRow[]>`
     select id, stage, entry
     from montage_journal_entries
