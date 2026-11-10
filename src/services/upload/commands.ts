@@ -140,6 +140,7 @@ export type StartResult =
         | "forbidden"
         | "storage_unavailable"
         | "too_large"
+        | "too_long"
         | "too_many_files"
         | "insufficient_storage"
         | "unsupported_format";
@@ -159,6 +160,15 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if (input.sizeBytes > config.media.maxFileBytes()) return { denial: "too_large" };
   const format = formatOf(input.kind, input.fileName);
   if (!format) return { denial: "unsupported_format" };
+  const maxSeconds =
+    input.kind === "video"
+      ? config.media.maxVideoSeconds()
+      : input.kind === "audio"
+        ? config.media.maxAudioSeconds()
+        : null;
+  if (maxSeconds !== null && input.durationSeconds !== null && input.durationSeconds > maxSeconds) {
+    return { denial: "too_long" };
+  }
   const [open] = await sql<{ count: number }[]>`
     select count(*)::int as count from uploads
     where project_id = ${input.projectId} and status in ('pending', 'uploading')

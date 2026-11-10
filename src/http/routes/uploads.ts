@@ -128,6 +128,7 @@ export function uploadRoutes(app: FastifyInstance) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
         if (result.denial === "not_found") return fail(reply, 404, "not_found");
         if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
+        if (result.denial === "too_long") return fail(reply, 400, "too_long");
         if (result.denial === "insufficient_storage") {
           return fail(reply, 409, "capacity_exceeded");
         }

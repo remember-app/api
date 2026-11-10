@@ -61,6 +61,7 @@ export const config = {
   media: {
     maxFileBytes: () => positive("MEDIA_MAX_FILE_BYTES", 1024 ** 3),
     maxVideoSeconds: () => positive("MEDIA_MAX_VIDEO_SECONDS", 300),
+    maxAudioSeconds: () => positive("MEDIA_MAX_AUDIO_SECONDS", 600),
     projectMaxBytes: () => positive("PROJECT_MAX_STORAGE_BYTES", 10 * 1024 ** 3),
     projectMaxFiles: () => positive("PROJECT_MAX_FILES", 1000),
     partBytes: () => positive("MEDIA_UPLOAD_PART_BYTES", 8 * 1024 ** 2),

@@ -5,6 +5,7 @@ export type ApiErrorCode =
   | "bad_request"
   | "conflict"
   | "capacity_exceeded"
+  | "too_long"
   | "cancelled"
   | "expired"
   | "storage_unavailable"
