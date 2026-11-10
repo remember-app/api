@@ -1,6 +1,5 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { MediaId, MontageId, ProjectId, UploadId, UserId } from "../../types/id.ts";
-import type { Project } from "../../types/project.ts";
 import { deleteMediaRows } from "../media/commands.ts";
 import { accessOf, isAdmin } from "./access.ts";
 
@@ -75,7 +74,11 @@ export async function createProject(input: NewProject): Promise<CreateProjectRes
   });
 }
 
-export type ProjectPatch = Partial<Pick<Project, "title" | "eventStart" | "eventEnd">>;
+export type ProjectPatch = {
+  title?: string;
+  eventStart?: Date;
+  eventEnd?: Date | null;
+};
 
 export type Denial = { denial: "not_found" | "forbidden" };
 

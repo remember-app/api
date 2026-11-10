@@ -1,20 +1,6 @@
 import type { Consumable } from "./consumables.ts";
-import type { LabelId, MediaId, MovieId, ProjectId, ProjectItemId, UserId } from "./id.ts";
+import type { LabelId, MediaId, ProjectId, ProjectItemId, UserId } from "./id.ts";
 import type { MediaKind } from "./mediaItem.ts";
-
-export type Project = {
-  id: ProjectId;
-  title: string;
-  eventStart: Date;
-  eventEnd: Date | null;
-  createdAt: Date;
-  consumables: Consumable;
-  members: ProjectMember[];
-  itemIds: ProjectItemId[];
-  labelIds: LabelId[];
-  musicIds: MediaId[];
-  movieIds: MovieId[];
-};
 
 export type ProjectMember = {
   userId: UserId;
@@ -67,11 +53,12 @@ export type ProjectMediaItemAIAnalysis =
 
 export type ProjectMediaItemAIAnalysisAudio = ProjectMediaItemAIAnalysisCommon & {
   transcription: { secStart: number; secEnd: number; text: string }[];
+  mood: { secStart: number; secEnd: number; text: string }[] | null;
 };
 
 export type ProjectMediaItemAIAnalysisVideo = ProjectMediaItemAIAnalysisCommon & {
-  transcription: { secStart: number; secEnd: number; text: string }[];
   frames: { second: number; text: string }[];
+  transcription: { secStart: number; secEnd: number; text: string }[] | null;
 };
 
 export type ProjectMediaItemAIAnalysisPhoto = ProjectMediaItemAIAnalysisCommon & {};

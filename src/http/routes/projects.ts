@@ -16,6 +16,7 @@ import {
   addMember,
   removeMember,
   setContribution,
+  setRole,
 } from "../../services/project/member/commands.ts";
 import { listMembers } from "../../services/project/member/queries.ts";
 import { homeCards, projectTitle, projectView } from "../../services/project/queries.ts";
@@ -57,6 +58,15 @@ const memberBody = {
   additionalProperties: false,
   properties: {
     username: { type: "string", minLength: 3, maxLength: 30 },
+    role: { type: "string", enum: ["admin", "contributor", "viewer"] },
+  },
+} as const;
+
+const memberRoleBody = {
+  type: "object",
+  required: ["role"],
+  additionalProperties: false,
+  properties: {
     role: { type: "string", enum: ["admin", "contributor", "viewer"] },
   },
 } as const;
@@ -221,6 +231,30 @@ export function projectRoutes(app: FastifyInstance) {
       }
       if (result.storageKeys.length > 0) await deleteObjects(result.storageKeys);
       return { ok: true };
+    },
+  );
+
+  app.patch<{
+    Params: { projectId: string; userId: string };
+    Body: { role: ProjectMemberRole };
+  }>(
+    "/projects/:projectId/members/:userId",
+    { schema: { body: memberRoleBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const targetId = request.params.userId;
+      if (!uuidPattern.test(targetId)) return fail(reply, 404, "not_found");
+      const result = await setRole(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        targetId as UserId,
+        request.body.role,
+      );
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "conflict") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      return result.member;
     },
   );
 

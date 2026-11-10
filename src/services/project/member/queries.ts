@@ -1,7 +1,7 @@
-import { sql } from "../../../integrations/db/index.ts";
+import { type Db, sql } from "../../../integrations/db/index.ts";
 import { page } from "../../../pagination.ts";
 import type { Page } from "../../../types/api.ts";
-import type { ProjectId } from "../../../types/id.ts";
+import type { ProjectId, UserId } from "../../../types/id.ts";
 import type { ProjectMember } from "../../../types/project.ts";
 import { type ConsumableRow, toConsumable } from "../../consumable/queries.ts";
 
@@ -27,6 +27,20 @@ export function toMember(row: MemberRow): ProjectMember {
     ...member,
     consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
   };
+}
+
+export async function memberOf(
+  projectId: ProjectId,
+  userId: UserId,
+  db: Db = sql,
+): Promise<ProjectMember | undefined> {
+  const [row] = await db<MemberRow[]>`
+    select ${memberColumns}
+    from project_members pm
+    join users u on u.id = pm.user_id
+    where pm.project_id = ${projectId} and pm.user_id = ${userId}
+  `;
+  return row && toMember(row);
 }
 
 export async function allMembers(projectId: ProjectId): Promise<ProjectMember[]> {

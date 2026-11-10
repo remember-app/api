@@ -371,6 +371,35 @@ $$;
 create trigger jobs_notify after insert on jobs
     for each statement execute function jobs_notify();
 
+create table ai_requests (
+    id bigserial primary key,
+    media_id uuid references media_items (id) on delete set null,
+    montage_id uuid references montages (id) on delete set null,
+    operation text not null check (
+        operation in ('photo', 'video', 'audio', 'text')
+    ),
+    provider text not null,
+    model text not null,
+    status text not null check (
+        status in ('ok', 'failed')
+    ),
+    input_tokens integer,
+    output_tokens integer,
+    total_tokens integer,
+    cached_tokens integer,
+    reasoning_tokens integer,
+    duration integer,
+    cost_usd numeric(14, 8),
+    error text,
+    created_at timestamptz not null default now()
+);
+
+create index ai_requests_media_idx on ai_requests (media_id);
+
+create index ai_requests_montage_idx on ai_requests (montage_id);
+
+create index ai_requests_created_idx on ai_requests (created_at);
+
 create table push_tokens (
     token text primary key,
     user_id uuid not null references users (id) on delete cascade,

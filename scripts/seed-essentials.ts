@@ -5,7 +5,9 @@ import {
   ANALYSIS_PRICE_KEY,
   DEFAULT_ANALYSIS_PRICE,
   DEFAULT_INVITE_REWARDS,
+  DEFAULT_PROVIDER_RATES,
   INVITE_REWARDS_KEY,
+  PROVIDER_RATES_KEY,
 } from "../src/services/settings/defaults.ts";
 import { SYSTEM_MEDIA, systemMediaKey } from "../src/services/system/media.ts";
 
@@ -91,6 +93,12 @@ async function main(): Promise<void> {
     on conflict (key) do nothing
   `;
   console.log(`essentials: setting ${ANALYSIS_PRICE_KEY}`);
+  await sql`
+    insert into settings (key, value)
+    values (${PROVIDER_RATES_KEY}, ${sql.json(DEFAULT_PROVIDER_RATES)})
+    on conflict (key) do nothing
+  `;
+  console.log(`essentials: setting ${PROVIDER_RATES_KEY}`);
   for (const template of TEMPLATES) {
     await sql`
       insert into montage_templates (id, name, settings, reference_media_id)

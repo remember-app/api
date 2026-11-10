@@ -10,6 +10,7 @@ import { type ConsumableRow, toConsumable } from "../../consumable/queries.ts";
 import { deleteMediaRows } from "../../media/commands.ts";
 import { findByUsername } from "../../user/queries.ts";
 import { accessOf, canContribute, isAdmin } from "../access.ts";
+import { memberOf } from "./queries.ts";
 
 export type MemberDenial = { denial: "not_found" | "forbidden" | "conflict" };
 
@@ -76,6 +77,42 @@ export async function setContribution(
   `;
   if (!row) return { denial: "not_found" };
   return { status: row.contribution };
+}
+
+export async function setRole(
+  projectId: ProjectId,
+  viewerId: UserId,
+  targetId: UserId,
+  role: ProjectMemberRole,
+): Promise<{ member: ProjectMember } | MemberDenial> {
+  const access = await accessOf(projectId, viewerId);
+  if (!access) return { denial: "not_found" };
+  if (!isAdmin(access)) return { denial: "forbidden" };
+  if (targetId === viewerId) return { denial: "conflict" };
+  return sql.begin(async (tx) => {
+    const [current] = await tx<{ role: ProjectMemberRole }[]>`
+      select role from project_members
+      where project_id = ${projectId} and user_id = ${targetId}
+      for update
+    `;
+    if (!current) return { denial: "not_found" };
+    if (current.role !== role) {
+      if (current.role === "admin") {
+        const [admins] = await tx<{ count: string }[]>`
+          select count(*)::text as count
+          from project_members
+          where project_id = ${projectId} and role = 'admin'
+        `;
+        if (Number(admins?.count ?? 0) <= 1) return { denial: "conflict" };
+      }
+      await tx`
+        update project_members set role = ${role}
+        where project_id = ${projectId} and user_id = ${targetId}
+      `;
+    }
+    const member = await memberOf(projectId, targetId, tx);
+    return member ? { member } : { denial: "not_found" };
+  });
 }
 
 async function adminOf(projectId: ProjectId): Promise<UserId | undefined> {

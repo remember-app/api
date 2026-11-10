@@ -55,6 +55,10 @@ export type AddMemberRequest = {
   role: Role;
 };
 
+export type SetMemberRoleRequest = {
+  role: Role;
+};
+
 export type ContributionRequest = {
   status: ContributionStatus;
 };
