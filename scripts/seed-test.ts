@@ -62,13 +62,22 @@ const people: Person[] = [
   { email: "d@x.io", username: "dave", name: "Dave", language: "en" },
 ];
 
-type Photo = {
+type Asset = {
   file: string;
+  kind: "photo" | "video" | "audio";
+  contentType: string;
   daysAgo: number;
   description: string;
   place: { latitude: number; longitude: number } | null;
   labels: string[];
+  durationSeconds?: number;
   by?: string;
+};
+
+type MontageOrder = {
+  targetSeconds: number;
+  prompt: string | null;
+  dimensions: { width: number; height: number };
 };
 
 type Project = {
@@ -78,7 +87,8 @@ type Project = {
   eventEnd: Date | null;
   members: { username: string; role: "admin" | "contributor" | "viewer"; contribution: string }[];
   labels: { name: string; colorHex: string; shared: boolean; owner?: string }[];
-  photos: Photo[];
+  assets: Asset[];
+  montages: MontageOrder[];
 };
 
 const projects: Project[] = [
@@ -97,9 +107,11 @@ const projects: Project[] = [
       { name: "Море", colorHex: "#3b82f6", shared: true },
       { name: "Любимое", colorHex: "#ec4899", shared: false, owner: "alice" },
     ],
-    photos: [
+    assets: [
       {
         file: "party.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 20,
         description: "Первый танец",
         place: { latitude: 55.75, longitude: 37.61 },
@@ -107,6 +119,8 @@ const projects: Project[] = [
       },
       {
         file: "wedding.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 20,
         description: "Церемония",
         place: null,
@@ -115,6 +129,8 @@ const projects: Project[] = [
       },
       {
         file: "dance.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 19,
         description: "Танцы",
         place: null,
@@ -123,10 +139,29 @@ const projects: Project[] = [
       },
       {
         file: "birthday.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 19,
         description: "Гости",
         place: { latitude: 55.76, longitude: 37.62 },
         labels: ["Любимое"],
+      },
+      {
+        file: "song.m4a",
+        kind: "audio",
+        contentType: "audio/mp4",
+        durationSeconds: 8,
+        daysAgo: 19,
+        description: "Первый танец, музыка",
+        place: null,
+        labels: [],
+      },
+    ],
+    montages: [
+      {
+        targetSeconds: 30,
+        prompt: "Тёплый фильм о первом танце и гостях",
+        dimensions: { width: 1080, height: 1920 },
       },
     ],
   },
@@ -137,22 +172,51 @@ const projects: Project[] = [
     eventEnd: daysAgo(6),
     members: [{ username: "alice", role: "contributor", contribution: "more_coming" }],
     labels: [{ name: "Обложка", colorHex: "#84cc16", shared: true }],
-    photos: [
+    assets: [
       {
         file: "picnic.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 7,
         description: "Пикник",
         place: null,
         labels: ["Обложка"],
       },
-      { file: "sea.jpg", daysAgo: 7, description: "Река", place: null, labels: [] },
+      {
+        file: "sea.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
+        daysAgo: 7,
+        description: "Река",
+        place: null,
+        labels: [],
+      },
       {
         file: "friends.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
         daysAgo: 6,
         description: "Друзья",
         place: { latitude: 56.1, longitude: 37.2 },
         labels: [],
         by: "alice",
+      },
+      {
+        file: "sea.mp4",
+        kind: "video",
+        contentType: "video/mp4",
+        durationSeconds: 5,
+        daysAgo: 6,
+        description: "Волны на реке",
+        place: null,
+        labels: [],
+      },
+    ],
+    montages: [
+      {
+        targetSeconds: 20,
+        prompt: null,
+        dimensions: { width: 1080, height: 1920 },
       },
     ],
   },
@@ -163,44 +227,79 @@ const projects: Project[] = [
     eventEnd: null,
     members: [],
     labels: [{ name: "Обложка", colorHex: "#a855f7", shared: true }],
-    photos: [
-      { file: "dance.jpg", daysAgo: 2, description: "Сцена", place: null, labels: ["Обложка"] },
-      { file: "city.jpg", daysAgo: 2, description: "Город", place: null, labels: [] },
+    assets: [
+      {
+        file: "dance.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
+        daysAgo: 2,
+        description: "Сцена",
+        place: null,
+        labels: ["Обложка"],
+      },
+      {
+        file: "city.jpg",
+        kind: "photo",
+        contentType: "image/jpeg",
+        daysAgo: 2,
+        description: "Город",
+        place: null,
+        labels: [],
+      },
     ],
+    montages: [],
   },
 ];
 
 type UploadPlan = { id: string; parts: string[] };
 
-async function uploadPhoto(
+async function uploadAsset(
   token: Token,
   projectId: string,
-  photo: Photo,
+  asset: Asset,
 ): Promise<{ itemId: string; mediaId: string }> {
-  const file = readFileSync(new URL(`./test-assets/${photo.file}`, import.meta.url));
+  const file = readFileSync(new URL(`./test-assets/${asset.file}`, import.meta.url));
   const plan = await post<UploadPlan>(`/v1/projects/${projectId}/uploads`, token, {
-    kind: "photo",
+    kind: asset.kind,
     sizeBytes: file.length,
-    fileName: photo.file,
-    capturedAt: daysAgo(photo.daysAgo).toISOString(),
+    fileName: asset.file,
+    capturedAt: daysAgo(asset.daysAgo).toISOString(),
+    ...(asset.durationSeconds === undefined ? {} : { durationSeconds: asset.durationSeconds }),
   });
   const url = plan.parts[0];
   if (plan.parts.length !== 1 || !url) {
-    throw new Error(`test seed expects one part for ${photo.file}, got ${plan.parts.length}`);
+    throw new Error(`test seed expects one part for ${asset.file}, got ${plan.parts.length}`);
   }
   const put = await fetch(url, {
     method: "PUT",
-    headers: { "content-type": "image/jpeg" },
+    headers: { "content-type": asset.contentType },
     body: file,
   });
-  if (!put.ok) throw new Error(`S3 PUT ${photo.file} → ${put.status} ${await put.text()}`);
+  if (!put.ok) throw new Error(`S3 PUT ${asset.file} → ${put.status} ${await put.text()}`);
   const etag = (put.headers.get("etag") ?? "").replaceAll('"', "");
-  if (!etag) throw new Error(`S3 PUT ${photo.file} → no ETag`);
+  if (!etag) throw new Error(`S3 PUT ${asset.file} → no ETag`);
   return post<{ itemId: string; mediaId: string }>(
     `/v1/projects/${projectId}/uploads/${plan.id}/complete`,
     token,
     { parts: [{ part_number: 1, etag }] },
   );
+}
+
+async function waitMontage(token: Token, projectId: string, montageId: string): Promise<void> {
+  const until = Date.now() + 180_000;
+  while (Date.now() < until) {
+    const montage = await get<{ status: string; error: string | null }>(
+      `/v1/projects/${projectId}/montages/${montageId}`,
+      token,
+    );
+    if (montage.status === "done") return;
+    if (montage.status === "failed") {
+      console.log(`test seed: montage ${montageId} failed — ${montage.error ?? "no reason"}`);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  console.log(`test seed: montage ${montageId} is still processing`);
 }
 
 async function main(): Promise<void> {
@@ -270,19 +369,28 @@ async function main(): Promise<void> {
       labels.set(label.name, made.id);
     }
 
-    for (const photo of project.photos) {
-      const uploader = photo.by ?? project.owner;
-      const uploaded = await uploadPhoto(tokenOf(uploader), projectId, photo);
-      await patch(`/v1/projects/${projectId}/items/${uploaded.itemId}`, tokenOf(uploader), {
-        description: photo.description,
-      });
-      if (photo.place) {
-        await patch(`/v1/projects/${projectId}/media/${uploaded.mediaId}`, tokenOf(uploader), {
-          latitude: photo.place.latitude,
-          longitude: photo.place.longitude,
+    const itemIds: string[] = [];
+    for (const asset of project.assets) {
+      const uploader = asset.by ?? project.owner;
+      const uploaded = await uploadAsset(tokenOf(uploader), projectId, asset);
+      itemIds.push(uploaded.itemId);
+      if (asset.kind === "audio") {
+        await post(`/v1/projects/${projectId}/songs`, owner, {
+          name: asset.description || asset.file,
+          author: "Nox",
+          mediaId: uploaded.mediaId,
         });
       }
-      for (const name of photo.labels) {
+      await patch(`/v1/projects/${projectId}/items/${uploaded.itemId}`, tokenOf(uploader), {
+        description: asset.description,
+      });
+      if (asset.place) {
+        await patch(`/v1/projects/${projectId}/media/${uploaded.mediaId}`, tokenOf(uploader), {
+          latitude: asset.place.latitude,
+          longitude: asset.place.longitude,
+        });
+      }
+      for (const name of asset.labels) {
         const labelId = labels.get(name);
         if (!labelId) throw new Error(`test seed: unknown label ${name}`);
         await post(`/v1/projects/${projectId}/labels/${labelId}/items`, owner, {
@@ -290,7 +398,23 @@ async function main(): Promise<void> {
         });
       }
     }
-    console.log(`test seed: «${project.title}» — ${project.photos.length} photos`);
+
+    for (const order of project.montages) {
+      const made = await post<{ id: string }>(`/v1/projects/${projectId}/montages`, owner, {
+        payFrom: "user",
+        config: {
+          targetSeconds: order.targetSeconds,
+          prompt: order.prompt,
+          dimensions: order.dimensions,
+          musicIds: [],
+          includeItemIds: itemIds,
+        },
+      });
+      await waitMontage(owner, projectId, made.id);
+    }
+    console.log(
+      `test seed: «${project.title}» — ${project.assets.length} assets, ${project.montages.length} montages`,
+    );
   }
   console.log(`test seed: done against ${API}`);
 }

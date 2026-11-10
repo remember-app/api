@@ -305,7 +305,8 @@ create table montages (
     ),
     created_at timestamptz not null default now(),
     error text,
-    manifest jsonb not null
+    manifest jsonb not null,
+    journal jsonb not null default '{"directing": null}'::jsonb
 );
 
 create index montages_project_idx on montages (project_id, created_at desc);

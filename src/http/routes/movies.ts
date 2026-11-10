@@ -3,6 +3,7 @@ import { config } from "../../config.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import { getMedia } from "../../services/media/queries.ts";
+import { getMontage } from "../../services/montage/montage.ts";
 import {
   deleteMovieWithMedia,
   getMovie,
@@ -28,14 +29,25 @@ const renameBody = {
 async function view(movieId: MovieId, ttl: number) {
   const movie = await getMovie(movieId);
   if (!movie) return undefined;
-  const video = await getMedia(movie.videoId);
-  const thumbnail = movie.derived.thumbnailId
-    ? await getMedia(movie.derived.thumbnailId)
-    : undefined;
-  const preview = movie.derived.previewId ? await getMedia(movie.derived.previewId) : undefined;
+  const [source, montage, thumbnail, preview] = await Promise.all([
+    getMedia(movie.videoId),
+    getMontage(movie.montageId),
+    movie.derived.thumbnailId ? getMedia(movie.derived.thumbnailId) : undefined,
+    movie.derived.previewId ? getMedia(movie.derived.previewId) : undefined,
+  ]);
   return {
     ...movie,
-    video_url: video ? await downloadUrl(video.storageKey, ttl) : null,
+    video: source
+      ? {
+          durationSeconds: source.kind === "photo" ? null : source.duration,
+          bytes: Number(source.bytes),
+          width: source.kind === "audio" ? null : (source.dimensions?.width ?? null),
+          height: source.kind === "audio" ? null : (source.dimensions?.height ?? null),
+          format: source.format,
+        }
+      : null,
+    montage: montage ?? null,
+    video_url: source ? await downloadUrl(source.storageKey, ttl) : null,
     poster_url: thumbnail ? await downloadUrl(thumbnail.storageKey, ttl) : null,
     preview_url: preview ? await downloadUrl(preview.storageKey, ttl) : null,
   };

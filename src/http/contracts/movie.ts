@@ -1,4 +1,13 @@
 import type { PageResponse } from "./common.ts";
+import type { MontageResponse } from "./montage.ts";
+
+export type MovieVideoResponse = {
+  durationSeconds: number | null;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  format: string;
+};
 
 export type MovieResponse = {
   id: string;
@@ -8,6 +17,8 @@ export type MovieResponse = {
   createdAt: string;
   montageId: string;
   videoId: string;
+  video: MovieVideoResponse | null;
+  montage: MontageResponse | null;
   derived: {
     thumbnailId: string | null;
     previewId: string | null;

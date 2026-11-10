@@ -60,7 +60,10 @@ export type ProjectItemCommon = {
   createdAt: Date;
 };
 
-export type ProjectMediaItemAIAnalysis = ProjectMediaItemAIAnalysisPhoto | ProjectMediaItemAIAnalysisVideo | ProjectMediaItemAIAnalysisAudio;
+export type ProjectMediaItemAIAnalysis =
+  | ProjectMediaItemAIAnalysisPhoto
+  | ProjectMediaItemAIAnalysisVideo
+  | ProjectMediaItemAIAnalysisAudio;
 
 export type ProjectMediaItemAIAnalysisAudio = ProjectMediaItemAIAnalysisCommon & {
   transcription: { secStart: number; secEnd: number; text: string }[];

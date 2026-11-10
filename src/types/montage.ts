@@ -9,6 +9,7 @@ export type Montage = {
   createdBy: UserId;
   status: MontageStatus;
   manifest: MontageManifest;
+  journal: MontageJournal;
   createdAt: Date;
   error: string | null;
 };
@@ -21,9 +22,19 @@ export type MontageManifest = {
   editingParams: MontageEditingStageParams | null;
 };
 
+export type MontageJournal = {
+  directing: MontageJournalDirecting | null;
+};
+
+export type MontageJournalDirecting = {
+  text: string;
+  usedItemIds: ProjectItemId[];
+};
+
 export type MontagePreparationStageConfig = MontageSetting &
   MontageSource & {
     templateId: TemplateId | null;
+    name: string | null;
   };
 
 export type MontageDirectingStageInput = {

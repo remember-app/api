@@ -1,12 +1,12 @@
 import { sql } from "../../integrations/db/index.ts";
 import { page } from "../../pagination.ts";
-import type { MontageId, MovieId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
+import type { Page } from "../../types/api.ts";
+import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type {
   Montage,
   MontageManifest,
   MontageSetting,
   MontageSource,
-  MontageStage,
   MontageStatus,
   MontageTemplate,
 } from "../../types/montage.ts";
@@ -21,69 +21,29 @@ const columns = sql`
   created_by as "createdBy",
   status,
   manifest,
+  journal,
   created_at as "createdAt",
   error
 `;
-
-const viewColumns = sql`
-  m.id,
-  m.project_id as "projectId",
-  m.created_by as "createdBy",
-  m.status,
-  m.manifest,
-  m.created_at as "createdAt",
-  m.error,
-  mv.id as "movieId"
-`;
-
-type MontageRow = Montage & { movieId: MovieId | null };
-
-const stageOf = (montage: Montage): MontageStage => {
-  if (montage.status === "queued") return "analysis";
-  if (!montage.manifest?.directingInput) return "preparation";
-  if (!montage.manifest?.editingParams) return "directing";
-  return "editing";
-};
-
-export const montageView = (montage: Montage, movieId: MovieId | null = null) => ({
-  id: montage.id,
-  projectId: montage.projectId,
-  createdBy: montage.createdBy,
-  status: montage.status,
-  stage: stageOf(montage),
-  createdAt: montage.createdAt,
-  error: montage.error,
-  itemIds: montage.manifest?.preparationConfig?.includeItemIds ?? [],
-  movieId,
-});
 
 export async function getMontage(id: MontageId): Promise<Montage | undefined> {
   const [row] = await sql<Montage[]>`select ${columns} from montages where id = ${id}`;
   return row;
 }
 
-export async function getMontageView(id: MontageId) {
-  const [row] = await sql<MontageRow[]>`
-    select ${viewColumns}
-    from montages m left join movies mv on mv.montage_id = m.id
-    where m.id = ${id}
-  `;
-  return row && montageView(row, row.movieId);
-}
-
-export async function listMontageViews(projectId: ProjectId, limit: number, offset: number) {
-  const rows = await sql<MontageRow[]>`
-    select ${viewColumns}
-    from montages m left join movies mv on mv.montage_id = m.id
-    where m.project_id = ${projectId}
-    order by m.created_at desc, m.id
+export async function listMontages(
+  projectId: ProjectId,
+  limit: number,
+  offset: number,
+): Promise<Page<Montage>> {
+  const rows = await sql<Montage[]>`
+    select ${columns}
+    from montages
+    where project_id = ${projectId}
+    order by created_at desc, id
     limit ${limit + 1} offset ${offset}
   `;
-  return page(
-    rows.map((row) => montageView(row, row.movieId)),
-    limit,
-    offset,
-  );
+  return page(rows, limit, offset);
 }
 
 export type MontagePaySource = "project" | "user";
@@ -92,8 +52,13 @@ export type NewMontage = {
   projectId: ProjectId;
   createdBy: UserId;
   templateId: TemplateId | null;
-  config: MontageSetting & MontageSource;
+  config: MontageSetting & MontageSource & { name?: string | null };
   payFrom: MontagePaySource;
+};
+
+export type MontagePreview = {
+  problems: string[];
+  tokens: number;
 };
 
 export type CreateMontageResult =
@@ -116,7 +81,11 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
     return await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${input.projectId}::text))`;
       const manifest: MontageManifest = {
-        preparationConfig: { ...input.config, templateId: input.templateId },
+        preparationConfig: {
+          ...input.config,
+          name: input.config.name ?? null,
+          templateId: input.templateId,
+        },
         directingInput: null,
         editingParams: null,
       };
@@ -157,6 +126,42 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
     if (error instanceof InsufficientTokensError) return { denial: "insufficient_tokens" };
     throw error;
   }
+}
+
+export async function previewMontage(input: {
+  projectId: ProjectId;
+  templateId: TemplateId | null;
+  config: MontageSetting & MontageSource;
+}): Promise<MontagePreview> {
+  const order = await validateOrder(input.projectId, input.config);
+  const problems = [...order.problems];
+  if (input.templateId !== null && !(await getTemplate(input.templateId))) {
+    problems.push(`template ${input.templateId} does not exist`);
+  }
+  if (problems.length > 0) return { problems, tokens: 0 };
+  const targets = [
+    ...order.items.filter((item) => !item.analyzed).map((item) => item.mediaId),
+    ...order.songs.filter((song) => !song.analyzed).map((song) => song.mediaId),
+  ];
+  let fresh = 0;
+  for (const mediaId of targets) {
+    if ((await liveJobId("media_analysis", mediaId, sql)) === undefined) fresh += 1;
+  }
+  const price = await analysisPrice();
+  return { problems: [], tokens: price.tokens * fresh };
+}
+
+export async function retryMontage(id: MontageId): Promise<Montage | undefined> {
+  return sql.begin(async (tx) => {
+    const [row] = await tx<Montage[]>`
+      update montages set status = 'queued', error = null
+      where id = ${id} and status = 'failed'
+      returning ${columns}
+    `;
+    if (!row) return undefined;
+    await enqueue("montage", id, tx, null);
+    return row;
+  });
 }
 
 export async function setMontageStatus(

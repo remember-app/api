@@ -6,11 +6,11 @@ import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import {
   createMontage,
   getMontage,
-  getMontageView,
-  listMontageViews,
+  listMontages,
   listTemplates,
   type MontagePaySource,
-  montageView,
+  previewMontage,
+  retryMontage,
 } from "../../services/montage/montage.ts";
 import { accessOf, isAdmin } from "../../services/project/access.ts";
 import { removeTokens } from "../../services/push/commands.ts";
@@ -31,6 +31,7 @@ const configBody = {
   required: ["targetSeconds", "dimensions", "includeItemIds", "musicIds"],
   additionalProperties: false,
   properties: {
+    name: { type: ["string", "null"], maxLength: 200 },
     targetSeconds: { type: "integer", minimum: 1 },
     prompt: { type: ["string", "null"], maxLength: 4000 },
     includeItemIds: {
@@ -50,6 +51,16 @@ const configBody = {
         height: { type: "integer", minimum: 1 },
       },
     },
+  },
+} as const;
+
+const previewBody = {
+  type: "object",
+  required: ["config"],
+  additionalProperties: false,
+  properties: {
+    templateId: { type: ["string", "null"] },
+    config: configBody,
   },
 } as const;
 
@@ -93,8 +104,36 @@ export function montageRoutes(app: FastifyInstance) {
     Params: ProjectParams;
     Body: {
       templateId?: string | null;
+      config: MontageSetting & MontageSource & { name?: string | null };
+    };
+  }>(
+    "/projects/:projectId/montages/preview",
+    { schema: { body: previewBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
+      if (!access) return fail(reply, 404, "not_found");
+      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      return previewMontage({
+        projectId: request.params.projectId as ProjectId,
+        templateId: (request.body.templateId as TemplateId | null | undefined) ?? null,
+        config: {
+          targetSeconds: request.body.config.targetSeconds,
+          prompt: request.body.config.prompt ?? null,
+          dimensions: request.body.config.dimensions,
+          includeItemIds: request.body.config.includeItemIds,
+          requiredItemIds: request.body.config.requiredItemIds ?? [],
+          musicIds: request.body.config.musicIds,
+        },
+      });
+    },
+  );
+
+  app.post<{
+    Params: ProjectParams;
+    Body: {
+      templateId?: string | null;
       payFrom: MontagePaySource;
-      config: MontageSetting & MontageSource;
+      config: MontageSetting & MontageSource & { name?: string | null };
     };
   }>(
     "/projects/:projectId/montages",
@@ -119,6 +158,7 @@ export function montageRoutes(app: FastifyInstance) {
         templateId: (request.body.templateId as TemplateId | null | undefined) ?? null,
         payFrom: request.body.payFrom,
         config: {
+          name: request.body.config.name ?? null,
           targetSeconds: request.body.config.targetSeconds,
           prompt: request.body.config.prompt ?? null,
           dimensions: request.body.config.dimensions,
@@ -133,7 +173,7 @@ export function montageRoutes(app: FastifyInstance) {
         }
         return fail(reply, 400, "bad_request", result.problems);
       }
-      return montageView(result.montage);
+      return result.montage;
     },
   );
 
@@ -144,7 +184,7 @@ export function montageRoutes(app: FastifyInstance) {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
       const { limit, offset } = pageOf(request.query);
-      return listMontageViews(request.params.projectId as ProjectId, limit, offset);
+      return listMontages(request.params.projectId as ProjectId, limit, offset);
     },
   );
 
@@ -157,11 +197,30 @@ export function montageRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.params.montageId)) {
         return fail(reply, 404, "not_found");
       }
-      const montage = await getMontageView(request.params.montageId as MontageId);
+      const montage = await getMontage(request.params.montageId as MontageId);
       if (!montage || montage.projectId !== request.params.projectId) {
         return fail(reply, 404, "not_found");
       }
       return montage;
+    },
+  );
+
+  app.post<{ Params: MontageParams }>(
+    "/projects/:projectId/montages/:montageId/retry",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
+      if (!access) return fail(reply, 404, "not_found");
+      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      if (!uuidPattern.test(request.params.montageId)) return fail(reply, 404, "not_found");
+      const montage = await getMontage(request.params.montageId as MontageId);
+      if (!montage || montage.projectId !== request.params.projectId) {
+        return fail(reply, 404, "not_found");
+      }
+      if (montage.status !== "failed") return fail(reply, 409, "conflict");
+      const retried = await retryMontage(montage.id);
+      if (!retried) return fail(reply, 409, "conflict");
+      return retried;
     },
   );
 
