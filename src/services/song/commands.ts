@@ -12,16 +12,34 @@ export type SongDenial = { denial: "not_found" | "forbidden" | "bad_request" };
 export async function createSong(
   projectId: ProjectId,
   viewerId: UserId,
-  input: { name: string; author: string; mediaId: MediaId },
+  input: {
+    name: string;
+    author: string;
+    mediaId: MediaId;
+    coverId?: MediaId | null;
+    description?: string | null;
+  },
 ): Promise<{ song: Song } | SongDenial> {
   const access = await accessOf(projectId, viewerId);
   if (!access) return { denial: "not_found" };
   if (!isAdmin(access)) return { denial: "forbidden" };
   const media = await getMedia(input.mediaId);
   if (!media || media.kind !== "audio") return { denial: "bad_request" };
+  if (input.coverId) {
+    const cover = await getMedia(input.coverId);
+    if (cover?.kind !== "photo") return { denial: "bad_request" };
+  }
   const [row] = await sql<Song[]>`
-    insert into songs (name, author, media_id, project_id, uploaded_by)
-    values (${input.name}, ${input.author}, ${media.id}, ${projectId}, ${viewerId})
+    insert into songs (name, author, media_id, project_id, uploaded_by, cover_id, description)
+    values (
+      ${input.name},
+      ${input.author},
+      ${media.id},
+      ${projectId},
+      ${viewerId},
+      ${input.coverId ?? null},
+      ${input.description ?? null}
+    )
     returning ${songColumns}
   `;
   if (!row) throw new Error("song insert returned no row");

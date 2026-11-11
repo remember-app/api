@@ -181,6 +181,8 @@ export async function listTemplates(): Promise<MontageTemplate[]> {
       id,
       name,
       settings,
+      cover_id as "coverId",
+      description,
       reference_media_id as "referenceMediaId"
     from montage_templates
     order by name
@@ -189,7 +191,13 @@ export async function listTemplates(): Promise<MontageTemplate[]> {
 
 export async function getTemplate(id: TemplateId): Promise<MontageTemplate | undefined> {
   const [row] = await sql<MontageTemplate[]>`
-    select id, name, settings, reference_media_id as "referenceMediaId"
+    select
+      id,
+      name,
+      settings,
+      cover_id as "coverId",
+      description,
+      reference_media_id as "referenceMediaId"
     from montage_templates
     where id = ${id}
   `;

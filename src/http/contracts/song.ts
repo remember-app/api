@@ -5,6 +5,8 @@ export type SongResponse = {
   name: string;
   author: string;
   mediaId: string;
+  coverId: string | null;
+  description: string | null;
   projectId: string | null;
   uploadedBy: string | null;
 };
@@ -19,4 +21,6 @@ export type CreateSongRequest = {
   name: string;
   author: string;
   mediaId: string;
+  coverId?: string | null;
+  description?: string | null;
 };

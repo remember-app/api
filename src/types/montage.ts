@@ -61,5 +61,7 @@ export type MontageTemplate = {
   id: TemplateId;
   name: string;
   settings: MontageSetting;
+  coverId: MediaId | null;
+  description: string | null;
   referenceMediaId: MediaId | null;
 };

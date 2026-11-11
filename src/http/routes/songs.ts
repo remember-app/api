@@ -16,6 +16,8 @@ const createBody = {
     name: { type: "string", minLength: 1, maxLength: 200 },
     author: { type: "string", minLength: 1, maxLength: 200 },
     mediaId: { type: "string" },
+    coverId: { type: ["string", "null"] },
+    description: { type: ["string", "null"], maxLength: 1000 },
   },
 } as const;
 
@@ -55,7 +57,13 @@ export function songRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: ProjectParams;
-    Body: { name: string; author: string; mediaId: string };
+    Body: {
+      name: string;
+      author: string;
+      mediaId: string;
+      coverId?: string | null;
+      description?: string | null;
+    };
   }>(
     "/projects/:projectId/songs",
     { schema: { body: createBody }, preHandler: app.authenticate },
@@ -66,6 +74,9 @@ export function songRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.body.mediaId)) {
         return fail(reply, 404, "not_found");
       }
+      if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
+        return fail(reply, 404, "not_found");
+      }
       const result = await createSong(
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
@@ -73,6 +84,8 @@ export function songRoutes(app: FastifyInstance) {
           name: request.body.name,
           author: request.body.author,
           mediaId: request.body.mediaId as MediaId,
+          coverId: request.body.coverId as MediaId | null | undefined,
+          description: request.body.description,
         },
       );
       if ("denial" in result) {

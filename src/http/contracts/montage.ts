@@ -61,5 +61,7 @@ export type MontageTemplateResponse = {
   id: string;
   name: string;
   settings: MontageSettingsResponse;
+  coverId: string | null;
+  description: string | null;
   referenceMediaId: string | null;
 };
