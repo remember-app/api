@@ -127,7 +127,6 @@ export function uploadRoutes(app: FastifyInstance) {
         durationSeconds: request.body.durationSeconds ?? null,
         fingerprint: request.body.fingerprint?.toLowerCase() ?? null,
       });
-      if ("duplicate" in result) return result;
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
         if (result.denial === "not_found") return fail(reply, 404, "not_found");
@@ -189,14 +188,6 @@ export function uploadRoutes(app: FastifyInstance) {
           return fail(reply, 502, "storage_unavailable");
         }
         return fail(reply, 404, "not_found");
-      }
-      if ("duplicate" in result) {
-        return {
-          mediaId: result.duplicate.mediaId,
-          itemId: result.duplicate.itemId,
-          status: "processing",
-          duplicate: true,
-        };
       }
       return { mediaId: result.media.id, itemId: result.itemId, status: "processing" };
     },

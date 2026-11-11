@@ -46,16 +46,8 @@ export type UploadPlanResponse = {
   parts: string[];
 };
 
-export type UploadDuplicateResponse = {
-  duplicate: {
-    mediaId: string;
-    itemId: string;
-  };
-};
-
 export type UploadCompleteResponse = {
   mediaId: string;
   itemId: string;
   status: "processing";
-  duplicate?: boolean;
 };
