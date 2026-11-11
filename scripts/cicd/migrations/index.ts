@@ -6,7 +6,7 @@ export async function migrate(): Promise<void> {
   const postgrator = new Postgrator({
     driver: "pg",
     schemaTable: "schema_migrations",
-    migrationPattern: fileURLToPath(new URL("./*.sql", import.meta.url)),
+    migrationPattern: fileURLToPath(new URL("./**/*.sql", import.meta.url)),
     execQuery: (query) => sql.unsafe(query).then((rows) => ({ rows })),
     execSqlScript: (script) =>
       sql
