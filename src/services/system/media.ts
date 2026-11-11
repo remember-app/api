@@ -26,6 +26,16 @@ export const SYSTEM_MEDIA: readonly SystemMediaEntry[] = [
     captions: null,
   },
   {
+    name: "song-cover",
+    mediaId: "00000000-0000-4000-8000-000000000007",
+    file: "song-cover.jpg",
+    format: "jpeg",
+    contentType: "image/jpeg",
+    width: 800,
+    height: 800,
+    captions: null,
+  },
+  {
     name: "onboarding-1",
     mediaId: "00000000-0000-4000-8000-000000000002",
     file: "onboarding-1.jpg",

@@ -79,8 +79,8 @@ tags and description, not by listening.
 - Full MP3 files, not previews or streams: all 16 are 44.1 kHz stereo MP3 at ~256 kbps,
   93–157 seconds, 2.9–5.1 MB each.
 - Verified with ffprobe and a full ffmpeg decode pass.
-- No files were committed. Only the 16 MP3s, `manifest.json` and this file are present under
-  `assets/music/`.
+- The 16 MP3s live under `assets/music/`. The manifest and this file live with the seed in
+  `scripts/cicd/seeds/`.
 
 ## What changed from the previous set
 

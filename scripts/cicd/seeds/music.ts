@@ -3,25 +3,15 @@ import { join } from "node:path";
 import { sql } from "../../../src/integrations/db/index.ts";
 import { putObject } from "../../../src/integrations/storage/s3.ts";
 import { ASSETS } from "./assets.ts";
-
-type Track = {
-  file: string;
-  name: string;
-  author: string;
-  seconds: number;
-};
+import { MUSIC } from "./music.manifest.ts";
 
 const suffix = (index: number): string => String(index + 1).padStart(12, "0");
 
-const tracks = (): Track[] =>
-  JSON.parse(readFileSync(join(ASSETS, "music", "manifest.json"), "utf8")) as Track[];
-
 export async function seedMusic(): Promise<void> {
-  const list = tracks();
   const songIds: string[] = [];
   const mediaIds: string[] = [];
 
-  for (const [index, track] of list.entries()) {
+  for (const [index, track] of MUSIC.entries()) {
     const mediaId = `cccccccc-cccc-4ccc-8ccc-${suffix(index)}`;
     const songId = `dddddddd-dddd-4ddd-8ddd-${suffix(index)}`;
     songIds.push(songId);
