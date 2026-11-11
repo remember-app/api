@@ -42,3 +42,7 @@ export async function usernameAvailable(username: string, selfId: UserId): Promi
   `;
   return rows.length === 0;
 }
+
+export async function listUsers(): Promise<User[]> {
+  return sql<User[]>`select ${userColumns} from users order by username nulls last`;
+}

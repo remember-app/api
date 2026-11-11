@@ -11,5 +11,5 @@ const run = (script: string): void => {
   }
 };
 
-run("scripts/migrate.ts");
-run("scripts/seed-essentials.ts");
+run("scripts/cicd/migrate.ts");
+run("scripts/cicd/seed-essentials.ts");

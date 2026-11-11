@@ -1,6 +1,18 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const API = (process.env.API_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+
+const ASSETS =
+  process.env.ASSETS_DIR ?? fileURLToPath(new URL("../../../../assets", import.meta.url));
+
+const fixtureDir = (file: string): string =>
+  /\.(mp4|mov|m4v)$/i.test(file)
+    ? "video"
+    : /\.(mp3|m4a|wav|aac|flac|ogg)$/i.test(file)
+      ? "audio"
+      : "photos";
 
 type Answer<T> = T & { error?: string };
 type Token = string;
@@ -258,7 +270,7 @@ async function uploadAsset(
   projectId: string,
   asset: Asset,
 ): Promise<{ itemId: string; mediaId: string }> {
-  const file = readFileSync(new URL(`./test-assets/${asset.file}`, import.meta.url));
+  const file = readFileSync(join(ASSETS, "fixtures", fixtureDir(asset.file), asset.file));
   const plan = await post<UploadPlan>(`/v1/projects/${projectId}/uploads`, token, {
     kind: asset.kind,
     sizeBytes: file.length,
@@ -266,9 +278,15 @@ async function uploadAsset(
     capturedAt: daysAgo(asset.daysAgo).toISOString(),
     ...(asset.durationSeconds === undefined ? {} : { durationSeconds: asset.durationSeconds }),
   });
-  const url = plan.parts[0];
-  if (plan.parts.length !== 1 || !url) {
+  const signed = plan.parts[0];
+  if (plan.parts.length !== 1 || !signed) {
     throw new Error(`test seed expects one part for ${asset.file}, got ${plan.parts.length}`);
+  }
+  const url = new URL(signed);
+  if (process.env.S3_ENDPOINT) {
+    const internal = new URL(process.env.S3_ENDPOINT);
+    url.protocol = internal.protocol;
+    url.host = internal.host;
   }
   const put = await fetch(url, {
     method: "PUT",
@@ -309,7 +327,7 @@ async function main(): Promise<void> {
   const first = await login(firstPerson.email);
   const me = await get<{ registered: boolean }>("/v1/me", first.token);
   if (me.registered) {
-    console.log("test seed: data already exists — run `make fresh` to rebuild it");
+    console.log("test seed: data already exists — run `make db-fresh` to rebuild it");
     return;
   }
   for (const person of people) {

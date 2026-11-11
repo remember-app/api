@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
+import { config } from "../../config.ts";
 import { setLanguage, setName, setUsername } from "../../services/user/commands.ts";
-import { accountView, findByUsername, usernameAvailable } from "../../services/user/queries.ts";
+import {
+  accountView,
+  findByUsername,
+  listUsers,
+  usernameAvailable,
+} from "../../services/user/queries.ts";
 import { fail } from "../errors.ts";
 
 const usernameBody = {
@@ -91,4 +97,8 @@ export function userRoutes(app: FastifyInstance) {
       return user;
     },
   );
+
+  if (!config.server.isProduction()) {
+    app.get("/dev/users", { preHandler: app.authenticate }, async () => listUsers());
+  }
 }

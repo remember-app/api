@@ -54,8 +54,8 @@ src/montages/journal.ts   журнал сборки: чтение порциям
 src/montages/templates.ts шесть готовых роликов — тот же заказ, заполненный заранее
 src/montages/music.ts     полка из десяти треков и свой трек организатора
 src/privacy/privacy.ts    GET /privacy — публичная страница политики конфиденциальности, текст в этом же файле
-scripts/migrate.ts    запуск postgrator и таблица jobs из montage
-scripts/storage-check.ts  живой контроль хранилища: все обращения api на бакете для проверок
+scripts/cicd/        что запускается на выкатке: миграции и наполнение стенда
+scripts/manual/      что запускают руками: тестовые данные через API
 migrations/           .sql-миграции
 Dockerfile            боевой образ; .gitlab-ci.yml на пуш в dev собирает его и выкатывает на dev
 docs/                 как поднять, что обещает каждый маршрут и как это проверяется

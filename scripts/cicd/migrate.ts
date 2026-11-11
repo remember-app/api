@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
 import Postgrator from "postgrator";
-import { sql } from "../src/integrations/db/index.ts";
+import { sql } from "../../src/integrations/db/index.ts";
 
 const postgrator = new Postgrator({
   driver: "pg",
   schemaTable: "schema_migrations",
-  migrationPattern: fileURLToPath(new URL("../migrations/*", import.meta.url)),
+  migrationPattern: fileURLToPath(new URL("../../migrations/*", import.meta.url)),
   execQuery: (query) => sql.unsafe(query).then((rows) => ({ rows })),
   execSqlScript: (script) =>
     sql
