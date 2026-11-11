@@ -17,9 +17,15 @@ const tracks = (): Track[] =>
   JSON.parse(readFileSync(join(ASSETS, "music", "manifest.json"), "utf8")) as Track[];
 
 export async function seedMusic(): Promise<void> {
-  for (const [index, track] of tracks().entries()) {
+  const list = tracks();
+  const songIds: string[] = [];
+  const mediaIds: string[] = [];
+
+  for (const [index, track] of list.entries()) {
     const mediaId = `cccccccc-cccc-4ccc-8ccc-${suffix(index)}`;
     const songId = `dddddddd-dddd-4ddd-8ddd-${suffix(index)}`;
+    songIds.push(songId);
+    mediaIds.push(mediaId);
     const key = `remember/mp3/${mediaId}`;
     const file = readFileSync(join(ASSETS, "music", track.file));
     await putObject(key, file, "audio/mpeg");
@@ -50,4 +56,17 @@ export async function seedMusic(): Promise<void> {
     `;
     console.log(`essentials: track ${track.name}`);
   }
+
+  await sql`
+    delete from songs
+    where project_id is null
+      and uploaded_by is null
+      and id::text <> all(${songIds})
+  `;
+  await sql`
+    delete from media_items
+    where uploaded_by is null
+      and kind = 'audio'
+      and id::text <> all(${mediaIds})
+  `;
 }
