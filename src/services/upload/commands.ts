@@ -10,7 +10,7 @@ import {
   partUrls,
   storageConfigured,
 } from "../../integrations/storage/s3.ts";
-import type { ProjectId, ProjectItemId, UploadId, UserId } from "../../types/id.ts";
+import type { MediaId, ProjectId, ProjectItemId, UploadId, UserId } from "../../types/id.ts";
 import type {
   MediaAudioFormat,
   MediaItem,
@@ -32,6 +32,7 @@ const columns = sql`
   uploaded_by as "uploadedBy",
   kind,
   storage_key as "storageKey",
+  fingerprint,
   declared_bytes as "declaredBytes",
   file_name as "fileName",
   format,
@@ -46,6 +47,7 @@ type UploadRow = Omit<Upload, "createdAt"> & {
   format: string;
   capturedAt: Date | null;
   durationSeconds: number | null;
+  fingerprint: string | null;
   multipartId: string | null;
 };
 
@@ -130,10 +132,12 @@ export type StartUpload = {
   fileName: string;
   capturedAt: Date | null;
   durationSeconds: number | null;
+  fingerprint: string | null;
 };
 
 export type StartResult =
   | { plan: UploadPlan }
+  | { duplicate: { mediaId: MediaId; itemId: ProjectItemId } }
   | {
       denial:
         | "not_found"
@@ -169,6 +173,18 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if (maxSeconds !== null && input.durationSeconds !== null && input.durationSeconds > maxSeconds) {
     return { denial: "too_long" };
   }
+  if (input.fingerprint) {
+    const [existing] = await sql<{ mediaId: MediaId; itemId: ProjectItemId }[]>`
+      select i.id as "itemId", m.id as "mediaId"
+      from project_items i
+      join media_items m on m.id = i.media_id
+      where i.project_id = ${input.projectId}
+        and m.fingerprint = ${input.fingerprint}
+        and m.uploaded_by is not null
+      limit 1
+    `;
+    if (existing) return { duplicate: existing };
+  }
   const [open] = await sql<{ count: number }[]>`
     select count(*)::int as count from uploads
     where project_id = ${input.projectId} and status in ('pending', 'uploading')
@@ -186,12 +202,12 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   const storageKey = storageKeyOf(format, id);
   await sql`
     insert into uploads (
-      id, project_id, uploaded_by, kind, storage_key, declared_bytes, file_name, format,
+      id, project_id, uploaded_by, kind, storage_key, fingerprint, declared_bytes, file_name, format,
       captured_at, duration_seconds, status
     )
     values (
       ${id}, ${input.projectId}, ${input.userId}, ${input.kind}, ${storageKey},
-      ${input.sizeBytes}, ${input.fileName}, ${format}, ${input.capturedAt},
+      ${input.fingerprint}, ${input.sizeBytes}, ${input.fileName}, ${format}, ${input.capturedAt},
       ${input.durationSeconds}, 'pending'
     )
   `;
@@ -233,6 +249,7 @@ export type CompleteUpload = {
 
 export type CompleteResult =
   | { media: MediaItem; itemId: ProjectItemId }
+  | { duplicate: { mediaId: MediaId; itemId: ProjectItemId } }
   | {
       denial: "not_found" | "forbidden" | "storage_error" | "too_large" | "insufficient_storage";
     };
@@ -257,6 +274,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
       ? {
           kind: "photo",
           storageKey: row.storageKey,
+          fingerprint: row.fingerprint ?? "",
           uploadedBy: row.uploadedBy,
           format: photoFormats[row.format] as MediaPhotoFormat,
           bytes,
@@ -269,6 +287,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
         ? {
             kind: "video",
             storageKey: row.storageKey,
+            fingerprint: row.fingerprint ?? "",
             uploadedBy: row.uploadedBy,
             format: videoFormats[row.format] as MediaVideoFormat,
             bytes,
@@ -281,6 +300,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
         : {
             kind: "audio",
             storageKey: row.storageKey,
+            fingerprint: row.fingerprint ?? "",
             uploadedBy: row.uploadedBy,
             format: audioFormats[row.format] as MediaAudioFormat,
             bytes,
@@ -289,7 +309,28 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
             place: null,
           };
   try {
-    return await sql.begin(async (tx) => {
+    const outcome = await sql.begin(async (tx) => {
+      if (row.fingerprint) {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${`${input.projectId}:${row.fingerprint}`}, 0))`;
+        const [existing] = await tx<{ mediaId: MediaId; itemId: ProjectItemId }[]>`
+          select i.id as "itemId", m.id as "mediaId"
+          from project_items i
+          join media_items m on m.id = i.media_id
+          where i.project_id = ${input.projectId}
+            and m.fingerprint = ${row.fingerprint}
+            and m.uploaded_by is not null
+          limit 1
+        `;
+        if (existing) {
+          await tx`
+            update uploads
+            set status = 'completed', error_code = null, error = null,
+                media_id = ${existing.mediaId}, updated_at = now()
+            where id = ${row.id}
+          `;
+          return { duplicate: existing };
+        }
+      }
       const media = await createMedia(newMedia, tx);
       await tx`
         update uploads
@@ -303,6 +344,11 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
       await enqueue("media_derive", row.id, tx);
       return { media, itemId };
     });
+    if ("duplicate" in outcome) {
+      await deleteObjects([row.storageKey]);
+      return outcome;
+    }
+    return outcome;
   } catch (error) {
     if (error instanceof StorageFullError) {
       await deleteObjects([row.storageKey]);

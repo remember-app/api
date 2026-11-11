@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sql } from "../../../src/integrations/db/index.ts";
@@ -18,17 +19,19 @@ export async function seedMusic(): Promise<void> {
     mediaIds.push(mediaId);
     const key = `remember/mp3/${mediaId}`;
     const file = readFileSync(join(ASSETS, "music", track.file));
+    const fingerprint = createHash("sha256").update(file).digest("hex");
     await putObject(key, file, "audio/mpeg");
     await sql`
       insert into media_items (
-        id, kind, storage_key, uploaded_by, format, bytes, duration
+        id, kind, storage_key, fingerprint, uploaded_by, format, bytes, duration
       )
       values (
-        ${mediaId}, 'audio', ${key}, null, 'mp3', ${file.length}, ${track.seconds}
+        ${mediaId}, 'audio', ${key}, ${fingerprint}, null, 'mp3', ${file.length}, ${track.seconds}
       )
       on conflict (id) do update
       set kind = excluded.kind,
           storage_key = excluded.storage_key,
+          fingerprint = excluded.fingerprint,
           uploaded_by = excluded.uploaded_by,
           format = excluded.format,
           bytes = excluded.bytes,

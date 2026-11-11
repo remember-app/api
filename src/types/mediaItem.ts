@@ -32,6 +32,7 @@ export type AudioMedia = MediaItemCommon & {
 export type MediaItemCommon = {
   id: MediaId;
   storageKey: string;
+  fingerprint: string;
   uploadedBy: UserId | null;
 };
 

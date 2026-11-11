@@ -28,6 +28,7 @@ export type DimensionsResponse = {
 
 type MediaCommonResponse = {
   id: string;
+  fingerprint: string;
   format: string;
   bytes: string;
   capturedAt: string | null;

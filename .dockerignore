@@ -4,7 +4,7 @@
 !package-lock.json
 !src
 !scripts
-!migrations
+!assets
 src/**/*.test.ts
 src/**/testing.ts
 src/**/golden

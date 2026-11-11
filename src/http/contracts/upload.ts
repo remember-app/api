@@ -29,6 +29,7 @@ export type StartUploadRequest = {
   fileName: string;
   capturedAt?: string | null;
   durationSeconds?: number | null;
+  fingerprint?: string | null;
 };
 
 export type CompleteUploadRequest = {
@@ -45,8 +46,16 @@ export type UploadPlanResponse = {
   parts: string[];
 };
 
+export type UploadDuplicateResponse = {
+  duplicate: {
+    mediaId: string;
+    itemId: string;
+  };
+};
+
 export type UploadCompleteResponse = {
   mediaId: string;
   itemId: string;
   status: "processing";
+  duplicate?: boolean;
 };

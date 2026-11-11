@@ -27,6 +27,7 @@ const startBody = {
     fileName: { type: "string", minLength: 1, maxLength: 255 },
     capturedAt: { type: ["string", "null"], format: "date-time" },
     durationSeconds: { type: ["number", "null"], minimum: 0 },
+    fingerprint: { type: ["string", "null"], pattern: "^[a-fA-F0-9]{64}$" },
   },
 } as const;
 
@@ -98,6 +99,7 @@ export function uploadRoutes(app: FastifyInstance) {
       fileName: string;
       capturedAt?: string | null;
       durationSeconds?: number | null;
+      fingerprint?: string | null;
     };
   }>(
     "/projects/:projectId/uploads",
@@ -123,7 +125,9 @@ export function uploadRoutes(app: FastifyInstance) {
         fileName: request.body.fileName,
         capturedAt: request.body.capturedAt ? new Date(request.body.capturedAt) : null,
         durationSeconds: request.body.durationSeconds ?? null,
+        fingerprint: request.body.fingerprint?.toLowerCase() ?? null,
       });
+      if ("duplicate" in result) return result;
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
         if (result.denial === "not_found") return fail(reply, 404, "not_found");
@@ -185,6 +189,14 @@ export function uploadRoutes(app: FastifyInstance) {
           return fail(reply, 502, "storage_unavailable");
         }
         return fail(reply, 404, "not_found");
+      }
+      if ("duplicate" in result) {
+        return {
+          mediaId: result.duplicate.mediaId,
+          itemId: result.duplicate.itemId,
+          status: "processing",
+          duplicate: true,
+        };
       }
       return { mediaId: result.media.id, itemId: result.itemId, status: "processing" };
     },

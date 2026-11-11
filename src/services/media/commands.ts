@@ -18,6 +18,7 @@ import { getMedia } from "./queries.ts";
 export type NewPhotoMedia = {
   kind: "photo";
   storageKey: string;
+  fingerprint: string;
   uploadedBy: UserId | null;
   format: MediaPhotoFormat;
   bytes: number;
@@ -30,6 +31,7 @@ export type NewPhotoMedia = {
 export type NewVideoMedia = {
   kind: "video";
   storageKey: string;
+  fingerprint: string;
   uploadedBy: UserId | null;
   format: MediaVideoFormat;
   bytes: number;
@@ -43,6 +45,7 @@ export type NewVideoMedia = {
 export type NewAudioMedia = {
   kind: "audio";
   storageKey: string;
+  fingerprint: string;
   uploadedBy: UserId | null;
   format: MediaAudioFormat;
   bytes: number;
@@ -58,6 +61,7 @@ export async function createMedia(input: NewMedia, db: Db = sql): Promise<MediaI
     insert into media_items (
       kind,
       storage_key,
+      fingerprint,
       uploaded_by,
       format,
       bytes,
@@ -77,6 +81,7 @@ export async function createMedia(input: NewMedia, db: Db = sql): Promise<MediaI
     values (
       ${input.kind},
       ${input.storageKey},
+      ${input.fingerprint},
       ${input.uploadedBy},
       ${input.format},
       ${input.bytes},

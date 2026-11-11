@@ -27,6 +27,7 @@ export async function getMediaMany(ids: MediaId[]): Promise<MediaItem[]> {
 export type MediaView = {
   id: MediaId;
   kind: MediaKind;
+  fingerprint: string;
   format: string;
   bytes: string;
   dimensions: MediaDimension | null;
@@ -65,6 +66,7 @@ export function mediaView(media: MediaItem): MediaView {
   return {
     id: media.id,
     kind: media.kind,
+    fingerprint: media.fingerprint,
     format: media.format,
     bytes: String(media.bytes),
     dimensions: "dimensions" in media ? media.dimensions : null,

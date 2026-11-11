@@ -14,6 +14,7 @@ export type MediaRow = {
   id: MediaId;
   kind: "photo" | "video" | "audio";
   storageKey: string;
+  fingerprint: string;
   uploadedBy: UserId | null;
   format: string;
   bytes: number;
@@ -36,6 +37,7 @@ export const mediaColumns = sql`
   id,
   kind,
   storage_key as "storageKey",
+  fingerprint,
   uploaded_by as "uploadedBy",
   format,
   bytes,
@@ -82,7 +84,12 @@ const dimensionsOf = (row: MediaRow): MediaDimension | null =>
   row.width === null || row.height === null ? null : { width: row.width, height: row.height };
 
 export const toMedia = (row: MediaRow): MediaItem => {
-  const base = { id: row.id, storageKey: row.storageKey, uploadedBy: row.uploadedBy };
+  const base = {
+    id: row.id,
+    storageKey: row.storageKey,
+    fingerprint: row.fingerprint,
+    uploadedBy: row.uploadedBy,
+  };
   const at = row.capturedAt;
   const place = placeOf(row);
   const camera = cameraOf(row);

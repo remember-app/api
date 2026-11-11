@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -26,10 +27,12 @@ async function uploadAsset(
   asset: Asset,
 ): Promise<{ itemId: string; mediaId: string }> {
   const file = readFileSync(join(ASSETS, "mock", dirOf(asset.file), asset.file));
+  const fingerprint = createHash("sha256").update(file).digest("hex");
   const plan = await post<UploadPlan>(`/v1/projects/${projectId}/uploads`, token, {
     kind: asset.kind,
     sizeBytes: file.length,
     fileName: asset.file,
+    fingerprint,
     capturedAt: daysAgo(asset.daysAgo).toISOString(),
     ...(asset.durationSeconds === undefined ? {} : { durationSeconds: asset.durationSeconds }),
   });
