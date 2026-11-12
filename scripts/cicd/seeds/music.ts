@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sql } from "../../../src/integrations/db/index.ts";
 import { putObject } from "../../../src/integrations/storage/s3.ts";
+import { SYSTEM_MEDIA } from "../../../src/services/system/media.ts";
 import { ASSETS } from "./assets.ts";
 import analysisByFile from "./music.analysis.json" with { type: "json" };
 import { MUSIC } from "./music.manifest.ts";
 
 const suffix = (index: number): string => String(index + 1).padStart(12, "0");
+
+const coverEntry = SYSTEM_MEDIA.find((entry) => entry.name === "song-cover");
+if (!coverEntry) throw new Error("seeds: system media has no song-cover");
+const COVER_ID = coverEntry.mediaId;
 
 export async function seedMusic(): Promise<void> {
   const songIds: string[] = [];
@@ -40,9 +45,10 @@ export async function seedMusic(): Promise<void> {
           duration = excluded.duration
     `;
     await sql`
-      insert into songs (id, name, author, media_id, project_id, uploaded_by, analysis)
+      insert into songs (id, name, author, media_id, project_id, uploaded_by, cover_id, analysis)
       values (
         ${songId}, ${track.name}, ${track.author}, ${mediaId}, null, null,
+        ${COVER_ID},
         ${analysis === null ? null : sql.json(analysis as never)}
       )
       on conflict (id) do update
@@ -51,6 +57,7 @@ export async function seedMusic(): Promise<void> {
           media_id = excluded.media_id,
           project_id = excluded.project_id,
           uploaded_by = excluded.uploaded_by,
+          cover_id = excluded.cover_id,
           analysis = excluded.analysis
     `;
     console.log(`essentials: track ${track.name}`);
