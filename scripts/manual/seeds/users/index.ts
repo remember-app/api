@@ -1,4 +1,4 @@
-import { login, type Person, post, type Token } from "./common.ts";
+import { login, type Person, post, type Token } from "../common.ts";
 
 const PEOPLE: Person[] = [
   { email: "a@x.io", username: "alice", name: "Алиса", language: "ru" },

@@ -6,6 +6,7 @@ export type SongResponse = {
   author: string;
   mediaId: string;
   coverId: string | null;
+  coverUrl: string | null;
   description: string | null;
   projectId: string | null;
   uploadedBy: string | null;

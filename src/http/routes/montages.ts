@@ -2,7 +2,9 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { config } from "../../config.ts";
 import { sendPush } from "../../integrations/push/index.ts";
+import { downloadUrl } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
+import { getMedia } from "../../services/media/queries.ts";
 import {
   createMontage,
   getMontage,
@@ -96,7 +98,17 @@ export function montageRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
-      return listTemplates();
+      const ttl = config.media.downloadTtlSeconds();
+      const templates = await listTemplates();
+      return Promise.all(
+        templates.map(async (template) => {
+          const cover = template.coverId ? await getMedia(template.coverId) : undefined;
+          return {
+            ...template,
+            coverUrl: cover ? await downloadUrl(cover.storageKey, ttl) : null,
+          };
+        }),
+      );
     },
   );
 

@@ -26,13 +26,23 @@ const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 type ProjectParams = { projectId: string };
 type SongParams = { projectId: string; songId: string };
 
+async function withCovers<T extends { coverId: string | null }>(items: T[], ttl: number) {
+  return Promise.all(
+    items.map(async (song) => {
+      const cover = song.coverId ? await getMedia(song.coverId as MediaId) : undefined;
+      return { ...song, coverUrl: cover ? await downloadUrl(cover.storageKey, ttl) : null };
+    }),
+  );
+}
+
 export function songRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { limit?: number; offset?: number } }>(
     "/songs/library",
     { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
     async (request) => {
       const { limit, offset } = pageOf(request.query);
-      return listLibrarySongs(limit, offset);
+      const page = await listLibrarySongs(limit, offset);
+      return { ...page, items: await withCovers(page.items, config.media.downloadTtlSeconds()) };
     },
   );
 
@@ -51,7 +61,7 @@ export function songRoutes(app: FastifyInstance) {
         offset,
       );
       if (!page) return fail(reply, 404, "not_found");
-      return page;
+      return { ...page, items: await withCovers(page.items, config.media.downloadTtlSeconds()) };
     },
   );
 
@@ -108,8 +118,9 @@ export function songRoutes(app: FastifyInstance) {
       if (!song) return fail(reply, 404, "not_found");
       const media = await getMedia(song.mediaId);
       if (!media) return fail(reply, 404, "not_found");
+      const [signed] = await withCovers([song], config.media.downloadTtlSeconds());
       return {
-        ...song,
+        ...signed,
         url: await downloadUrl(media.storageKey, config.media.downloadTtlSeconds()),
       };
     },

@@ -1,5 +1,6 @@
 import type { MediaId, MontageId, ProjectId, ProjectItemId, TemplateId, UserId } from "./id.ts";
 import type { MediaDimension } from "./mediaItem.ts";
+import type { Language } from "./user.ts";
 
 export type MontageStatus = "queued" | "processing" | "done" | "failed";
 
@@ -59,9 +60,14 @@ export type MontageSource = {
 
 export type MontageTemplate = {
   id: TemplateId;
-  name: string;
   settings: MontageSetting;
   coverId: MediaId | null;
-  description: string | null;
+  about: Record<
+    Language,
+    {
+      name: string;
+      description: string;
+    }
+  >;
   referenceMediaId: MediaId | null;
 };

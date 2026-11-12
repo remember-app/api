@@ -1,3 +1,5 @@
+import type { Language } from "./user.ts";
+
 export type MontageStage = "analysis" | "preparation" | "directing" | "editing";
 
 export type MontageStatus = "queued" | "processing" | "done" | "failed";
@@ -59,9 +61,15 @@ export type MontageCreateRequest = {
 
 export type MontageTemplateResponse = {
   id: string;
-  name: string;
+  about: Record<
+    Language,
+    {
+      name: string;
+      description: string;
+    }
+  >;
   settings: MontageSettingsResponse;
   coverId: string | null;
-  description: string | null;
+  coverUrl: string | null;
   referenceMediaId: string | null;
 };

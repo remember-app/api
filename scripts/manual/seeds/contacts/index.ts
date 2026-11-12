@@ -1,4 +1,4 @@
-import { get, post, type Token, tokenOf } from "./common.ts";
+import { get, post, type Token, tokenOf } from "../common.ts";
 
 const CHAIN = [
   ["alice", "bob"],

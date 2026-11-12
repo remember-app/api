@@ -1,4 +1,7 @@
-import { daysAgo, del, gb, get, type Project, post, type Token, tokenOf } from "./common.ts";
+import { fileURLToPath } from "node:url";
+import { daysAgo, del, gb, get, type Project, post, type Token, tokenOf } from "../common.ts";
+
+export const PROJECT_ASSETS = fileURLToPath(new URL("./assets", import.meta.url));
 
 export const PROJECTS: Project[] = [
   {

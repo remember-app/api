@@ -1,18 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  ASSETS,
-  type Asset,
-  daysAgo,
-  type Project,
-  patch,
-  post,
-  type Token,
-  tokenOf,
-} from "./common.ts";
+import { type Asset, daysAgo, type Project, patch, post, type Token, tokenOf } from "./common.ts";
 
-type UploadPlan = { id: string; parts: string[] };
+type UploadPlan = { id: string; partBytes: number; parts: string[] };
 
 const dirOf = (file: string): string =>
   /\.(mp4|mov|m4v)$/i.test(file)
@@ -25,39 +16,43 @@ async function uploadAsset(
   token: Token,
   projectId: string,
   asset: Asset,
+  assetsDir: string,
 ): Promise<{ itemId: string; mediaId: string }> {
-  const file = readFileSync(join(ASSETS, "mock", dirOf(asset.file), asset.file));
+  const file = readFileSync(join(assetsDir, dirOf(asset.file), asset.file));
   const fingerprint = createHash("sha256").update(file).digest("hex");
   const plan = await post<UploadPlan>(`/v1/projects/${projectId}/uploads`, token, {
     kind: asset.kind,
     sizeBytes: file.length,
     fileName: asset.file,
     fingerprint,
-    capturedAt: daysAgo(asset.daysAgo).toISOString(),
+    capturedAt: (asset.capturedAt ?? daysAgo(asset.daysAgo ?? 0)).toISOString(),
     ...(asset.durationSeconds === undefined ? {} : { durationSeconds: asset.durationSeconds }),
   });
-  const signed = plan.parts[0];
-  if (plan.parts.length !== 1 || !signed) {
-    throw new Error(`test seed expects one part for ${asset.file}, got ${plan.parts.length}`);
+  const parts: { part_number: number; etag: string }[] = [];
+  for (let index = 0; index < plan.parts.length; index += 1) {
+    const signed = plan.parts[index];
+    if (!signed) throw new Error(`test seed: no link for part ${index + 1} of ${asset.file}`);
+    const url = new URL(signed);
+    if (process.env.S3_ENDPOINT) {
+      const internal = new URL(process.env.S3_ENDPOINT);
+      url.protocol = internal.protocol;
+      url.host = internal.host;
+    }
+    const start = index * plan.partBytes;
+    const put = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": asset.contentType },
+      body: file.subarray(start, start + plan.partBytes),
+    });
+    if (!put.ok) throw new Error(`S3 PUT ${asset.file} → ${put.status} ${await put.text()}`);
+    const etag = (put.headers.get("etag") ?? "").replaceAll('"', "");
+    if (!etag) throw new Error(`S3 PUT ${asset.file} → no ETag`);
+    parts.push({ part_number: index + 1, etag });
   }
-  const url = new URL(signed);
-  if (process.env.S3_ENDPOINT) {
-    const internal = new URL(process.env.S3_ENDPOINT);
-    url.protocol = internal.protocol;
-    url.host = internal.host;
-  }
-  const put = await fetch(url, {
-    method: "PUT",
-    headers: { "content-type": asset.contentType },
-    body: file,
-  });
-  if (!put.ok) throw new Error(`S3 PUT ${asset.file} → ${put.status} ${await put.text()}`);
-  const etag = (put.headers.get("etag") ?? "").replaceAll('"', "");
-  if (!etag) throw new Error(`S3 PUT ${asset.file} → no ETag`);
   return post<{ itemId: string; mediaId: string }>(
     `/v1/projects/${projectId}/uploads/${plan.id}/complete`,
     token,
-    { parts: [{ part_number: 1, etag }] },
+    { parts },
   );
 }
 
@@ -66,12 +61,13 @@ export async function seedMedia(
   project: Project,
   projectId: string,
   labelIds: Map<string, string>,
+  assetsDir: string,
 ): Promise<string[]> {
   const owner = tokenOf(tokens, project.owner);
   const itemIds: string[] = [];
   for (const asset of project.assets) {
     const uploader = tokenOf(tokens, asset.by ?? project.owner);
-    const uploaded = await uploadAsset(uploader, projectId, asset);
+    const uploaded = await uploadAsset(uploader, projectId, asset, assetsDir);
     itemIds.push(uploaded.itemId);
     if (asset.kind === "audio") {
       await post(`/v1/projects/${projectId}/songs`, owner, {
@@ -80,9 +76,11 @@ export async function seedMedia(
         mediaId: uploaded.mediaId,
       });
     }
-    await patch(`/v1/projects/${projectId}/items/${uploaded.itemId}`, uploader, {
-      description: asset.description,
-    });
+    if (asset.description) {
+      await patch(`/v1/projects/${projectId}/items/${uploaded.itemId}`, uploader, {
+        description: asset.description,
+      });
+    }
     if (asset.place) {
       await patch(`/v1/projects/${projectId}/media/${uploaded.mediaId}`, uploader, {
         latitude: asset.place.latitude,

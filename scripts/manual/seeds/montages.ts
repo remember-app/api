@@ -24,6 +24,7 @@ export async function seedMontages(
   itemIds: string[],
 ): Promise<void> {
   for (const order of project.montages) {
+    const include = order.include ? order.include.flatMap((at) => itemIds[at] ?? []) : itemIds;
     const made = await post<{ id: string }>(`/v1/projects/${projectId}/montages`, token, {
       payFrom: "user",
       config: {
@@ -31,7 +32,7 @@ export async function seedMontages(
         prompt: order.prompt,
         dimensions: order.dimensions,
         musicIds: [],
-        includeItemIds: itemIds,
+        includeItemIds: include,
       },
     });
     await waitMontage(token, projectId, made.id);

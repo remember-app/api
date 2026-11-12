@@ -1,7 +1,9 @@
 import { sql } from "../../../src/integrations/db/index.ts";
 import {
+  ANALYSIS_GRADING_KEY,
   ANALYSIS_PRICE_KEY,
   type AnalysisPrice,
+  DEFAULT_ANALYSIS_GRADING,
   INVITE_REWARDS_KEY,
   type InviteRewards,
 } from "../../../src/services/settings/defaults.ts";
@@ -21,6 +23,10 @@ const SETTINGS: { key: string; value: Json }[] = [
   {
     key: ANALYSIS_PRICE_KEY,
     value: { tokens: 1 } satisfies AnalysisPrice,
+  },
+  {
+    key: ANALYSIS_GRADING_KEY,
+    value: DEFAULT_ANALYSIS_GRADING,
   },
   {
     key: PROVIDER_RATES_KEY,

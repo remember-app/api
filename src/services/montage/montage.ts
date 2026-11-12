@@ -179,13 +179,12 @@ export async function listTemplates(): Promise<MontageTemplate[]> {
   return sql<MontageTemplate[]>`
     select
       id,
-      name,
       settings,
       cover_id as "coverId",
-      description,
+      about,
       reference_media_id as "referenceMediaId"
     from montage_templates
-    order by name
+    order by about -> 'en' ->> 'name'
   `;
 }
 
@@ -193,10 +192,9 @@ export async function getTemplate(id: TemplateId): Promise<MontageTemplate | und
   const [row] = await sql<MontageTemplate[]>`
     select
       id,
-      name,
       settings,
       cover_id as "coverId",
-      description,
+      about,
       reference_media_id as "referenceMediaId"
     from montage_templates
     where id = ${id}

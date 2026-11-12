@@ -1,8 +1,4 @@
-import { fileURLToPath } from "node:url";
-
 export const API = (process.env.API_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-
-export const ASSETS = fileURLToPath(new URL("../../../assets", import.meta.url));
 
 export const day = 86_400_000;
 export const daysAgo = (days: number): Date => new Date(Date.now() - days * day);
@@ -52,8 +48,9 @@ export type Asset = {
   file: string;
   kind: "photo" | "video" | "audio";
   contentType: string;
-  daysAgo: number;
-  description: string;
+  capturedAt?: Date;
+  daysAgo?: number;
+  description?: string;
   place: { latitude: number; longitude: number } | null;
   labels: string[];
   durationSeconds?: number;
@@ -64,6 +61,7 @@ export type MontageOrder = {
   targetSeconds: number;
   prompt: string | null;
   dimensions: { width: number; height: number };
+  include?: number[];
 };
 
 export type Project = {
