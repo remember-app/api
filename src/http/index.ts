@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { authPlugin } from "./plugins/auth.ts";
+import { analysisRoutes } from "./routes/analysis.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { avatarRoutes } from "./routes/avatar.ts";
 import { contactRoutes } from "./routes/contacts.ts";
@@ -25,6 +26,7 @@ export function registerRoutes(app: FastifyInstance): void {
       userRoutes(v1);
       projectRoutes(v1);
       mediaRoutes(v1);
+      analysisRoutes(v1);
       uploadRoutes(v1);
       labelRoutes(v1);
       songRoutes(v1);
