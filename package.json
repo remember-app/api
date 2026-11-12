@@ -11,7 +11,6 @@
     "start": "node --env-file-if-exists=.env src/server.ts",
     "migrate": "node --env-file-if-exists=.env scripts/cicd/migrations/index.ts",
     "seed:essentials": "node --env-file-if-exists=.env scripts/cicd/seeds/index.ts",
-    "seed:test": "node --env-file-if-exists=.env scripts/manual/seeds/index.ts",
     "lint": "biome check",
     "format": "biome format --write",
     "typecheck": "tsc --noEmit"

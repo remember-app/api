@@ -56,8 +56,7 @@ src/montages/music.ts     полка из десяти треков и свой 
 src/privacy/privacy.ts    GET /privacy — публичная страница политики конфиденциальности, текст в этом же файле
 scripts/cicd/        выкатка: index.ts, migrations/ и seeds/ по доменам
 scripts/cicd/migrations/  папки по релизам (initial/), файлы по доменам, номера сквозные по всем папкам
-scripts/manual/      ручной стенд: seeds/ по доменам
-assets/               медиа для сидов: mock, music, system
+assets/               медиа для системного сида: music
 Dockerfile            боевой образ; .gitlab-ci.yml на пуш в dev собирает его и выкатывает на dev
 docs/                 как поднять, что обещает каждый маршрут и как это проверяется
 ```
