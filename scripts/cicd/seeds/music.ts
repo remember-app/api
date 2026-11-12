@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { sql } from "../../../src/integrations/db/index.ts";
 import { putObject } from "../../../src/integrations/storage/s3.ts";
 import { ASSETS } from "./assets.ts";
+import analysisByFile from "./music.analysis.json" with { type: "json" };
 import { MUSIC } from "./music.manifest.ts";
 
 const suffix = (index: number): string => String(index + 1).padStart(12, "0");
@@ -20,6 +21,7 @@ export async function seedMusic(): Promise<void> {
     const key = `remember/mp3/${mediaId}`;
     const file = readFileSync(join(ASSETS, "music", track.file));
     const fingerprint = createHash("sha256").update(file).digest("hex");
+    const analysis = (analysisByFile as Record<string, unknown>)[track.file] ?? null;
     await putObject(key, file, "audio/mpeg");
     await sql`
       insert into media_items (
@@ -38,14 +40,18 @@ export async function seedMusic(): Promise<void> {
           duration = excluded.duration
     `;
     await sql`
-      insert into songs (id, name, author, media_id, project_id, uploaded_by)
-      values (${songId}, ${track.name}, ${track.author}, ${mediaId}, null, null)
+      insert into songs (id, name, author, media_id, project_id, uploaded_by, analysis)
+      values (
+        ${songId}, ${track.name}, ${track.author}, ${mediaId}, null, null,
+        ${analysis === null ? null : sql.json(analysis as never)}
+      )
       on conflict (id) do update
       set name = excluded.name,
           author = excluded.author,
           media_id = excluded.media_id,
           project_id = excluded.project_id,
-          uploaded_by = excluded.uploaded_by
+          uploaded_by = excluded.uploaded_by,
+          analysis = excluded.analysis
     `;
     console.log(`essentials: track ${track.name}`);
   }

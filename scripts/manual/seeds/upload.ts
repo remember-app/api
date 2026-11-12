@@ -5,6 +5,8 @@ import { type Asset, daysAgo, type Project, patch, post, type Token, tokenOf } f
 
 type UploadPlan = { id: string; partBytes: number; parts: string[] };
 
+export type UploadedMedia = { itemId: string; mediaId: string };
+
 const dirOf = (file: string): string =>
   /\.(mp4|mov|m4v)$/i.test(file)
     ? "video"
@@ -17,9 +19,12 @@ async function uploadAsset(
   projectId: string,
   asset: Asset,
   assetsDir: string,
-): Promise<{ itemId: string; mediaId: string }> {
+  uploaded: Map<string, UploadedMedia>,
+): Promise<UploadedMedia> {
   const file = readFileSync(join(assetsDir, dirOf(asset.file), asset.file));
   const fingerprint = createHash("sha256").update(file).digest("hex");
+  const same = uploaded.get(fingerprint);
+  if (same) return same;
   const plan = await post<UploadPlan>(`/v1/projects/${projectId}/uploads`, token, {
     kind: asset.kind,
     sizeBytes: file.length,
@@ -49,11 +54,13 @@ async function uploadAsset(
     if (!etag) throw new Error(`S3 PUT ${asset.file} → no ETag`);
     parts.push({ part_number: index + 1, etag });
   }
-  return post<{ itemId: string; mediaId: string }>(
+  const made = await post<UploadedMedia>(
     `/v1/projects/${projectId}/uploads/${plan.id}/complete`,
     token,
     { parts },
   );
+  uploaded.set(fingerprint, made);
+  return made;
 }
 
 export async function seedMedia(
@@ -62,13 +69,16 @@ export async function seedMedia(
   projectId: string,
   labelIds: Map<string, string>,
   assetsDir: string,
-): Promise<string[]> {
+): Promise<{ itemIds: string[]; byFile: Map<string, UploadedMedia> }> {
   const owner = tokenOf(tokens, project.owner);
   const itemIds: string[] = [];
+  const byFile = new Map<string, UploadedMedia>();
+  const uploadedBefore = new Map<string, UploadedMedia>();
   for (const asset of project.assets) {
     const uploader = tokenOf(tokens, asset.by ?? project.owner);
-    const uploaded = await uploadAsset(uploader, projectId, asset, assetsDir);
+    const uploaded = await uploadAsset(uploader, projectId, asset, assetsDir, uploadedBefore);
     itemIds.push(uploaded.itemId);
+    byFile.set(asset.file, uploaded);
     if (asset.kind === "audio") {
       await post(`/v1/projects/${projectId}/songs`, owner, {
         name: asset.description || asset.file,
@@ -95,5 +105,5 @@ export async function seedMedia(
       });
     }
   }
-  return itemIds;
+  return { itemIds, byFile };
 }
