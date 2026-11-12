@@ -19,11 +19,12 @@ const analyzeBody = {
       uniqueItems: true,
       items: { type: "string" },
     },
+    force: { type: "boolean" },
   },
 } as const;
 
 type ProjectParams = { projectId: string };
-type AnalyzeBody = { itemIds: string[] };
+type AnalyzeBody = { itemIds: string[]; force?: boolean };
 
 export function analysisRoutes(app: FastifyInstance) {
   app.get<{ Params: ProjectParams }>(
@@ -55,6 +56,7 @@ export function analysisRoutes(app: FastifyInstance) {
         projectId as ProjectId,
         request.authenticated!.user.id,
         request.body.itemIds as ProjectItemId[],
+        request.body.force === true,
       );
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
@@ -88,6 +90,7 @@ export function analysisRoutes(app: FastifyInstance) {
         projectId as ProjectId,
         request.authenticated!.user.id,
         request.body.itemIds as ProjectItemId[],
+        request.body.force === true,
       );
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");

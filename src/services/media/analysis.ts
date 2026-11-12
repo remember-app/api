@@ -29,6 +29,7 @@ async function freshMedia(
   projectId: ProjectId,
   itemIds: ProjectItemId[],
   db: Db,
+  force: boolean,
 ): Promise<MediaId[]> {
   const rows = await db<{ mediaId: MediaId; analysis: unknown }[]>`
     select media_id as "mediaId", analysis
@@ -36,9 +37,11 @@ async function freshMedia(
     where project_id = ${projectId}
       and id = any(${itemIds}::uuid[])
   `;
-  const unanalyzed = new Set(rows.filter((row) => row.analysis === null).map((row) => row.mediaId));
+  const candidates = new Set(
+    rows.filter((row) => force || row.analysis === null).map((row) => row.mediaId),
+  );
   const fresh: MediaId[] = [];
-  for (const mediaId of unanalyzed) {
+  for (const mediaId of candidates) {
     if ((await liveJobId("media_analysis", mediaId, db)) === undefined) fresh.push(mediaId);
   }
   return fresh;
@@ -57,11 +60,12 @@ export async function previewAnalysis(
   projectId: ProjectId,
   userId: UserId,
   itemIds: ProjectItemId[],
+  force = false,
 ): Promise<AnalyzeResult> {
   const allowed = await accessTo(projectId, userId);
   if (allowed !== "ok") return { denial: allowed };
   const price = await analysisPrice();
-  const fresh = await freshMedia(projectId, itemIds, sql);
+  const fresh = await freshMedia(projectId, itemIds, sql, force);
   return { queued: fresh.length, tokens: price.tokens * fresh.length };
 }
 
@@ -69,6 +73,7 @@ export async function analyzeItems(
   projectId: ProjectId,
   userId: UserId,
   itemIds: ProjectItemId[],
+  force = false,
 ): Promise<AnalyzeResult> {
   const allowed = await accessTo(projectId, userId);
   if (allowed !== "ok") return { denial: allowed };
@@ -77,7 +82,16 @@ export async function analyzeItems(
   try {
     return await sql.begin(async (tx): Promise<{ queued: number; tokens: number }> => {
       await tx`select pg_advisory_xact_lock(hashtext(${projectId}::text))`;
-      const fresh = await freshMedia(projectId, itemIds, tx);
+      const fresh = await freshMedia(projectId, itemIds, tx, force);
+      if (force) {
+        for (const mediaId of fresh) {
+          await tx`
+            update project_items
+            set analysis = null
+            where project_id = ${projectId} and media_id = ${mediaId}
+          `;
+        }
+      }
       for (const mediaId of fresh) {
         await enqueue("media_analysis", mediaId, tx);
       }
