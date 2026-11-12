@@ -38,24 +38,6 @@ export const config = {
     emailLoginMaxAttempts: () => positive("EMAIL_LOGIN_MAX_ATTEMPTS", 5),
     rateMaxPerEmail: () => positive("EMAIL_LOGIN_RATE_MAX", 5),
     rateMaxPerIp: () => positive("EMAIL_LOGIN_RATE_MAX_PER_IP", 50),
-    devLoginCode: () => {
-      const value = env("EMAIL_LOGIN_DEV_BYPASS");
-      if (!value) return undefined;
-      if ((env("NODE_ENV") ?? "").toLowerCase().startsWith("prod")) return undefined;
-      if (!/^\d{6}$/.test(value)) {
-        throw new Error("EMAIL_LOGIN_DEV_BYPASS must be six digits");
-      }
-      return value;
-    },
-    reviewLogin: () => {
-      const value = env("REVIEW_LOGIN");
-      if (!value) return undefined;
-      const [, email, code] = /^([^\s@:]+@[^\s@:]+):(\d{6})$/.exec(value) ?? [];
-      if (!email || !code || email !== email.toLowerCase()) {
-        throw new Error("REVIEW_LOGIN is not a lowercase address, a colon and six digits");
-      }
-      return { email, code };
-    },
   },
 
   media: {

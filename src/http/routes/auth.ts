@@ -60,19 +60,11 @@ export function authRoutes(app: FastifyInstance) {
       ) {
         return fail(reply, 429, "capacity_exceeded");
       }
-      const review = config.auth.reviewLogin();
-      const devCode = config.auth.devLoginCode();
-      if (!review && !devCode && !mailConfigured()) {
-        return fail(reply, 503, "email_unavailable");
-      }
+      if (!mailConfigured()) return fail(reply, 503, "email_unavailable");
       const { userId, registered } = await findOrCreateUser(email);
-      const code = review?.email === email ? review.code : (devCode ?? mintCode());
+      const code = mintCode();
       await setLoginCode(userId, code, config.auth.emailLoginTtlMinutes());
-      if (review?.email !== email && !devCode) await sendLoginCode(email, code);
-      if (devCode && review?.email !== email) {
-        request.log.warn({ email }, "dev login code returned without email");
-        return { ok: true, registered, code: devCode };
-      }
+      await sendLoginCode(email, code);
       return { ok: true, registered };
     },
   );

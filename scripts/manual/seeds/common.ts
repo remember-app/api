@@ -1,3 +1,5 @@
+import { findOrCreateUser, issueSession } from "../../../src/services/auth/commands.ts";
+
 export const API = (process.env.API_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
 export const day = 86_400_000;
@@ -78,13 +80,8 @@ export type Project = {
 type Session = { token: Token; user: { id: string; registered: boolean } };
 
 export async function login(email: string): Promise<Session> {
-  const started = await post<{ code?: string }>("/v1/auth/email/start", undefined, { email });
-  if (!started.code) {
-    throw new Error(
-      "test seed needs the dev login door: start the API with EMAIL_LOGIN_DEV_BYPASS=123456",
-    );
-  }
-  return post<Session>("/v1/auth/email/verify", undefined, { email, code: started.code });
+  const { userId, registered } = await findOrCreateUser(email);
+  return { token: await issueSession(userId), user: { id: userId, registered } };
 }
 
 export function tokenOf(tokens: Map<string, Token>, username: string): Token {

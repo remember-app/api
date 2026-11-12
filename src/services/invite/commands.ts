@@ -124,6 +124,16 @@ export type InviteDenialReason = "not_found" | "expired" | "exhausted";
 
 export type AcceptResult = { invite: Invite } | { denial: InviteDenialReason };
 
+export async function checkInvite(token: string): Promise<InviteDenialReason | "ok"> {
+  const [row] = await sql<InviteRow[]>`select ${columns} from invites where token = ${token}`;
+  if (!row) return "not_found";
+  const invite = toInvite(row);
+  if (invite.revokedAt !== null) return "not_found";
+  if (invite.expiresAt !== null && invite.expiresAt <= new Date()) return "expired";
+  if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) return "exhausted";
+  return "ok";
+}
+
 export async function acceptInvite(token: string, userId: UserId): Promise<AcceptResult> {
   const rewards = await inviteRewards();
   return sql.begin(async (tx) => {

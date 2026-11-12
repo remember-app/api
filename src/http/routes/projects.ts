@@ -6,6 +6,7 @@ import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import { donateToProject } from "../../services/consumable/commands.ts";
 import {
   acceptInvite,
+  checkInvite,
   createAppInvite,
   createProjectInvite,
   rotateProjectInvite,
@@ -427,6 +428,21 @@ export function projectRoutes(app: FastifyInstance) {
         expiresAt: request.body.expiresAt ? new Date(request.body.expiresAt) : null,
       });
       return { token: invite.token, maxUses: invite.maxUses };
+    },
+  );
+
+  app.post<{ Body: { token: string } }>(
+    "/invites/check",
+    { schema: { body: acceptBody } },
+    async (request, reply) => {
+      if (!allow("invite-check", request.ip, config.rate.invites(), config.rate.windowMs())) {
+        return fail(reply, 429, "capacity_exceeded");
+      }
+      const result = await checkInvite(request.body.token);
+      if (result === "ok") return { ok: true };
+      if (result === "expired") return fail(reply, 410, "not_found");
+      if (result === "exhausted") return fail(reply, 409, "conflict");
+      return fail(reply, 404, "not_found");
     },
   );
 
