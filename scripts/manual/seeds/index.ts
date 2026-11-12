@@ -1,5 +1,5 @@
-import { applySnapshot, clearTrail } from "./anthropovy/apply.ts";
-import { ANTHROPOVY, ANTHROPOVY_ASSETS } from "./anthropovy/index.ts";
+import { ANTHROPOVY } from "./anthropovy/index.ts";
+import { seedAnthropovy } from "./anthropovy/seed.ts";
 import { API, type Project, type Token, tokenOf } from "./common.ts";
 import { seedContacts } from "./contacts/index.ts";
 import { seedMontages } from "./montages.ts";
@@ -22,24 +22,12 @@ async function seedProject(
   );
 }
 
-async function seedAnthropovy(tokens: Map<string, Token>): Promise<void> {
-  const owner = tokenOf(tokens, ANTHROPOVY.owner);
-  await clearTrail(ANTHROPOVY.title);
-  await removeSeedProject(owner, ANTHROPOVY.title);
-  const { projectId, labelIds } = await createProject(tokens, ANTHROPOVY);
-  const media = await seedMedia(tokens, ANTHROPOVY, projectId, labelIds, ANTHROPOVY_ASSETS);
-  await applySnapshot(projectId, media.byFile);
-  console.log(
-    `test seed: «${ANTHROPOVY.title}» — ${ANTHROPOVY.assets.length} assets, analysis and montage from the snapshot`,
-  );
-}
-
 async function main(): Promise<void> {
   const tokens = await seedUsers();
   await seedContacts(tokens);
 
   for (const project of PROJECTS) await seedProject(tokens, project, PROJECT_ASSETS);
-  await seedAnthropovy(tokens);
+  await seedAnthropovy(ANTHROPOVY.owner);
 
   console.log(`test seed: done against ${API}`);
 }
