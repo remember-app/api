@@ -1,7 +1,6 @@
 # Music sources
 
-16 instrumental tracks for the montage, all from Pixabay under the Pixabay Content License.
-Every track was checked on its own page and has no Content ID registration.
+14 instrumental tracks for the montage, all from Pixabay under the Pixabay Content License.
 
 ## License
 
@@ -22,70 +21,62 @@ and the track page template displays the "Free for use under the Pixabay Content
 
 ## Content ID
 
-All 16 tracks are marked "no" in the table. This was checked per track, not from a summary:
+The shelf is no longer fully clean. On 2026-11-12 the Pixabay catalogue turned out to be almost
+entirely marked "Content ID Registered": of about 90 carefully matching candidates checked on their
+own pages, only four unregistered tracks were found, and all four are in this set. Ten tracks are
+registered. A registered track may still trigger a claim on YouTube or Instagram despite the licence;
+the claim can be disputed with the Pixabay licence page.
 
-- On each track page, the HTML/JSON-LD contains no `Content ID Registered` property or badge.
-- On the Pixabay search listing, each track row has no Shield icon. The Shield icon is the listing's
-  Content ID marker; it is present for registered tracks and absent for these.
-- Each track page was opened individually and checked on 2026-11-11.
-
-No Mixkit tracks are used: Mixkit does not publish a per-track Content ID flag, so absence of
-registration cannot be confirmed from the source. Everything here has an explicit page-level check.
+The check was done per track, on its own page: the page HTML/JSON-LD contains the
+`"name": "Content ID Registered", "value": true` property for registered tracks, and no such property
+for the four clean ones.
 
 ## Tracks
 
 | File | Title | Author | Source page | License | Mood group | Content ID |
 |---|---|---|---|---|---|---|
-| new-year-celebration.mp3 | New Year Celebration | AtlasAudio | https://pixabay.com/music/instrumental-new-year-celebration-625717/ | Pixabay Content License | energetic | no |
-| party-countdown.mp3 | Party New Year Countdown Celebration | alex-morgan | https://pixabay.com/music/instrumental-party-new-year-countdown-celebration-587385/ | Pixabay Content License | energetic | no |
-| folk-acoustic-upbeat.mp3 | Folk Acoustic Upbeat | 331music | https://pixabay.com/music/folk-folk-acoustic-upbeat-591941/ | Pixabay Content License | energetic | no |
-| upbeat-inspiring-folk.mp3 | Upbeat Inspiring Folk Acoustic Guitar | Music_for_Creators | https://pixabay.com/music/acoustic-group-upbeat-inspiring-folk-acoustic-guitar-337290/ | Pixabay Content License | energetic | no |
-| triumphant-brass-fanfare.mp3 | Triumphant Brass Fanfare | u_33aigmrb9v | https://pixabay.com/music/classical-string-quartet-triumphant-brass-fanfare-457560/ | Pixabay Content License | energetic | no |
-| wedding-entrance.mp3 | Wedding Entrance | AtlasAudio | https://pixabay.com/music/wedding-wedding-entrance-621618/ | Pixabay Content License | energetic | no |
-| uplifting-positive.mp3 | Uplifting Positive | Kulakovka | https://pixabay.com/music/adventure-uplifting-positive-614903/ | Pixabay Content License | energetic | no |
-| light-music.mp3 | Light Music | 331music | https://pixabay.com/music/wedding-light-music-591928/ | Pixabay Content License | light | no |
-| warm.mp3 | Warm | 331music | https://pixabay.com/music/instrumental-warm-590536/ | Pixabay Content License | light | no |
-| jazz-lounge-sunny-cafe.mp3 | Jazz Lounge Sunny Cafe | alex-morgan | https://pixabay.com/music/modern-jazz-jazz-lounge-sunny-cafe-563577/ | Pixabay Content License | light | no |
-| light-adventure.mp3 | Light Adventure | 331music | https://pixabay.com/music/orchestral-light-adventure-591978/ | Pixabay Content License | light | no |
-| family-memories.mp3 | Family - Family Memories Music | APALONBeats | https://pixabay.com/music/folk-family-family-memories-music-597069/ | Pixabay Content License | warm | no |
-| sweet-home.mp3 | Sweet Home | GreenRocketAudio | https://pixabay.com/music/folk-sweet-home-601481/ | Pixabay Content License | warm | no |
-| warm-home.mp3 | Warm Home | 331music | https://pixabay.com/music/ambient-warm-home-595415/ | Pixabay Content License | warm | no |
-| light-gentle.mp3 | Light Gentle | 331music | https://pixabay.com/music/modern-classical-light-gentle-591980/ | Pixabay Content License | calm | no |
-| inspiring-background.mp3 | Inspiring Background | Kulakovka | https://pixabay.com/music/ambient-inspiring-background-620576/ | Pixabay Content License | calm | no |
+| cinematic-trailer-leberch.mp3 | Cinematic Trailer | leberch | https://pixabay.com/music/main-title-cinematic-trailer-241658/ | Pixabay Content License | trailer | yes |
+| cinematic-trailer-nastelbom.mp3 | Cinematic Trailer | NastelBom | https://pixabay.com/music/main-title-cinematic-trailer-341487/ | Pixabay Content License | trailer | yes |
+| nostalgic-nastelbom.mp3 | Nostalgic | NastelBom | https://pixabay.com/music/modern-classical-nostalgic-464374/ | Pixabay Content License | warm | yes |
+| nostalgic-piano-atlasaudio.mp3 | Nostalgic Piano | AtlasAudio | https://pixabay.com/music/nostalgia-nostalgic-piano-520047/ | Pixabay Content License | warm | yes |
+| cinematic-documentary-leberch.mp3 | Cinematic Documentary | leberch | https://pixabay.com/music/solo-piano-cinematic-documentary-614289/ | Pixabay Content License | warm | yes |
+| drifting-pines.mp3 | Drifting Pines | Dieu_Anh | https://pixabay.com/music/folk-drifting-pines-acoustic-folk-guitar-instrumental-545147/ | Pixabay Content License | acoustic | no |
+| all-over-again.mp3 | All Over Again | Music_for_Creators | https://pixabay.com/music/folk-all-over-again-383370/ | Pixabay Content License | acoustic | no |
+| thinking-of-home.mp3 | Thinking of Home | 22941069 | https://pixabay.com/music/solo-guitar-thinking-of-home-acoustic-guitar-piece-11885/ | Pixabay Content License | acoustic | no |
+| documentary-subclair.mp3 | Documentary | Sub_Clair | https://pixabay.com/music/ambient-documentary-624919/ | Pixabay Content License | chronicle | yes |
+| calm-ambient-dreamscape.mp3 | Calm Ambient Dreamscape | morgan-ambient | https://pixabay.com/music/ambient-calm-ambient-dreamscape-529861/ | Pixabay Content License | atmosphere | no |
+| ambient-cinematic-leberch.mp3 | Ambient Cinematic | leberch | https://pixabay.com/music/ambient-ambient-cinematic-628167/ | Pixabay Content License | atmosphere | yes |
+| upbeat-documentary.mp3 | Upbeat Documentary | AtlasAudio | https://pixabay.com/music/upbeat-upbeat-documentary-621616/ | Pixabay Content License | energy | yes |
+| green-fields-wedding.mp3 | Green Fields (Wedding) | leberch | https://pixabay.com/music/wedding-green-fields-wedding-594956/ | Pixabay Content License | wedding | yes |
+| family-music-andriig.mp3 | Family - Family Music | andriig | https://pixabay.com/music/acoustic-group-family-family-music-504413/ | Pixabay Content License | family | yes |
 
-Mood distribution: 7 energetic/celebration, 4 light/easy, 3 warm/family, 2 calm/thoughtful.
+Mood distribution: 2 trailer, 3 warm piano/cinematic, 3 acoustic, 1 chronicle, 2 atmosphere,
+1 energy, 1 wedding, 1 family.
 
 ## Why these tracks
 
-The seven energetic tracks are celebration, acoustic and orchestral rather than club music:
-brass fanfare, wedding entrance, festive drums, folk and acoustic guitar. The light group is
-acoustic, jazz-lounge and orchestral; the warm group is folk and ambient; the calm group is
-modern classical and ambient.
+The old shelf was bright stock: whistles, handclaps, glockenspiel, New Year and wedding signals,
+corporate-style "uplifting" beds. These tracks are the opposite register: piano and strings,
+fingerstyle and acoustic guitar, ambient pads, cinematic builds. No vocals, no whistling and no
+handclaps are described on any of them.
 
-Instrumental evidence per track comes from the page's published genre, tags and description:
+Instrumental evidence per track comes from the page's published genre, tags and description. No track
+was auditioned: mood and instrumentation were judged from the source page, not by listening.
 
-- The energetic tracks are tagged Instrumental, Folk, Acoustic Group, Wedding, Classical String
-  Quartet or Orchestral, and their descriptions describe instrumental performances (brass, strings,
-  percussion, guitars) without vocals.
-- The light and warm tracks are tagged Instrumental, Folk, Acoustic Group, Modern Jazz, Orchestral
-  or Ambient.
-- The calm tracks are tagged Modern Classical or Ambient and describe instrumental material.
-
-No track was auditioned. Mood and instrumentation were judged from the source page's genre, mood
-tags and description, not by listening.
+The selection was made to cover the seven montage templates: trailer, story, report, chronicle,
+atmosphere, quick clip, for parents, and wedding.
 
 ## Verification
 
-- Full MP3 files, not previews or streams: all 16 are 44.1 kHz stereo MP3 at ~256 kbps,
-  93–157 seconds, 2.9–5.1 MB each.
-- Verified with ffprobe and a full ffmpeg decode pass.
-- The 16 MP3s live under `assets/music/`. The manifest and this file live with the seed in
+- Full MP3 files, not previews or streams: 44.1 kHz stereo MP3 at ~256 kbps, 82–222 seconds,
+  2.6–7.1 MB each.
+- Durations in the manifest come from ffprobe, not from the page.
+- The MP3s live under `assets/music/`. The manifest and this file live with the seed in
   `scripts/cicd/seeds/`.
 
 ## What changed from the previous set
 
-The previous set had seven Pixabay tracks with Content ID Registered and five Mixkit tracks whose
-Content ID status could not be confirmed. All twelve were removed. The four remaining Pixabay tracks
-(family-memories, warm, light-music, uplifting-positive) were already unregistered and were kept.
-Twelve replacement tracks were downloaded, so the library is again 16 tracks and every one is
-confirmed unregistered on its own page.
+The previous 16 tracks were cheerful celebration, folk and wedding stock, and all were unregistered.
+They were replaced completely because the mood did not fit candid footage from an ordinary evening.
+The old analyses in `music.analysis.json` were removed with them: they belonged to tracks that are
+no longer in the shelf.
