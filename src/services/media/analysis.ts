@@ -109,7 +109,7 @@ export async function listAnalysisJobs(
     left join lateral (
       select status, error, updated_at
       from jobs
-      where kind = 'media_analysis' and ref = pi.media_id::text
+      where kind = 'media_analysis' and ref = pi.media_id
       order by id desc
       limit 1
     ) j on true
