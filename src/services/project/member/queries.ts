@@ -3,6 +3,7 @@ import { page } from "../../../pagination.ts";
 import type { Page } from "../../../types/api.ts";
 import type { ProjectId, UserId } from "../../../types/id.ts";
 import type { ProjectMember } from "../../../types/project.ts";
+import { avatarUrls } from "../../avatar/queries.ts";
 import { type ConsumableRow, toConsumable } from "../../consumable/queries.ts";
 
 const memberColumns = sql`
@@ -19,12 +20,13 @@ const memberColumns = sql`
   pm.invited_by as "invitedBy"
 `;
 
-type MemberRow = Omit<ProjectMember, "consumables"> & ConsumableRow;
+type MemberRow = Omit<ProjectMember, "consumables" | "avatarUrl"> & ConsumableRow;
 
-export function toMember(row: MemberRow): ProjectMember {
+export function toMember(row: MemberRow, avatarUrl: string | null): ProjectMember {
   const { tokens, tokensSpend, storageBytes, storageSpend, ...member } = row;
   return {
     ...member,
+    avatarUrl,
     consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
   };
 }
@@ -40,7 +42,9 @@ export async function memberOf(
     join users u on u.id = pm.user_id
     where pm.project_id = ${projectId} and pm.user_id = ${userId}
   `;
-  return row && toMember(row);
+  if (!row) return undefined;
+  const avatars = await avatarUrls([row.userId]);
+  return toMember(row, avatars.get(row.userId) ?? null);
 }
 
 export async function allMembers(projectId: ProjectId): Promise<ProjectMember[]> {
@@ -51,7 +55,8 @@ export async function allMembers(projectId: ProjectId): Promise<ProjectMember[]>
     where pm.project_id = ${projectId}
     order by pm.joined_at, pm.user_id
   `;
-  return rows.map(toMember);
+  const avatars = await avatarUrls(rows.map((row) => row.userId));
+  return rows.map((row) => toMember(row, avatars.get(row.userId) ?? null));
 }
 
 export async function listMembers(
@@ -67,5 +72,10 @@ export async function listMembers(
     order by pm.joined_at, pm.user_id
     limit ${limit + 1} offset ${offset}
   `;
-  return page(rows.map(toMember), limit, offset);
+  const avatars = await avatarUrls(rows.map((row) => row.userId));
+  return page(
+    rows.map((row) => toMember(row, avatars.get(row.userId) ?? null)),
+    limit,
+    offset,
+  );
 }

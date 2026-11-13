@@ -26,7 +26,7 @@ export async function addMember(
   if (role === "admin" && !isAdmin(access)) return { denial: "forbidden" };
   const target = await findByUsername(username);
   if (!target) return { denial: "not_found" };
-  const [row] = await sql<(Omit<ProjectMember, "consumables"> & ConsumableRow)[]>`
+  const [row] = await sql<(Omit<ProjectMember, "consumables" | "avatarUrl"> & ConsumableRow)[]>`
     with member as (
       insert into project_members (project_id, user_id, role, invited_by)
       values (${projectId}, ${target.id}, ${role}, ${viewerId})
@@ -56,6 +56,7 @@ export async function addMember(
   return {
     member: {
       ...member,
+      avatarUrl: target.avatarUrl,
       consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
     },
   };

@@ -5,6 +5,7 @@ import { deleteObjects, downloadUrl, headSize, uploadUrl } from "../../integrati
 import type { MediaId, UserId } from "../../types/id.ts";
 import type { MediaPhotoFormat } from "../../types/mediaItem.ts";
 import { deleteMediaRows } from "../media/commands.ts";
+import { avatarUrls } from "./queries.ts";
 
 const formats: Record<string, MediaPhotoFormat> = {
   jpg: "jpeg",
@@ -72,13 +73,8 @@ export async function completeAvatarUpload(
 }
 
 export async function avatarUrl(userId: UserId): Promise<string | null> {
-  const [row] = await sql<{ storageKey: string }[]>`
-    select m.storage_key as "storageKey"
-    from users u
-    join media_items m on m.id = u.profile_media_id
-    where u.id = ${userId}
-  `;
-  return row ? downloadUrl(row.storageKey, config.media.downloadTtlSeconds()) : null;
+  const urls = await avatarUrls([userId]);
+  return urls.get(userId) ?? null;
 }
 
 export async function removeAvatar(userId: UserId): Promise<boolean> {

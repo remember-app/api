@@ -26,6 +26,7 @@ export type PublicUserResponse = {
   username: string;
   name: string;
   profileMediaId: string | null;
+  avatarUrl: string | null;
 };
 
 export type AccountResponse = UserResponse & {

@@ -12,4 +12,6 @@ export type User = {
   profileMediaId: MediaId | null;
 };
 
-export type UserPublic = Pick<User, "id" | "username" | "name" | "profileMediaId">;
+export type UserPublic = Pick<User, "id" | "username" | "name" | "profileMediaId"> & {
+  avatarUrl: string | null;
+};

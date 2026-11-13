@@ -3,6 +3,7 @@ import { type Cursor, type CursorPage, cursorPage } from "../../pagination.ts";
 import type { MediaId, ProjectId, UploadId, UserId } from "../../types/id.ts";
 import type { MediaKind } from "../../types/mediaItem.ts";
 import type { UploadStatus } from "../../types/upload.ts";
+import { avatarUrls } from "../avatar/queries.ts";
 import { accessOf } from "../project/access.ts";
 
 export type UploadView = {
@@ -22,6 +23,7 @@ export type UploadView = {
     username: string | null;
     name: string | null;
     profileMediaId: string | null;
+    avatarUrl: string | null;
   };
 };
 
@@ -87,6 +89,7 @@ export async function listUploads(
         order by date_trunc('milliseconds', u.created_at) desc, u.id desc
         limit ${limit + 1}
       `;
+  const avatars = await avatarUrls(rows.map((row) => row.uploaderId));
   const views = rows.map(
     ({ uploaderId, uploaderUsername, uploaderName, uploaderProfileMediaId, ...row }) => ({
       ...row,
@@ -95,6 +98,7 @@ export async function listUploads(
         username: uploaderUsername,
         name: uploaderName,
         profileMediaId: uploaderProfileMediaId,
+        avatarUrl: avatars.get(uploaderId) ?? null,
       },
     }),
   );

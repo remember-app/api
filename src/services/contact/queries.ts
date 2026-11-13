@@ -4,14 +4,18 @@ import type { Page } from "../../types/api.ts";
 import type { Contact } from "../../types/contact.ts";
 import type { UserId } from "../../types/id.ts";
 import type { UserPublic } from "../../types/user.ts";
+import { avatarUrls } from "../avatar/queries.ts";
 import { contactColumns } from "./internal.ts";
+
+type ContactRow = Omit<Contact, "avatarUrl">;
+type PublicRow = Omit<UserPublic, "avatarUrl">;
 
 export async function listContacts(
   ownerId: UserId,
   limit: number,
   offset: number,
 ): Promise<Page<Contact>> {
-  const rows = await sql<Contact[]>`
+  const rows = await sql<ContactRow[]>`
     select ${contactColumns}
     from contacts c
     join users u on u.id = c.contact_id
@@ -19,7 +23,12 @@ export async function listContacts(
     order by coalesce(c.name, u.username), u.id
     limit ${limit + 1} offset ${offset}
   `;
-  return page(rows, limit, offset);
+  const avatars = await avatarUrls(rows.map((row) => row.contactId));
+  return page(
+    rows.map((row) => ({ ...row, avatarUrl: avatars.get(row.contactId) ?? null })),
+    limit,
+    offset,
+  );
 }
 
 export async function listSuggestions(
@@ -27,7 +36,7 @@ export async function listSuggestions(
   limit: number,
   offset: number,
 ): Promise<Page<UserPublic>> {
-  const rows = await sql<UserPublic[]>`
+  const rows = await sql<PublicRow[]>`
     select distinct
       u.id,
       u.username,
@@ -42,5 +51,10 @@ export async function listSuggestions(
     order by u.username, u.id
     limit ${limit + 1} offset ${offset}
   `;
-  return page(rows, limit, offset);
+  const avatars = await avatarUrls(rows.map((row) => row.id));
+  return page(
+    rows.map((row) => ({ ...row, avatarUrl: avatars.get(row.id) ?? null })),
+    limit,
+    offset,
+  );
 }

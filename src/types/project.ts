@@ -11,6 +11,7 @@ export type ProjectMember = {
   contribution: ProjectContributionStatus;
   joinedAt: Date;
   invitedBy: UserId | null;
+  avatarUrl: string | null;
 };
 
 export type ProjectItem = ProjectPhoto | ProjectVideo | ProjectAudio;

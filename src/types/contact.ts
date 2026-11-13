@@ -5,4 +5,5 @@ export type Contact = {
   contactId: UserId;
   name: string | null;
   username: string | null;
+  avatarUrl: string | null;
 };

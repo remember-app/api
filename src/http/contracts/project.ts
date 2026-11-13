@@ -33,6 +33,7 @@ export type MemberResponse = {
   contribution: ContributionStatus;
   joinedAt: string;
   invitedBy: string | null;
+  avatarUrl: string | null;
 };
 
 export type MembersPageResponse = PageResponse<MemberResponse>;
