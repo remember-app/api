@@ -8,6 +8,7 @@ export type Label = {
   colorHex: `#${string}`;
   description: string | null;
   shared: boolean;
+  locked: boolean;
   itemCount: number;
   createdAt: Date;
 };

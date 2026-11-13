@@ -63,6 +63,21 @@ export async function createProject(input: NewProject): Promise<CreateProjectRes
       insert into project_members (project_id, user_id, role, storage_bytes)
       values (${created.id}, ${input.creatorId}, 'admin', ${storageBytes})
     `;
+    const [creator] = await tx<{ language: "en" | "ru" }[]>`
+      select language from users where id = ${input.creatorId}
+    `;
+    await tx`
+      insert into labels (project_id, owner_id, name, color_hex, description, shared, locked)
+      values (
+        ${created.id},
+        ${input.creatorId},
+        ${creator?.language === "en" ? "Cover" : "Обложка"},
+        '#FFB547',
+        null,
+        true,
+        true
+      )
+    `;
     if (storageBytes > 0) {
       await tx`
         update users

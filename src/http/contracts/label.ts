@@ -8,6 +8,7 @@ export type LabelResponse = {
   colorHex: `#${string}`;
   description: string | null;
   shared: boolean;
+  locked: boolean;
   itemCount: number;
   createdAt: string;
 };

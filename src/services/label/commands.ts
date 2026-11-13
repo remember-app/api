@@ -83,6 +83,7 @@ export async function deleteLabel(
 ): Promise<{ ok: true } | LabelDenial> {
   const found = await labelForEdit(projectId, labelId, viewerId);
   if ("denial" in found) return found;
+  if (found.label.locked) return { denial: "forbidden" };
   await sql`delete from labels where id = ${labelId} and project_id = ${projectId}`;
   return { ok: true };
 }

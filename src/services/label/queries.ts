@@ -13,6 +13,7 @@ const columns = sql`
   color_hex as "colorHex",
   description,
   shared,
+  locked,
   (
     select count(*)::int
     from project_item_labels l
