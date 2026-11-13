@@ -18,8 +18,16 @@ export type ProjectResponse = {
   myContribution: ContributionStatus;
 };
 
+export type ProjectMemberFaceResponse = {
+  userId: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+};
+
 export type ProjectCardResponse = ProjectResponse & {
   previewUrls: string[];
+  members: ProjectMemberFaceResponse[];
 };
 
 export type ProjectsPageResponse = PageResponse<ProjectCardResponse>;

@@ -27,6 +27,13 @@ function toConsumable(row: ConsumableRow): Consumable {
   };
 }
 
+export type ProjectMemberFace = {
+  userId: UserId;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+};
+
 export type ProjectCardView = {
   id: ProjectId;
   title: string;
@@ -34,6 +41,7 @@ export type ProjectCardView = {
   eventEnd: Date | null;
   consumables: Consumable;
   previewUrls: string[];
+  members: ProjectMemberFace[];
   itemCount: number;
   memberCount: number;
   sharedCount: number;
@@ -41,8 +49,10 @@ export type ProjectCardView = {
   myContribution: ProjectContributionStatus;
 };
 
-type CardRow = Omit<ProjectCardView, "consumables" | "previewUrls"> &
-  ConsumableRow & { previewKeys: string[] };
+type MemberFaceRow = Omit<ProjectMemberFace, "avatarUrl"> & { avatarKey: string | null };
+
+type CardRow = Omit<ProjectCardView, "consumables" | "previewUrls" | "members"> &
+  ConsumableRow & { previewKeys: string[]; memberFaces: MemberFaceRow[] };
 
 export async function homeCards(
   viewerId: UserId,
@@ -69,7 +79,8 @@ export async function homeCards(
         from project_members m
         where m.project_id = p.id and m.contribution = 'done'
       ) as "sharedCount",
-      coalesce(previews.keys, '{}') as "previewKeys"
+      coalesce(previews.keys, '{}') as "previewKeys",
+      coalesce(faces.faces, '[]'::json) as "memberFaces"
     from projects p
     join project_members pm on pm.project_id = p.id and pm.user_id = ${viewerId}
     left join lateral (
@@ -83,17 +94,43 @@ export async function homeCards(
         limit 4
       ) recent
     ) previews on true
+    left join lateral (
+      select json_agg(
+        json_build_object(
+          'userId', u.id,
+          'name', u.name,
+          'username', u.username,
+          'avatarKey', avatar.storage_key
+        ) order by earliest.joined_at, earliest.user_id
+      ) as faces
+      from (
+        select pm2.user_id, pm2.joined_at
+        from project_members pm2
+        where pm2.project_id = p.id
+        order by pm2.joined_at, pm2.user_id
+        limit 7
+      ) earliest
+      join users u on u.id = earliest.user_id
+      left join media_items avatar on avatar.id = u.profile_media_id
+    ) faces on true
     order by pm.joined_at, p.id
     limit ${limit + 1} offset ${offset}
   `;
   const ttl = config.media.downloadTtlSeconds();
   const items = await Promise.all(
     rows.slice(0, limit).map(async (row) => {
-      const { previewKeys, tokens, tokensSpend, storageBytes, storageSpend, ...card } = row;
+      const { previewKeys, memberFaces, tokens, tokensSpend, storageBytes, storageSpend, ...card } =
+        row;
       return {
         ...card,
         consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
         previewUrls: await Promise.all(previewKeys.map((key) => downloadUrl(key, ttl))),
+        members: await Promise.all(
+          memberFaces.map(async ({ avatarKey, ...face }) => ({
+            ...face,
+            avatarUrl: avatarKey ? await downloadUrl(avatarKey, ttl) : null,
+          })),
+        ),
       };
     }),
   );
