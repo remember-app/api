@@ -14,7 +14,7 @@ import {
   previewMontage,
   retryMontage,
 } from "../../services/montage/montage.ts";
-import { accessOf, isAdmin } from "../../services/project/access.ts";
+import { accessOf, canContribute } from "../../services/project/access.ts";
 import { removeTokens } from "../../services/push/commands.ts";
 import { montageFailedMessage, movieReadyMessage } from "../../services/push/messages.ts";
 import { tokensOfProject } from "../../services/push/queries.ts";
@@ -124,7 +124,7 @@ export function montageRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       return previewMontage({
         projectId: request.params.projectId as ProjectId,
         templateId: (request.body.templateId as TemplateId | null | undefined) ?? null,
@@ -153,7 +153,7 @@ export function montageRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       if (
         !allow(
           "montages",
@@ -223,7 +223,7 @@ export function montageRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const access = await memberAccess(request.params.projectId, request.authenticated!.user.id);
       if (!access) return fail(reply, 404, "not_found");
-      if (!isAdmin(access)) return fail(reply, 403, "forbidden");
+      if (!canContribute(access)) return fail(reply, 403, "forbidden");
       if (!uuidPattern.test(request.params.montageId)) return fail(reply, 404, "not_found");
       const montage = await getMontage(request.params.montageId as MontageId);
       if (!montage || montage.projectId !== request.params.projectId) {
