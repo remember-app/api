@@ -1,8 +1,10 @@
+import { quoteTokens } from "../../analysis-price.ts";
 import { sql } from "../../integrations/db/index.ts";
 import { effectiveAnalysisLevel } from "../../levels.ts";
 import { page } from "../../pagination.ts";
 import type { Page } from "../../types/api.ts";
 import type { MediaId, MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
+import type { MediaKind } from "../../types/mediaItem.ts";
 import type {
   Montage,
   MontageLevel,
@@ -64,6 +66,13 @@ export type MontagePreview = {
   tokens: number;
 };
 
+type AnalysisTarget = {
+  mediaId: MediaId;
+  kind: MediaKind;
+  level: AnalysisLevel;
+  duration: number | null;
+};
+
 export type CreateMontageResult =
   | { montage: Montage }
   | { denial: "invalid"; problems: string[] }
@@ -107,34 +116,44 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
     `;
       if (!row) throw new Error("montage insert returned no row");
 
-      const targets = new Map<MediaId, AnalysisLevel>();
+      const targets = new Map<MediaId, AnalysisTarget>();
       for (const item of order.items) {
         if (!item.analyzed) {
-          targets.set(item.mediaId, effectiveAnalysisLevel(item.kind, analysisDefault));
+          targets.set(item.mediaId, {
+            mediaId: item.mediaId,
+            kind: item.kind,
+            level: effectiveAnalysisLevel(item.kind, analysisDefault),
+            duration: item.duration,
+          });
         }
       }
       for (const song of order.songs) {
         if (!song.analyzed) {
-          targets.set(song.mediaId, effectiveAnalysisLevel("audio", analysisDefault));
+          targets.set(song.mediaId, {
+            mediaId: song.mediaId,
+            kind: "audio",
+            level: effectiveAnalysisLevel("audio", analysisDefault),
+            duration: song.duration,
+          });
         }
       }
       const dependencies: number[] = [];
-      let fresh = 0;
-      for (const [mediaId, targetLevel] of targets) {
-        const live = await liveJobId("media_analysis", mediaId, tx, targetLevel);
+      const fresh: AnalysisTarget[] = [];
+      for (const target of targets.values()) {
+        const live = await liveJobId("media_analysis", target.mediaId, tx, target.level);
         if (live !== undefined) {
           dependencies.push(live);
           continue;
         }
-        dependencies.push(await enqueue("media_analysis", mediaId, tx, null, targetLevel));
-        fresh += 1;
+        dependencies.push(await enqueue("media_analysis", target.mediaId, tx, null, target.level));
+        fresh.push(target);
       }
-      if (fresh > 0) {
-        const total = price.tokens * fresh;
+      const tokens = quoteTokens(price, fresh);
+      if (tokens > 0) {
         const paid =
           input.payFrom === "project"
-            ? await spendProjectTokens(tx, input.projectId, input.createdBy, total)
-            : await spendUserTokens(tx, input.createdBy, total);
+            ? await spendProjectTokens(tx, input.projectId, input.createdBy, tokens)
+            : await spendUserTokens(tx, input.createdBy, tokens);
         if (!paid) throw new InsufficientTokensError();
       }
       await enqueue("montage", row.id, tx, dependencies.length > 0 ? dependencies : null);
@@ -161,23 +180,35 @@ export async function previewMontage(input: {
     problems.push(`template ${input.templateId} does not exist`);
   }
   if (problems.length > 0) return { problems, tokens: 0 };
-  const targets = new Map<MediaId, AnalysisLevel>();
+  const targets = new Map<MediaId, AnalysisTarget>();
   for (const item of order.items) {
     if (!item.analyzed) {
-      targets.set(item.mediaId, effectiveAnalysisLevel(item.kind, analysisDefault));
+      targets.set(item.mediaId, {
+        mediaId: item.mediaId,
+        kind: item.kind,
+        level: effectiveAnalysisLevel(item.kind, analysisDefault),
+        duration: item.duration,
+      });
     }
   }
   for (const song of order.songs) {
     if (!song.analyzed) {
-      targets.set(song.mediaId, effectiveAnalysisLevel("audio", analysisDefault));
+      targets.set(song.mediaId, {
+        mediaId: song.mediaId,
+        kind: "audio",
+        level: effectiveAnalysisLevel("audio", analysisDefault),
+        duration: song.duration,
+      });
     }
   }
-  let fresh = 0;
-  for (const [mediaId, targetLevel] of targets) {
-    if ((await liveJobId("media_analysis", mediaId, sql, targetLevel)) === undefined) fresh += 1;
+  const fresh: AnalysisTarget[] = [];
+  for (const target of targets.values()) {
+    if ((await liveJobId("media_analysis", target.mediaId, sql, target.level)) === undefined) {
+      fresh.push(target);
+    }
   }
   const price = await analysisPrice();
-  return { problems: [], tokens: price.tokens * fresh };
+  return { problems: [], tokens: quoteTokens(price, fresh) };
 }
 
 export async function retryMontage(id: MontageId): Promise<Montage | undefined> {

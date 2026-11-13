@@ -5,7 +5,16 @@ export type Reward = { tokens: number; storageBytes: number };
 
 export type InviteRewards = { sender: Reward; invitee: Reward };
 
-export type AnalysisPrice = { tokens: number };
+export type AnalysisPriceRate =
+  | { unit: "file"; tokens: number }
+  | { unit: "second"; tokens: number }
+  | { unit: "frame"; tokens: number };
+
+export type AnalysisPrice = {
+  photo: Partial<Record<AnalysisLevel, AnalysisPriceRate>>;
+  audio: Partial<Record<AnalysisLevel, AnalysisPriceRate>>;
+  video: Partial<Record<AnalysisLevel, AnalysisPriceRate>>;
+};
 
 export type AnalysisGradingItem = { points: number; question: string };
 
@@ -22,6 +31,15 @@ export const MONTAGE_LEVEL_KEY = "montage.level";
 export const DEFAULT_ANALYSIS_LEVEL: AnalysisLevel = "medium";
 
 export const DEFAULT_MONTAGE_LEVEL: MontageLevel = "low";
+
+export const DEFAULT_ANALYSIS_PRICE: AnalysisPrice = {
+  photo: { high: { unit: "file", tokens: 1 } },
+  audio: { high: { unit: "second", tokens: 0.01 } },
+  video: {
+    low: { unit: "frame", tokens: 1 },
+    medium: { unit: "second", tokens: 0.25 },
+  },
+};
 
 export const DEFAULT_ANALYSIS_GRADING: AnalysisGradingItem[] = [
   {

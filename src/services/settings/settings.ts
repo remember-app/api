@@ -7,6 +7,7 @@ import {
   ANALYSIS_PRICE_KEY,
   type AnalysisGradingItem,
   type AnalysisPrice,
+  type AnalysisPriceRate,
   DEFAULT_ANALYSIS_LEVEL,
   DEFAULT_MONTAGE_LEVEL,
   INVITE_REWARDS_KEY,
@@ -80,16 +81,50 @@ export async function inviteRewards(): Promise<InviteRewards> {
   };
 }
 
+const PRICE_UNITS = ["file", "second", "frame"] as const;
+
+const priceRate = (value: unknown, key: string): AnalysisPriceRate => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`setting "${key}" is not an object`);
+  }
+  const row = value as Record<string, unknown>;
+  const unit = row.unit;
+  if (typeof unit !== "string" || !(PRICE_UNITS as readonly string[]).includes(unit)) {
+    throw new Error(`setting "${key}" has an invalid unit`);
+  }
+  const tokens = Number(row.tokens);
+  if (!Number.isFinite(tokens) || tokens < 0) {
+    throw new Error(`setting "${key}" has an invalid token price`);
+  }
+  return { unit: unit as AnalysisPriceRate["unit"], tokens };
+};
+
+const priceKind = (
+  value: unknown,
+  key: string,
+): Partial<Record<AnalysisLevel, AnalysisPriceRate>> => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`setting "${key}" is not an object`);
+  }
+  const row = value as Record<string, unknown>;
+  const rates: Partial<Record<AnalysisLevel, AnalysisPriceRate>> = {};
+  for (const level of LEVELS) {
+    if (row[level] !== undefined) rates[level] = priceRate(row[level], `${key}.${level}`);
+  }
+  return rates;
+};
+
 export async function analysisPrice(): Promise<AnalysisPrice> {
   const value = await setting(ANALYSIS_PRICE_KEY);
   if (typeof value !== "object" || value === null) {
     throw new Error(`setting "${ANALYSIS_PRICE_KEY}" is not an object`);
   }
-  const tokens = Number((value as Record<string, unknown>).tokens);
-  if (!Number.isSafeInteger(tokens) || tokens < 0) {
-    throw new Error(`setting "${ANALYSIS_PRICE_KEY}" has an invalid token price`);
-  }
-  return { tokens };
+  const row = value as Record<string, unknown>;
+  return {
+    photo: priceKind(row.photo, `${ANALYSIS_PRICE_KEY}.photo`),
+    audio: priceKind(row.audio, `${ANALYSIS_PRICE_KEY}.audio`),
+    video: priceKind(row.video, `${ANALYSIS_PRICE_KEY}.video`),
+  };
 }
 
 export async function analysisGrading(): Promise<AnalysisGradingItem[]> {

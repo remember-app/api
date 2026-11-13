@@ -1,3 +1,4 @@
+import { quoteTokens } from "../../analysis-price.ts";
 import { type Db, sql } from "../../integrations/db/index.ts";
 import { analysisSatisfies, effectiveAnalysisLevel } from "../../levels.ts";
 import type { MediaId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
@@ -27,7 +28,12 @@ export type AnalysisJob = {
 
 export type AnalysisJobsResult = { items: AnalysisJob[] } | { denial: "not_found" | "forbidden" };
 
-type Candidate = { mediaId: MediaId; kind: MediaKind; level: AnalysisLevel };
+type Candidate = {
+  mediaId: MediaId;
+  kind: MediaKind;
+  level: AnalysisLevel;
+  duration: number | null;
+};
 
 async function freshMedia(
   projectId: ProjectId,
@@ -36,17 +42,25 @@ async function freshMedia(
   force: boolean,
   level: AnalysisLevel,
 ): Promise<Candidate[]> {
-  const rows = await db<{ mediaId: MediaId; kind: MediaKind; analysis: unknown }[]>`
-    select media_id as "mediaId", kind, analysis
-    from project_items
-    where project_id = ${projectId}
-      and id = any(${itemIds}::uuid[])
+  const rows = await db<
+    { mediaId: MediaId; kind: MediaKind; analysis: unknown; duration: number | null }[]
+  >`
+    select pi.media_id as "mediaId", pi.kind, pi.analysis, m.duration
+    from project_items pi
+    join media_items m on m.id = pi.media_id
+    where pi.project_id = ${projectId}
+      and pi.id = any(${itemIds}::uuid[])
   `;
   const candidates = new Map<MediaId, Candidate>();
   for (const row of rows) {
     const wanted = effectiveAnalysisLevel(row.kind, level);
     if (force || !analysisSatisfies(row.analysis, wanted)) {
-      candidates.set(row.mediaId, { mediaId: row.mediaId, kind: row.kind, level: wanted });
+      candidates.set(row.mediaId, {
+        mediaId: row.mediaId,
+        kind: row.kind,
+        level: wanted,
+        duration: row.duration,
+      });
     }
   }
   const fresh: Candidate[] = [];
@@ -77,7 +91,7 @@ export async function previewAnalysis(
   if (allowed !== "ok") return { denial: allowed };
   const price = await analysisPrice();
   const fresh = await freshMedia(projectId, itemIds, sql, force, await analysisLevel());
-  return { queued: fresh.length, tokens: price.tokens * fresh.length };
+  return { queued: fresh.length, tokens: quoteTokens(price, fresh) };
 }
 
 export async function analyzeItems(
@@ -107,7 +121,7 @@ export async function analyzeItems(
       for (const candidate of fresh) {
         await enqueue("media_analysis", candidate.mediaId, tx, null, candidate.level);
       }
-      const tokens = price.tokens * fresh.length;
+      const tokens = quoteTokens(price, fresh);
       if (!(await spendUserTokens(tx, userId, tokens))) throw new InsufficientTokensError();
       return { queued: fresh.length, tokens };
     });

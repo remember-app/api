@@ -3,9 +3,9 @@ import {
   ANALYSIS_GRADING_KEY,
   ANALYSIS_LEVEL_KEY,
   ANALYSIS_PRICE_KEY,
-  type AnalysisPrice,
   DEFAULT_ANALYSIS_GRADING,
   DEFAULT_ANALYSIS_LEVEL,
+  DEFAULT_ANALYSIS_PRICE,
   DEFAULT_MONTAGE_LEVEL,
   INVITE_REWARDS_KEY,
   type InviteRewards,
@@ -26,7 +26,7 @@ const SETTINGS: { key: string; value: Json }[] = [
   },
   {
     key: ANALYSIS_PRICE_KEY,
-    value: { tokens: 1 } satisfies AnalysisPrice,
+    value: DEFAULT_ANALYSIS_PRICE,
   },
   {
     key: ANALYSIS_GRADING_KEY,
