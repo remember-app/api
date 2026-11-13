@@ -33,6 +33,7 @@ export type MediaItemCommon = {
   id: MediaId;
   storageKey: string;
   fingerprint: string;
+  perceptualHash: string;
   uploadedBy: UserId | null;
 };
 

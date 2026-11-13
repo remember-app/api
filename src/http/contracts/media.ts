@@ -30,6 +30,7 @@ export type DimensionsResponse = {
 type MediaCommonResponse = {
   id: string;
   fingerprint: string;
+  perceptualHash: string;
   format: string;
   bytes: string;
   capturedAt: string | null;

@@ -15,6 +15,7 @@ export type MediaRow = {
   kind: "photo" | "video" | "audio";
   storageKey: string;
   fingerprint: string;
+  perceptualHash: string;
   uploadedBy: UserId | null;
   format: string;
   bytes: number;
@@ -38,6 +39,7 @@ export const mediaColumns = sql`
   kind,
   storage_key as "storageKey",
   fingerprint,
+  perceptual_hash as "perceptualHash",
   uploaded_by as "uploadedBy",
   format,
   bytes,
@@ -88,6 +90,7 @@ export const toMedia = (row: MediaRow): MediaItem => {
     id: row.id,
     storageKey: row.storageKey,
     fingerprint: row.fingerprint,
+    perceptualHash: row.perceptualHash,
     uploadedBy: row.uploadedBy,
   };
   const at = row.capturedAt;
