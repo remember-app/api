@@ -16,6 +16,8 @@ export type AnalysisPrice = {
   video: Partial<Record<AnalysisLevel, AnalysisPriceRate>>;
 };
 
+export type MontagePrice = Partial<Record<MontageLevel, number>>;
+
 export type AnalysisGradingItem = { points: number; question: string };
 
 export const INVITE_REWARDS_KEY = "invites.rewards";
@@ -28,9 +30,13 @@ export const ANALYSIS_LEVEL_KEY = "analysis.level";
 
 export const MONTAGE_LEVEL_KEY = "montage.level";
 
+export const MONTAGE_PRICE_KEY = "montage.price";
+
 export const DEFAULT_ANALYSIS_LEVEL: AnalysisLevel = "medium";
 
 export const DEFAULT_MONTAGE_LEVEL: MontageLevel = "low";
+
+export const DEFAULT_MONTAGE_PRICE: MontagePrice = { low: 5 };
 
 export const DEFAULT_ANALYSIS_PRICE: AnalysisPrice = {
   photo: { high: { unit: "file", tokens: 1 } },

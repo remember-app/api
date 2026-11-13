@@ -10,9 +10,12 @@ import {
   type AnalysisPriceRate,
   DEFAULT_ANALYSIS_LEVEL,
   DEFAULT_MONTAGE_LEVEL,
+  DEFAULT_MONTAGE_PRICE,
   INVITE_REWARDS_KEY,
   type InviteRewards,
   MONTAGE_LEVEL_KEY,
+  MONTAGE_PRICE_KEY,
+  type MontagePrice,
   type Reward,
 } from "./defaults.ts";
 
@@ -51,6 +54,26 @@ export async function analysisLevel(): Promise<AnalysisLevel> {
 
 export async function montageLevel(): Promise<MontageLevel> {
   return level(await optionalSetting(MONTAGE_LEVEL_KEY), MONTAGE_LEVEL_KEY, DEFAULT_MONTAGE_LEVEL);
+}
+
+export async function montagePrice(): Promise<MontagePrice> {
+  const value = await optionalSetting(MONTAGE_PRICE_KEY);
+  if (value === undefined || value === null) return DEFAULT_MONTAGE_PRICE;
+  if (typeof value !== "object") {
+    throw new Error(`setting "${MONTAGE_PRICE_KEY}" is not an object`);
+  }
+  const row = value as Record<string, unknown>;
+  const price: MontagePrice = {};
+  for (const level of LEVELS) {
+    const rate = row[level];
+    if (rate === undefined) continue;
+    const tokens = Number(rate);
+    if (!Number.isSafeInteger(tokens) || tokens < 0) {
+      throw new Error(`setting "${MONTAGE_PRICE_KEY}.${level}" has an invalid token price`);
+    }
+    price[level] = tokens;
+  }
+  return price;
 }
 
 const reward = (value: unknown, key: string, side: string): Reward => {

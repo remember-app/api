@@ -17,7 +17,8 @@ import type {
 import type { AnalysisLevel } from "../../types/project.ts";
 import { spendProjectTokens, spendUserTokens } from "../consumable/commands.ts";
 import { enqueue, liveJobId } from "../queue/commands.ts";
-import { analysisLevel, analysisPrice, montageLevel } from "../settings/settings.ts";
+import type { MontagePrice } from "../settings/defaults.ts";
+import { analysisLevel, analysisPrice, montageLevel, montagePrice } from "../settings/settings.ts";
 import { validateOrder } from "./validate.ts";
 
 const columns = sql`
@@ -83,6 +84,12 @@ class InsufficientTokensError extends Error {}
 const levelProblem = (level: MontageLevel): string | null =>
   level === "low" ? null : `montage level ${level} is not implemented yet; only low is available`;
 
+const montageCost = (price: MontagePrice, level: MontageLevel): number => {
+  const tokens = price[level];
+  if (tokens === undefined) throw new Error(`montage.price has no rate for ${level}`);
+  return tokens;
+};
+
 export async function createMontage(input: NewMontage): Promise<CreateMontageResult> {
   const analysisDefault = await analysisLevel();
   const order = await validateOrder(input.projectId, input.config, analysisDefault);
@@ -96,6 +103,7 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
   const levelIssue = levelProblem(level);
   if (levelIssue !== null) return { denial: "invalid", problems: [levelIssue] };
   const price = await analysisPrice();
+  const montageRates = await montagePrice();
   try {
     return await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${input.projectId}::text))`;
@@ -148,7 +156,7 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
         dependencies.push(await enqueue("media_analysis", target.mediaId, tx, null, target.level));
         fresh.push(target);
       }
-      const tokens = quoteTokens(price, fresh);
+      const tokens = quoteTokens(price, fresh) + montageCost(montageRates, level);
       if (tokens > 0) {
         const paid =
           input.payFrom === "project"
@@ -208,7 +216,8 @@ export async function previewMontage(input: {
     }
   }
   const price = await analysisPrice();
-  return { problems: [], tokens: quoteTokens(price, fresh) };
+  const montageRates = await montagePrice();
+  return { problems: [], tokens: quoteTokens(price, fresh) + montageCost(montageRates, level) };
 }
 
 export async function retryMontage(id: MontageId): Promise<Montage | undefined> {

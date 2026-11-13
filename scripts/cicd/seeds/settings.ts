@@ -7,9 +7,11 @@ import {
   DEFAULT_ANALYSIS_LEVEL,
   DEFAULT_ANALYSIS_PRICE,
   DEFAULT_MONTAGE_LEVEL,
+  DEFAULT_MONTAGE_PRICE,
   INVITE_REWARDS_KEY,
   type InviteRewards,
   MONTAGE_LEVEL_KEY,
+  MONTAGE_PRICE_KEY,
 } from "../../../src/services/settings/defaults.ts";
 
 const PROVIDER_RATES_KEY = "ai.providerRates";
@@ -39,6 +41,10 @@ const SETTINGS: { key: string; value: Json }[] = [
   {
     key: MONTAGE_LEVEL_KEY,
     value: DEFAULT_MONTAGE_LEVEL,
+  },
+  {
+    key: MONTAGE_PRICE_KEY,
+    value: DEFAULT_MONTAGE_PRICE,
   },
   {
     key: PROVIDER_RATES_KEY,
