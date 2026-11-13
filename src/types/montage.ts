@@ -4,6 +4,8 @@ import type { Language } from "./user.ts";
 
 export type MontageStatus = "queued" | "processing" | "done" | "failed";
 
+export type MontageLevel = "low" | "medium" | "high";
+
 export type Montage = {
   id: MontageId;
   projectId: ProjectId;
@@ -36,6 +38,7 @@ export type MontagePreparationStageConfig = MontageSetting &
   MontageSource & {
     templateId: TemplateId | null;
     name: string | null;
+    level: MontageLevel;
   };
 
 export type MontageDirectingStageInput = {

@@ -8,6 +8,7 @@ create table jobs (
         )
     ),
     ref uuid not null,
+    level text check (level in ('low', 'medium', 'high')),
     depends_on bigint[],
     status text not null default 'queued' check (
         status in (

@@ -1,18 +1,21 @@
 import { sql } from "../../integrations/db/index.ts";
+import { effectiveAnalysisLevel } from "../../levels.ts";
 import { page } from "../../pagination.ts";
 import type { Page } from "../../types/api.ts";
-import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
+import type { MediaId, MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
 import type {
   Montage,
+  MontageLevel,
   MontageManifest,
   MontageSetting,
   MontageSource,
   MontageStatus,
   MontageTemplate,
 } from "../../types/montage.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
 import { spendProjectTokens, spendUserTokens } from "../consumable/commands.ts";
 import { enqueue, liveJobId } from "../queue/commands.ts";
-import { analysisPrice } from "../settings/settings.ts";
+import { analysisLevel, analysisPrice, montageLevel } from "../settings/settings.ts";
 import { validateOrder } from "./validate.ts";
 
 const columns = sql`
@@ -52,7 +55,7 @@ export type NewMontage = {
   projectId: ProjectId;
   createdBy: UserId;
   templateId: TemplateId | null;
-  config: MontageSetting & MontageSource & { name?: string | null };
+  config: MontageSetting & MontageSource & { name?: string | null; level?: MontageLevel | null };
   payFrom: MontagePaySource;
 };
 
@@ -68,14 +71,21 @@ export type CreateMontageResult =
 
 class InsufficientTokensError extends Error {}
 
+const levelProblem = (level: MontageLevel): string | null =>
+  level === "low" ? null : `montage level ${level} is not implemented yet; only low is available`;
+
 export async function createMontage(input: NewMontage): Promise<CreateMontageResult> {
-  const order = await validateOrder(input.projectId, input.config);
+  const analysisDefault = await analysisLevel();
+  const order = await validateOrder(input.projectId, input.config, analysisDefault);
   const problems = [...order.problems];
   if (input.templateId !== null && !(await getTemplate(input.templateId))) {
     problems.push(`template ${input.templateId} does not exist`);
   }
   if (problems.length > 0) return { denial: "invalid", problems };
 
+  const level = input.config.level ?? (await montageLevel());
+  const levelIssue = levelProblem(level);
+  if (levelIssue !== null) return { denial: "invalid", problems: [levelIssue] };
   const price = await analysisPrice();
   try {
     return await sql.begin(async (tx) => {
@@ -85,6 +95,7 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
           ...input.config,
           name: input.config.name ?? null,
           templateId: input.templateId,
+          level,
         },
         directingInput: null,
         editingParams: null,
@@ -96,19 +107,26 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
     `;
       if (!row) throw new Error("montage insert returned no row");
 
-      const targets = new Set<string>([
-        ...order.items.filter((item) => !item.analyzed).map((item) => item.mediaId),
-        ...order.songs.filter((song) => !song.analyzed).map((song) => song.mediaId),
-      ]);
+      const targets = new Map<MediaId, AnalysisLevel>();
+      for (const item of order.items) {
+        if (!item.analyzed) {
+          targets.set(item.mediaId, effectiveAnalysisLevel(item.kind, analysisDefault));
+        }
+      }
+      for (const song of order.songs) {
+        if (!song.analyzed) {
+          targets.set(song.mediaId, effectiveAnalysisLevel("audio", analysisDefault));
+        }
+      }
       const dependencies: number[] = [];
       let fresh = 0;
-      for (const mediaId of targets) {
-        const live = await liveJobId("media_analysis", mediaId, tx);
+      for (const [mediaId, targetLevel] of targets) {
+        const live = await liveJobId("media_analysis", mediaId, tx, targetLevel);
         if (live !== undefined) {
           dependencies.push(live);
           continue;
         }
-        dependencies.push(await enqueue("media_analysis", mediaId, tx));
+        dependencies.push(await enqueue("media_analysis", mediaId, tx, null, targetLevel));
         fresh += 1;
       }
       if (fresh > 0) {
@@ -131,21 +149,32 @@ export async function createMontage(input: NewMontage): Promise<CreateMontageRes
 export async function previewMontage(input: {
   projectId: ProjectId;
   templateId: TemplateId | null;
-  config: MontageSetting & MontageSource;
+  config: MontageSetting & MontageSource & { level?: MontageLevel | null };
 }): Promise<MontagePreview> {
-  const order = await validateOrder(input.projectId, input.config);
+  const level = input.config.level ?? (await montageLevel());
+  const levelIssue = levelProblem(level);
+  if (levelIssue !== null) return { problems: [levelIssue], tokens: 0 };
+  const analysisDefault = await analysisLevel();
+  const order = await validateOrder(input.projectId, input.config, analysisDefault);
   const problems = [...order.problems];
   if (input.templateId !== null && !(await getTemplate(input.templateId))) {
     problems.push(`template ${input.templateId} does not exist`);
   }
   if (problems.length > 0) return { problems, tokens: 0 };
-  const targets = [
-    ...order.items.filter((item) => !item.analyzed).map((item) => item.mediaId),
-    ...order.songs.filter((song) => !song.analyzed).map((song) => song.mediaId),
-  ];
+  const targets = new Map<MediaId, AnalysisLevel>();
+  for (const item of order.items) {
+    if (!item.analyzed) {
+      targets.set(item.mediaId, effectiveAnalysisLevel(item.kind, analysisDefault));
+    }
+  }
+  for (const song of order.songs) {
+    if (!song.analyzed) {
+      targets.set(song.mediaId, effectiveAnalysisLevel("audio", analysisDefault));
+    }
+  }
   let fresh = 0;
-  for (const mediaId of targets) {
-    if ((await liveJobId("media_analysis", mediaId, sql)) === undefined) fresh += 1;
+  for (const [mediaId, targetLevel] of targets) {
+    if ((await liveJobId("media_analysis", mediaId, sql, targetLevel)) === undefined) fresh += 1;
   }
   const price = await analysisPrice();
   return { problems: [], tokens: price.tokens * fresh };

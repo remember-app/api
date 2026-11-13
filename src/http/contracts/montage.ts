@@ -4,11 +4,14 @@ export type MontageStage = "analysis" | "preparation" | "directing" | "editing";
 
 export type MontageStatus = "queued" | "processing" | "done" | "failed";
 
+export type MontageLevel = "low" | "medium" | "high";
+
 export type MontageSettingsResponse = {
   targetSeconds: number;
   prompt: string | null;
   dimensions: { width: number; height: number };
   musicIds: string[];
+  level?: MontageLevel;
 };
 
 export type MontageOrderResponse = MontageSettingsResponse & {
@@ -16,6 +19,7 @@ export type MontageOrderResponse = MontageSettingsResponse & {
   requiredItemIds: string[];
   templateId: string | null;
   name: string | null;
+  level: MontageLevel;
 };
 
 export type MontagePreviewResponse = {

@@ -19,7 +19,7 @@ import { removeTokens } from "../../services/push/commands.ts";
 import { montageFailedMessage, movieReadyMessage } from "../../services/push/messages.ts";
 import { tokensOfProject } from "../../services/push/queries.ts";
 import type { MontageId, ProjectId, TemplateId, UserId } from "../../types/id.ts";
-import type { MontageSetting, MontageSource } from "../../types/montage.ts";
+import type { MontageLevel, MontageSetting, MontageSource } from "../../types/montage.ts";
 import { fail } from "../errors.ts";
 import { allow } from "../rate-limit.ts";
 
@@ -34,6 +34,7 @@ const configBody = {
   additionalProperties: false,
   properties: {
     name: { type: ["string", "null"], maxLength: 200 },
+    level: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
     targetSeconds: { type: "integer", minimum: 1 },
     prompt: { type: ["string", "null"], maxLength: 4000 },
     includeItemIds: {
@@ -116,7 +117,8 @@ export function montageRoutes(app: FastifyInstance) {
     Params: ProjectParams;
     Body: {
       templateId?: string | null;
-      config: MontageSetting & MontageSource & { name?: string | null };
+      config: MontageSetting &
+        MontageSource & { name?: string | null; level?: MontageLevel | null };
     };
   }>(
     "/projects/:projectId/montages/preview",
@@ -135,6 +137,7 @@ export function montageRoutes(app: FastifyInstance) {
           includeItemIds: request.body.config.includeItemIds,
           requiredItemIds: request.body.config.requiredItemIds ?? [],
           musicIds: request.body.config.musicIds,
+          level: request.body.config.level ?? null,
         },
       });
     },
@@ -145,7 +148,8 @@ export function montageRoutes(app: FastifyInstance) {
     Body: {
       templateId?: string | null;
       payFrom: MontagePaySource;
-      config: MontageSetting & MontageSource & { name?: string | null };
+      config: MontageSetting &
+        MontageSource & { name?: string | null; level?: MontageLevel | null };
     };
   }>(
     "/projects/:projectId/montages",
@@ -177,6 +181,7 @@ export function montageRoutes(app: FastifyInstance) {
           includeItemIds: request.body.config.includeItemIds,
           requiredItemIds: request.body.config.requiredItemIds ?? [],
           musicIds: request.body.config.musicIds,
+          level: request.body.config.level ?? null,
         },
       });
       if ("denial" in result) {

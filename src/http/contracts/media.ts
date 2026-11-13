@@ -1,3 +1,4 @@
+import type { ProjectMediaItemAIAnalysis } from "../../types/project.ts";
 import type { CursorPageResponse } from "./common.ts";
 import type { PublicUserResponse } from "./user.ts";
 
@@ -56,33 +57,7 @@ export type MediaResponse =
       camera: null;
     });
 
-export type AnalysisSegment = {
-  secStart: number;
-  secEnd: number;
-  text: string;
-};
-
-export type AnalysisFrame = {
-  second: number;
-  text: string;
-};
-
-export type AnalysisResponse =
-  | {
-      description: string;
-      score: number;
-      transcription: AnalysisSegment[];
-      frames: AnalysisFrame[];
-    }
-  | {
-      description: string;
-      score: number;
-      transcription: AnalysisSegment[];
-    }
-  | {
-      description: string;
-      score: number;
-    };
+export type AnalysisResponse = ProjectMediaItemAIAnalysis;
 
 export type ItemResponse = {
   item: {

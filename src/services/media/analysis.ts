@@ -1,10 +1,12 @@
 import { type Db, sql } from "../../integrations/db/index.ts";
+import { analysisSatisfies, effectiveAnalysisLevel } from "../../levels.ts";
 import type { MediaId, ProjectId, ProjectItemId, UserId } from "../../types/id.ts";
 import type { MediaKind } from "../../types/mediaItem.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
 import { spendUserTokens } from "../consumable/commands.ts";
 import { accessOf, isAdmin } from "../project/access.ts";
 import { enqueue, liveJobId } from "../queue/commands.ts";
-import { analysisPrice } from "../settings/settings.ts";
+import { analysisLevel, analysisPrice } from "../settings/settings.ts";
 
 class InsufficientTokensError extends Error {}
 
@@ -25,24 +27,33 @@ export type AnalysisJob = {
 
 export type AnalysisJobsResult = { items: AnalysisJob[] } | { denial: "not_found" | "forbidden" };
 
+type Candidate = { mediaId: MediaId; kind: MediaKind; level: AnalysisLevel };
+
 async function freshMedia(
   projectId: ProjectId,
   itemIds: ProjectItemId[],
   db: Db,
   force: boolean,
-): Promise<MediaId[]> {
-  const rows = await db<{ mediaId: MediaId; analysis: unknown }[]>`
-    select media_id as "mediaId", analysis
+  level: AnalysisLevel,
+): Promise<Candidate[]> {
+  const rows = await db<{ mediaId: MediaId; kind: MediaKind; analysis: unknown }[]>`
+    select media_id as "mediaId", kind, analysis
     from project_items
     where project_id = ${projectId}
       and id = any(${itemIds}::uuid[])
   `;
-  const candidates = new Set(
-    rows.filter((row) => force || row.analysis === null).map((row) => row.mediaId),
-  );
-  const fresh: MediaId[] = [];
-  for (const mediaId of candidates) {
-    if ((await liveJobId("media_analysis", mediaId, db)) === undefined) fresh.push(mediaId);
+  const candidates = new Map<MediaId, Candidate>();
+  for (const row of rows) {
+    const wanted = effectiveAnalysisLevel(row.kind, level);
+    if (force || !analysisSatisfies(row.analysis, wanted)) {
+      candidates.set(row.mediaId, { mediaId: row.mediaId, kind: row.kind, level: wanted });
+    }
+  }
+  const fresh: Candidate[] = [];
+  for (const candidate of candidates.values()) {
+    if ((await liveJobId("media_analysis", candidate.mediaId, db, candidate.level)) === undefined) {
+      fresh.push(candidate);
+    }
   }
   return fresh;
 }
@@ -65,7 +76,7 @@ export async function previewAnalysis(
   const allowed = await accessTo(projectId, userId);
   if (allowed !== "ok") return { denial: allowed };
   const price = await analysisPrice();
-  const fresh = await freshMedia(projectId, itemIds, sql, force);
+  const fresh = await freshMedia(projectId, itemIds, sql, force, await analysisLevel());
   return { queued: fresh.length, tokens: price.tokens * fresh.length };
 }
 
@@ -79,21 +90,22 @@ export async function analyzeItems(
   if (allowed !== "ok") return { denial: allowed };
 
   const price = await analysisPrice();
+  const level = await analysisLevel();
   try {
     return await sql.begin(async (tx): Promise<{ queued: number; tokens: number }> => {
       await tx`select pg_advisory_xact_lock(hashtext(${projectId}::text))`;
-      const fresh = await freshMedia(projectId, itemIds, tx, force);
+      const fresh = await freshMedia(projectId, itemIds, tx, force, level);
       if (force) {
-        for (const mediaId of fresh) {
+        for (const candidate of fresh) {
           await tx`
             update project_items
             set analysis = null
-            where project_id = ${projectId} and media_id = ${mediaId}
+            where project_id = ${projectId} and media_id = ${candidate.mediaId}
           `;
         }
       }
-      for (const mediaId of fresh) {
-        await enqueue("media_analysis", mediaId, tx);
+      for (const candidate of fresh) {
+        await enqueue("media_analysis", candidate.mediaId, tx, null, candidate.level);
       }
       const tokens = price.tokens * fresh.length;
       if (!(await spendUserTokens(tx, userId, tokens))) throw new InsufficientTokensError();
@@ -105,20 +117,30 @@ export async function analyzeItems(
   }
 }
 
+type AnalysisJobRow = {
+  itemId: ProjectItemId;
+  mediaId: MediaId;
+  kind: MediaKind;
+  analysis: unknown;
+  jobStatus: AnalysisJobStatus | null;
+  error: string | null;
+};
+
 export async function listAnalysisJobs(
   projectId: ProjectId,
   userId: UserId,
 ): Promise<AnalysisJobsResult> {
   const allowed = await accessTo(projectId, userId);
   if (allowed !== "ok") return { denial: allowed };
-  const items = await sql<AnalysisJob[]>`
+  const level = await analysisLevel();
+  const rows = await sql<AnalysisJobRow[]>`
     select
       pi.id as "itemId",
       pi.media_id as "mediaId",
       pi.kind,
-      case when pi.analysis is not null then 'done' else j.status end as status,
-      j.error,
-      pi.analysis
+      pi.analysis,
+      j.status as "jobStatus",
+      j.error
     from project_items pi
     left join lateral (
       select status, error, updated_at
@@ -131,5 +153,23 @@ export async function listAnalysisJobs(
       and (pi.analysis is not null or j.status is not null)
     order by coalesce(j.updated_at, pi.created_at) desc
   `;
+  const items: AnalysisJob[] = rows.map((row) => {
+    const done = analysisSatisfies(row.analysis, effectiveAnalysisLevel(row.kind, level));
+    const status: AnalysisJobStatus = done
+      ? "done"
+      : row.jobStatus === "queued" || row.jobStatus === "running" || row.jobStatus === "failed"
+        ? row.jobStatus
+        : row.analysis !== null
+          ? "done"
+          : "queued";
+    return {
+      itemId: row.itemId,
+      mediaId: row.mediaId,
+      kind: row.kind,
+      status,
+      error: row.error,
+      analysis: row.analysis,
+    };
+  });
   return { items };
 }

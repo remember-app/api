@@ -1,11 +1,15 @@
 import { sql } from "../../../src/integrations/db/index.ts";
 import {
   ANALYSIS_GRADING_KEY,
+  ANALYSIS_LEVEL_KEY,
   ANALYSIS_PRICE_KEY,
   type AnalysisPrice,
   DEFAULT_ANALYSIS_GRADING,
+  DEFAULT_ANALYSIS_LEVEL,
+  DEFAULT_MONTAGE_LEVEL,
   INVITE_REWARDS_KEY,
   type InviteRewards,
+  MONTAGE_LEVEL_KEY,
 } from "../../../src/services/settings/defaults.ts";
 
 const PROVIDER_RATES_KEY = "ai.providerRates";
@@ -27,6 +31,14 @@ const SETTINGS: { key: string; value: Json }[] = [
   {
     key: ANALYSIS_GRADING_KEY,
     value: DEFAULT_ANALYSIS_GRADING,
+  },
+  {
+    key: ANALYSIS_LEVEL_KEY,
+    value: DEFAULT_ANALYSIS_LEVEL,
+  },
+  {
+    key: MONTAGE_LEVEL_KEY,
+    value: DEFAULT_MONTAGE_LEVEL,
   },
   {
     key: PROVIDER_RATES_KEY,

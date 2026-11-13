@@ -1,7 +1,9 @@
 import { sql } from "../../integrations/db/index.ts";
+import { analysisSatisfies, effectiveAnalysisLevel } from "../../levels.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import type { MediaKind } from "../../types/mediaItem.ts";
 import type { MontageSetting, MontageSource } from "../../types/montage.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
 import { songsForOrder } from "../song/queries.ts";
 
 export type ResolvedOrderItem = {
@@ -35,6 +37,7 @@ const repeated = (values: readonly string[]): string[] => {
 export async function validateOrder(
   projectId: ProjectId,
   config: MontageSetting & MontageSource,
+  level: AnalysisLevel,
 ): Promise<ResolvedOrder> {
   const problems: string[] = [];
   if (!Number.isInteger(config.targetSeconds) || config.targetSeconds <= 0) {
@@ -60,15 +63,23 @@ export async function validateOrder(
     if (!included.has(id)) problems.push(`required item ${id} is not among the included items`);
   }
 
-  const items = await sql<ResolvedOrderItem[]>`
+  const rows = await sql<
+    { itemId: ProjectItemId; mediaId: MediaId; kind: MediaKind; analysis: unknown }[]
+  >`
     select
       pi.id as "itemId",
       pi.media_id as "mediaId",
       pi.kind,
-      (pi.analysis is not null) as analyzed
+      pi.analysis
     from project_items pi
     where pi.project_id = ${projectId} and pi.id = any(${config.includeItemIds})
   `;
+  const items: ResolvedOrderItem[] = rows.map((row) => ({
+    itemId: row.itemId,
+    mediaId: row.mediaId,
+    kind: row.kind,
+    analyzed: analysisSatisfies(row.analysis, effectiveAnalysisLevel(row.kind, level)),
+  }));
   const found = new Set(items.map((item) => item.itemId));
   for (const id of config.includeItemIds) {
     if (!found.has(id)) problems.push(`item ${id} does not belong to this project`);
@@ -83,6 +94,9 @@ export async function validateOrder(
   return {
     problems,
     items,
-    songs: songs.map((song) => ({ mediaId: song.mediaId, analyzed: song.analysis !== null })),
+    songs: songs.map((song) => ({
+      mediaId: song.mediaId,
+      analyzed: analysisSatisfies(song.analysis, effectiveAnalysisLevel("audio", level)),
+    })),
   };
 }

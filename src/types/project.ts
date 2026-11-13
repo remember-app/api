@@ -47,26 +47,46 @@ export type ProjectItemCommon = {
   createdAt: Date;
 };
 
+export type AnalysisLevel = "low" | "medium" | "high";
+
+export type AnalysisTags = Record<string, string>;
+
+export type AnalysisSegment = {
+  secStart: number;
+  secEnd: number;
+  description: string;
+  tags: AnalysisTags | null;
+};
+
 export type ProjectMediaItemAIAnalysis =
   | ProjectMediaItemAIAnalysisPhoto
   | ProjectMediaItemAIAnalysisVideo
   | ProjectMediaItemAIAnalysisAudio;
 
-export type ProjectMediaItemAIAnalysisAudio = ProjectMediaItemAIAnalysisCommon & {
-  transcription: { secStart: number; secEnd: number; text: string }[];
-  mood: { secStart: number; secEnd: number; text: string }[] | null;
-};
-
 export type ProjectMediaItemAIAnalysisVideo = ProjectMediaItemAIAnalysisCommon & {
-  frames: { second: number; text: string }[];
-  transcription: { secStart: number; secEnd: number; text: string }[] | null;
+  description: string;
+  tags: AnalysisTags | null;
+  frames: AnalysisSegment[] | null;
+  sounds: AnalysisSegment[] | null;
+  words: AnalysisSegment[] | null;
 };
 
-export type ProjectMediaItemAIAnalysisPhoto = ProjectMediaItemAIAnalysisCommon & {};
+export type ProjectMediaItemAIAnalysisAudio = ProjectMediaItemAIAnalysisCommon & {
+  description: string;
+  tags: AnalysisTags | null;
+  sounds: AnalysisSegment[] | null;
+  words: AnalysisSegment[] | null;
+};
+
+export type ProjectMediaItemAIAnalysisPhoto = ProjectMediaItemAIAnalysisCommon & {
+  description: string;
+  tags: AnalysisTags | null;
+};
 
 export type ProjectMediaItemAIAnalysisCommon = {
-  description: string;
+  level: AnalysisLevel;
   score: number;
+  summary: string;
 };
 
 export type ProjectMemberRole = "admin" | "contributor" | "viewer";

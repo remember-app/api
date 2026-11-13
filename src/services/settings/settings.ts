@@ -1,13 +1,21 @@
 import { sql } from "../../integrations/db/index.ts";
+import type { MontageLevel } from "../../types/montage.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
 import {
   ANALYSIS_GRADING_KEY,
+  ANALYSIS_LEVEL_KEY,
   ANALYSIS_PRICE_KEY,
   type AnalysisGradingItem,
   type AnalysisPrice,
+  DEFAULT_ANALYSIS_LEVEL,
+  DEFAULT_MONTAGE_LEVEL,
   INVITE_REWARDS_KEY,
   type InviteRewards,
+  MONTAGE_LEVEL_KEY,
   type Reward,
 } from "./defaults.ts";
+
+const LEVELS = ["low", "medium", "high"] as const;
 
 const setting = async (key: string): Promise<unknown> => {
   const [row] = await sql<{ value: unknown }[]>`
@@ -16,6 +24,33 @@ const setting = async (key: string): Promise<unknown> => {
   if (!row) throw new Error(`setting "${key}" is missing`);
   return row.value;
 };
+
+const optionalSetting = async (key: string): Promise<unknown> => {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from settings where key = ${key}
+  `;
+  return row?.value;
+};
+
+const level = <T extends string>(value: unknown, key: string, fallback: T): T => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "string" || !(LEVELS as readonly string[]).includes(value)) {
+    throw new Error(`setting "${key}" is not a level`);
+  }
+  return value as T;
+};
+
+export async function analysisLevel(): Promise<AnalysisLevel> {
+  return level(
+    await optionalSetting(ANALYSIS_LEVEL_KEY),
+    ANALYSIS_LEVEL_KEY,
+    DEFAULT_ANALYSIS_LEVEL,
+  );
+}
+
+export async function montageLevel(): Promise<MontageLevel> {
+  return level(await optionalSetting(MONTAGE_LEVEL_KEY), MONTAGE_LEVEL_KEY, DEFAULT_MONTAGE_LEVEL);
+}
 
 const reward = (value: unknown, key: string, side: string): Reward => {
   if (typeof value !== "object" || value === null) {

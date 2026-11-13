@@ -1,3 +1,6 @@
+import type { MontageLevel } from "../../types/montage.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
+
 export type Reward = { tokens: number; storageBytes: number };
 
 export type InviteRewards = { sender: Reward; invitee: Reward };
@@ -11,6 +14,14 @@ export const INVITE_REWARDS_KEY = "invites.rewards";
 export const ANALYSIS_PRICE_KEY = "analysis.price";
 
 export const ANALYSIS_GRADING_KEY = "analysis.grading";
+
+export const ANALYSIS_LEVEL_KEY = "analysis.level";
+
+export const MONTAGE_LEVEL_KEY = "montage.level";
+
+export const DEFAULT_ANALYSIS_LEVEL: AnalysisLevel = "medium";
+
+export const DEFAULT_MONTAGE_LEVEL: MontageLevel = "low";
 
 export const DEFAULT_ANALYSIS_GRADING: AnalysisGradingItem[] = [
   {

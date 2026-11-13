@@ -1,4 +1,6 @@
 import { type Db, sql } from "../../integrations/db/index.ts";
+import { rank } from "../../levels.ts";
+import type { AnalysisLevel } from "../../types/project.ts";
 
 export type JobKind = "media_derive" | "media_analysis" | "montage";
 
@@ -7,10 +9,11 @@ export async function enqueue(
   ref: string,
   db: Db = sql,
   dependsOn: number[] | null = null,
+  level: AnalysisLevel | null = null,
 ): Promise<number> {
   const [row] = await db<{ id: number }[]>`
-    insert into jobs (kind, ref, depends_on)
-    values (${kind}, ${ref}, ${dependsOn}::bigint[])
+    insert into jobs (kind, ref, depends_on, level)
+    values (${kind}, ${ref}, ${dependsOn}::bigint[], ${level})
     returning id
   `;
   if (!row) throw new Error("job insert returned no row");
@@ -21,14 +24,14 @@ export async function liveJobId(
   kind: JobKind,
   ref: string,
   db: Db = sql,
+  level: AnalysisLevel | null = null,
 ): Promise<number | undefined> {
-  const [row] = await db<{ id: number }[]>`
-    select id from jobs
+  const rows = await db<{ id: number; level: AnalysisLevel | null }[]>`
+    select id, level from jobs
     where kind = ${kind} and ref = ${ref} and status in ('queued', 'running')
     order by id
-    limit 1
   `;
-  return row?.id;
+  return rows.find((row) => level === null || rank(row.level) >= rank(level))?.id;
 }
 
 export async function cancelJobs(ref: string): Promise<number> {

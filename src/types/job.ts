@@ -1,4 +1,5 @@
 import type { JobId, MediaId, MontageId, UploadId } from "./id.ts";
+import type { AnalysisLevel } from "./project.ts";
 
 export type Job = JobMediaDerive | JobMediaAnalysis | JobMontage;
 
@@ -19,6 +20,7 @@ export type JobMontage = JobBase & {
 
 export type JobBase = {
   id: JobId;
+  level: AnalysisLevel | null;
   status: JobStatus;
   attempts: number;
   runAfter: Date;
