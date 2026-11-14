@@ -6,9 +6,7 @@ import { putObject } from "../../../src/integrations/storage/s3.ts";
 import { SYSTEM_MEDIA } from "../../../src/services/system/media.ts";
 import { ASSETS } from "./assets.ts";
 import analysisByFile from "./music.analysis.json" with { type: "json" };
-import { MUSIC } from "./music.manifest.ts";
-
-const suffix = (index: number): string => String(index + 1).padStart(12, "0");
+import { MUSIC, musicMediaId } from "./music.manifest.ts";
 
 const coverEntry = SYSTEM_MEDIA.find((entry) => entry.name === "song-cover");
 if (!coverEntry) throw new Error("seeds: system media has no song-cover");
@@ -19,8 +17,8 @@ export async function seedMusic(): Promise<void> {
   const mediaIds: string[] = [];
 
   for (const [index, track] of MUSIC.entries()) {
-    const mediaId = `cccccccc-cccc-4ccc-8ccc-${suffix(index)}`;
-    const songId = `dddddddd-dddd-4ddd-8ddd-${suffix(index)}`;
+    const mediaId = musicMediaId(track.file);
+    const songId = `dddddddd-dddd-4ddd-8ddd-${String(index + 1).padStart(12, "0")}`;
     songIds.push(songId);
     mediaIds.push(mediaId);
     const key = `remember/mp3/${mediaId}`;

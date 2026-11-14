@@ -1,3 +1,11 @@
+const suffix = (index: number): string => String(index + 1).padStart(12, "0");
+
+export const musicMediaId = (file: string): string => {
+  const index = MUSIC.findIndex((track) => track.file === file);
+  if (index < 0) throw new Error(`seeds: no music track ${file}`);
+  return `cccccccc-cccc-4ccc-8ccc-${suffix(index)}`;
+};
+
 export type MusicTrack = {
   file: string;
   name: string;
