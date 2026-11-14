@@ -37,6 +37,7 @@ const projectBody = {
   additionalProperties: false,
   properties: {
     title: { type: "string", minLength: 1, maxLength: 200 },
+    description: { type: "string", maxLength: 2000 },
     eventStart: { type: "string", format: "date-time" },
     eventEnd: { type: ["string", "null"], format: "date-time" },
     storageBytes: { type: "integer", minimum: 0 },
@@ -48,6 +49,7 @@ const patchBody = {
   additionalProperties: false,
   properties: {
     title: { type: "string", minLength: 1, maxLength: 200 },
+    description: { type: "string", maxLength: 2000 },
     eventStart: { type: "string", format: "date-time" },
     eventEnd: { type: ["string", "null"], format: "date-time" },
   },
@@ -137,6 +139,7 @@ export function projectRoutes(app: FastifyInstance) {
   app.post<{
     Body: {
       title: string;
+      description?: string;
       eventStart: string;
       eventEnd?: string | null;
       storageBytes?: number;
@@ -147,6 +150,7 @@ export function projectRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const created = await createProject({
         title: request.body.title,
+        description: request.body.description?.trim() ?? "",
         eventStart: new Date(request.body.eventStart),
         eventEnd: request.body.eventEnd ? new Date(request.body.eventEnd) : null,
         creatorId: request.authenticated!.user.id,
@@ -188,6 +192,7 @@ export function projectRoutes(app: FastifyInstance) {
     Params: ProjectParams;
     Body: {
       title?: string;
+      description?: string;
       eventStart?: string;
       eventEnd?: string | null;
     };
@@ -198,6 +203,7 @@ export function projectRoutes(app: FastifyInstance) {
       const body = request.body;
       const patch = {
         ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.description === undefined ? {} : { description: body.description.trim() }),
         ...(body.eventStart === undefined ? {} : { eventStart: new Date(body.eventStart) }),
         ...(body.eventEnd === undefined
           ? {}

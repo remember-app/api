@@ -4,7 +4,7 @@ import { downloadUrl } from "../../integrations/storage/s3.ts";
 import type { Page } from "../../types/api.ts";
 import type { Consumable } from "../../types/consumables.ts";
 import type { ProjectId, UserId } from "../../types/id.ts";
-import type { Project } from "../../types/project.ts";
+import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
 
 type ConsumableRow = {
   tokens: string;
@@ -34,9 +34,20 @@ export type ProjectMemberFace = {
   avatarUrl: string | null;
 };
 
-export type ProjectCardView = Project & {
+export type ProjectCardView = {
+  id: ProjectId;
+  title: string;
+  description: string;
+  eventStart: Date;
+  eventEnd: Date | null;
+  consumables: Consumable;
   previewUrls: string[];
   members: ProjectMemberFace[];
+  itemCount: number;
+  memberCount: number;
+  sharedCount: number;
+  myRole: ProjectMemberRole;
+  myContribution: ProjectContributionStatus;
 };
 
 type MemberFaceRow = Omit<ProjectMemberFace, "avatarUrl"> & { avatarKey: string | null };
@@ -53,6 +64,7 @@ export async function homeCards(
     select
       p.id,
       p.title,
+      p.description,
       p.event_start as "eventStart",
       p.event_end as "eventEnd",
       ${consumableColumns},
@@ -127,7 +139,7 @@ export async function homeCards(
   return { items, nextOffset: rows.length > limit ? offset + limit : null };
 }
 
-export type ProjectView = Project;
+export type ProjectView = Omit<ProjectCardView, "previewUrls">;
 
 type ProjectRow = Omit<ProjectView, "consumables"> & ConsumableRow;
 
@@ -139,6 +151,7 @@ export async function projectView(
     select
       p.id,
       p.title,
+      p.description,
       p.event_start as "eventStart",
       p.event_end as "eventEnd",
       ${consumableColumns},

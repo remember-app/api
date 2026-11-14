@@ -1,6 +1,7 @@
 create table projects (
     id uuid primary key default gen_random_uuid (),
     title text not null,
+    description text not null default '' check (char_length(description) <= 2000),
     event_start timestamptz not null,
     event_end timestamptz,
     tokens bigint not null default 0 check (tokens >= 0),

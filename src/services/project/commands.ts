@@ -6,6 +6,7 @@ import { accessOf, isAdmin } from "./access.ts";
 type ProjectCore = {
   id: ProjectId;
   title: string;
+  description: string;
   eventStart: Date;
   eventEnd: Date | null;
   createdAt: Date;
@@ -16,6 +17,7 @@ async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
     select
       id,
       title,
+      description,
       event_start as "eventStart",
       event_end as "eventEnd",
       created_at as "createdAt"
@@ -27,6 +29,7 @@ async function loadCore(id: ProjectId): Promise<ProjectCore | undefined> {
 
 export type NewProject = {
   title: string;
+  description?: string;
   eventStart: Date;
   eventEnd: Date | null;
   creatorId: UserId;
@@ -54,8 +57,14 @@ export async function createProject(input: NewProject): Promise<CreateProjectRes
       }
     }
     const [created] = await tx<{ id: ProjectId }[]>`
-      insert into projects (title, event_start, event_end, storage_bytes)
-      values (${input.title}, ${input.eventStart}, ${input.eventEnd}, ${storageBytes})
+      insert into projects (title, description, event_start, event_end, storage_bytes)
+      values (
+        ${input.title},
+        ${input.description ?? ""},
+        ${input.eventStart},
+        ${input.eventEnd},
+        ${storageBytes}
+      )
       returning id
     `;
     if (!created) throw new Error("project insert returned no row");
@@ -91,6 +100,7 @@ export async function createProject(input: NewProject): Promise<CreateProjectRes
 
 export type ProjectPatch = {
   title?: string;
+  description?: string;
   eventStart?: Date;
   eventEnd?: Date | null;
 };
@@ -111,6 +121,7 @@ export async function updateProject(
   await sql`
     update projects
     set title = ${next.title},
+        description = ${next.description},
         event_start = ${next.eventStart},
         event_end = ${next.eventEnd}
     where id = ${id}

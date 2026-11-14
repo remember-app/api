@@ -8,6 +8,7 @@ export type ContributionStatus = "not_started" | "more_coming" | "done";
 export type ProjectResponse = {
   id: string;
   title: string;
+  description: string;
   eventStart: string;
   eventEnd: string | null;
   consumables: ConsumableResponse;
@@ -48,6 +49,7 @@ export type MembersPageResponse = PageResponse<MemberResponse>;
 
 export type CreateProjectRequest = {
   title: string;
+  description?: string;
   eventStart: string;
   eventEnd?: string | null;
   storageBytes?: number;
@@ -55,6 +57,7 @@ export type CreateProjectRequest = {
 
 export type UpdateProjectRequest = {
   title?: string;
+  description?: string;
   eventStart?: string;
   eventEnd?: string | null;
 };
