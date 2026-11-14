@@ -4,7 +4,7 @@ import { downloadUrl } from "../../integrations/storage/s3.ts";
 import type { Page } from "../../types/api.ts";
 import type { Consumable } from "../../types/consumables.ts";
 import type { ProjectId, UserId } from "../../types/id.ts";
-import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
+import type { Project } from "../../types/project.ts";
 
 type ConsumableRow = {
   tokens: string;
@@ -34,19 +34,9 @@ export type ProjectMemberFace = {
   avatarUrl: string | null;
 };
 
-export type ProjectCardView = {
-  id: ProjectId;
-  title: string;
-  eventStart: Date;
-  eventEnd: Date | null;
-  consumables: Consumable;
+export type ProjectCardView = Project & {
   previewUrls: string[];
   members: ProjectMemberFace[];
-  itemCount: number;
-  memberCount: number;
-  sharedCount: number;
-  myRole: ProjectMemberRole;
-  myContribution: ProjectContributionStatus;
 };
 
 type MemberFaceRow = Omit<ProjectMemberFace, "avatarUrl"> & { avatarKey: string | null };
@@ -137,7 +127,7 @@ export async function homeCards(
   return { items, nextOffset: rows.length > limit ? offset + limit : null };
 }
 
-export type ProjectView = Omit<ProjectCardView, "previewUrls">;
+export type ProjectView = Project;
 
 type ProjectRow = Omit<ProjectView, "consumables"> & ConsumableRow;
 
