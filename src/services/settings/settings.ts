@@ -2,10 +2,8 @@ import { sql } from "../../integrations/db/index.ts";
 import type { MontageLevel } from "../../types/montage.ts";
 import type { AnalysisLevel } from "../../types/project.ts";
 import {
-  ANALYSIS_GRADING_KEY,
   ANALYSIS_LEVEL_KEY,
   ANALYSIS_PRICE_KEY,
-  type AnalysisGradingItem,
   type AnalysisPrice,
   type AnalysisPriceRate,
   DEFAULT_ANALYSIS_LEVEL,
@@ -148,25 +146,4 @@ export async function analysisPrice(): Promise<AnalysisPrice> {
     audio: priceKind(row.audio, `${ANALYSIS_PRICE_KEY}.audio`),
     video: priceKind(row.video, `${ANALYSIS_PRICE_KEY}.video`),
   };
-}
-
-export async function analysisGrading(): Promise<AnalysisGradingItem[]> {
-  const value = await setting(ANALYSIS_GRADING_KEY);
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(`setting "${ANALYSIS_GRADING_KEY}" is not a non-empty array`);
-  }
-  return value.map((item, index) => {
-    if (typeof item !== "object" || item === null) {
-      throw new Error(`setting "${ANALYSIS_GRADING_KEY}" item ${index} is not an object`);
-    }
-    const row = item as Record<string, unknown>;
-    const points = Number(row.points);
-    if (!Number.isFinite(points)) {
-      throw new Error(`setting "${ANALYSIS_GRADING_KEY}" item ${index} has no points`);
-    }
-    if (typeof row.question !== "string" || !row.question.trim()) {
-      throw new Error(`setting "${ANALYSIS_GRADING_KEY}" item ${index} has no question`);
-    }
-    return { points, question: row.question.trim() };
-  });
 }

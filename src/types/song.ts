@@ -1,5 +1,15 @@
 import type { MediaId, ProjectId, SongId, UserId } from "./id.ts";
-import type { ProjectMediaItemAIAnalysisAudio } from "./project.ts";
+import type { AnalysisLevel, AnalysisSegment, AnalysisTags } from "./project.ts";
+
+export type SongAIAnalysis = {
+  level: AnalysisLevel;
+  score: number;
+  summary: string;
+  description: string;
+  tags: AnalysisTags | null;
+  sounds: AnalysisSegment[] | null;
+  words: AnalysisSegment[] | null;
+};
 
 export type Song = {
   id: SongId;
@@ -10,5 +20,5 @@ export type Song = {
   description: string | null;
   projectId: ProjectId | null;
   uploadedBy: UserId | null;
-  analysis: ProjectMediaItemAIAnalysisAudio | null;
+  analysis: SongAIAnalysis | null;
 };

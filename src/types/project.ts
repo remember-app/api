@@ -98,7 +98,8 @@ export type ProjectMediaItemAIAnalysisPhoto = ProjectMediaItemAIAnalysisCommon &
 
 export type ProjectMediaItemAIAnalysisCommon = {
   level: AnalysisLevel;
-  score: number;
+  scoreImportance?: number;
+  scoreQuality?: number;
   summary: string;
 };
 
