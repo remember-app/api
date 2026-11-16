@@ -193,7 +193,7 @@ export function uploadRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete<{ Params: UploadParams }>(
+  app.delete<{ Params: UploadParams; Querystring: { purge?: string } }>(
     "/projects/:projectId/uploads/:uploadId",
     { preHandler: app.authenticate },
     async (request, reply) => {
@@ -203,6 +203,7 @@ export function uploadRoutes(app: FastifyInstance) {
         uploadId as UploadId,
         request.params.projectId as ProjectId,
         request.authenticated!.user.id,
+        request.query.purge === "1",
       );
       if (result === "forbidden") return fail(reply, 403, "forbidden");
       if (result === "not_found") return fail(reply, 404, "not_found");

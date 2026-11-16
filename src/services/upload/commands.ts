@@ -331,12 +331,17 @@ export async function cancelUpload(
   id: UploadId,
   projectId: ProjectId,
   userId: UserId,
+  purge = false,
 ): Promise<"ok" | "not_found" | "forbidden"> {
   const allowed = await mayUpload(projectId, userId);
   if (allowed !== "ok") return allowed;
   const row = await ownedUpload(id, projectId, userId);
   if (!row) return "not_found";
   if (row.multipartId) await abortUploads([{ key: row.storageKey, uploadId: row.multipartId }]);
-  await markFailed(id, "cancelled", "upload was cancelled");
+  if (purge) {
+    await sql`delete from uploads where id = ${id}`;
+  } else {
+    await markFailed(id, "cancelled", "upload was cancelled");
+  }
   return "ok";
 }
