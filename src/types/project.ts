@@ -2,19 +2,6 @@ import type { Consumable } from "./consumables.ts";
 import type { LabelId, MediaId, ProjectId, ProjectItemId, UserId } from "./id.ts";
 import type { MediaKind } from "./mediaItem.ts";
 
-export type Project = {
-  id: ProjectId;
-  title: string;
-  eventStart: Date;
-  eventEnd: Date | null;
-  consumables: Consumable;
-  itemCount: number;
-  memberCount: number;
-  sharedCount: number;
-  myRole: ProjectMemberRole;
-  myContribution: ProjectContributionStatus;
-};
-
 export type ProjectMember = {
   userId: UserId;
   username: string | null;
