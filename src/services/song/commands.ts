@@ -1,4 +1,4 @@
-import { sql } from "../../integrations/db/index.ts";
+import { type Db, sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
 import { adjustStorageSpend, adjustUserStorageSpend } from "../consumable/commands.ts";
@@ -10,16 +10,48 @@ import { getSong } from "./queries.ts";
 
 export type SongDenial = { denial: "not_found" | "forbidden" | "bad_request" };
 
+export type SongInput = {
+  name: string;
+  author: string;
+  mediaId: MediaId;
+  coverId?: MediaId | null;
+  description?: string | null;
+};
+
+export type SongPatch = {
+  name?: string;
+  author?: string;
+  coverId?: MediaId | null;
+  description?: string | null;
+};
+
+async function coverAllowed(coverId: MediaId | null | undefined): Promise<boolean> {
+  if (!coverId) return true;
+  const cover = await getMedia(coverId);
+  return cover?.kind === "photo";
+}
+
+async function insertSong(db: Db, viewerId: UserId, input: SongInput): Promise<Song> {
+  const [row] = await db<Song[]>`
+    insert into songs (name, author, media_id, uploaded_by, cover_id, description)
+    values (
+      ${input.name},
+      ${input.author},
+      ${input.mediaId},
+      ${viewerId},
+      ${input.coverId ?? null},
+      ${input.description ?? null}
+    )
+    returning ${songColumns}
+  `;
+  if (!row) throw new Error("song insert returned no row");
+  return row;
+}
+
 export async function createSong(
   projectId: ProjectId,
   viewerId: UserId,
-  input: {
-    name: string;
-    author: string;
-    mediaId: MediaId;
-    coverId?: MediaId | null;
-    description?: string | null;
-  },
+  input: SongInput,
 ): Promise<{ song: Song } | SongDenial> {
   const access = await accessOf(projectId, viewerId);
   if (!access) return { denial: "not_found" };
@@ -34,24 +66,9 @@ export async function createSong(
     `;
     if (!owned) return { denial: "bad_request" };
   }
-  if (input.coverId) {
-    const cover = await getMedia(input.coverId);
-    if (cover?.kind !== "photo") return { denial: "bad_request" };
-  }
+  if (!(await coverAllowed(input.coverId))) return { denial: "bad_request" };
   const song = await sql.begin(async (tx) => {
-    const [row] = await tx<Song[]>`
-      insert into songs (name, author, media_id, uploaded_by, cover_id, description)
-      values (
-        ${input.name},
-        ${input.author},
-        ${media.id},
-        ${viewerId},
-        ${input.coverId ?? null},
-        ${input.description ?? null}
-      )
-      returning ${songColumns}
-    `;
-    if (!row) throw new Error("song insert returned no row");
+    const row = await insertSong(tx, viewerId, { ...input, mediaId: media.id });
     await tx`
       insert into project_songs (project_id, song_id, added_by)
       values (${projectId}, ${row.id}, ${viewerId})
@@ -60,6 +77,42 @@ export async function createSong(
     return row;
   });
   return { song };
+}
+
+export async function createOwnSong(
+  viewerId: UserId,
+  input: SongInput,
+): Promise<{ song: Song } | SongDenial> {
+  const media = await getMedia(input.mediaId);
+  if (!media || media.kind !== "audio" || media.uploadedBy !== viewerId) {
+    return { denial: "bad_request" };
+  }
+  if (!(await coverAllowed(input.coverId))) return { denial: "bad_request" };
+  return { song: await insertSong(sql, viewerId, { ...input, mediaId: media.id }) };
+}
+
+export async function updateOwnSong(
+  songId: SongId,
+  viewerId: UserId,
+  patch: SongPatch,
+): Promise<{ song: Song } | SongDenial> {
+  const song = await getSong(songId);
+  if (!song) return { denial: "not_found" };
+  if (song.uploadedBy === null || song.uploadedBy !== viewerId) {
+    return { denial: "forbidden" };
+  }
+  if (!(await coverAllowed(patch.coverId))) return { denial: "bad_request" };
+  const [row] = await sql<Song[]>`
+    update songs
+    set name = ${patch.name ?? song.name},
+        author = ${patch.author ?? song.author},
+        cover_id = ${patch.coverId === undefined ? song.coverId : patch.coverId},
+        description = ${patch.description === undefined ? song.description : patch.description}
+    where id = ${songId}
+    returning ${songColumns}
+  `;
+  if (!row) throw new Error("song update returned no row");
+  return { song: row };
 }
 
 export async function attachSong(

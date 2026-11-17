@@ -3,7 +3,14 @@ import { config } from "../../config.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import { getMedia } from "../../services/media/queries.ts";
-import { attachSong, createSong, deleteOwnSong, detachSong } from "../../services/song/commands.ts";
+import {
+  attachSong,
+  createOwnSong,
+  createSong,
+  deleteOwnSong,
+  detachSong,
+  updateOwnSong,
+} from "../../services/song/commands.ts";
 import {
   getSong,
   listLibrarySongs,
@@ -21,6 +28,17 @@ const createBody = {
     name: { type: "string", minLength: 1, maxLength: 200 },
     author: { type: "string", minLength: 1, maxLength: 200 },
     mediaId: { type: "string" },
+    coverId: { type: ["string", "null"] },
+    description: { type: ["string", "null"], maxLength: 1000 },
+  },
+} as const;
+
+const updateBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    author: { type: "string", minLength: 1, maxLength: 200 },
     coverId: { type: ["string", "null"] },
     description: { type: ["string", "null"], maxLength: 1000 },
   },
@@ -59,6 +77,39 @@ export function songRoutes(app: FastifyInstance) {
       const { limit, offset } = pageOf(request.query);
       const page = await listOwnSongs(request.authenticated!.user.id, limit, offset);
       return { ...page, items: await withCovers(page.items, config.media.downloadTtlSeconds()) };
+    },
+  );
+
+  app.post<{
+    Body: {
+      name: string;
+      author: string;
+      mediaId: string;
+      coverId?: string | null;
+      description?: string | null;
+    };
+  }>(
+    "/songs",
+    { schema: { body: createBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!uuidPattern.test(request.body.mediaId)) return fail(reply, 404, "not_found");
+      if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
+        return fail(reply, 404, "not_found");
+      }
+      const result = await createOwnSong(request.authenticated!.user.id, {
+        name: request.body.name,
+        author: request.body.author,
+        mediaId: request.body.mediaId as MediaId,
+        coverId: request.body.coverId as MediaId | null | undefined,
+        description: request.body.description,
+      });
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "bad_request") return fail(reply, 400, "bad_request");
+        return fail(reply, 404, "not_found");
+      }
+      const [song] = await withCovers([result.song], config.media.downloadTtlSeconds());
+      return song;
     },
   );
 
@@ -139,6 +190,42 @@ export function songRoutes(app: FastifyInstance) {
         ...signed,
         url: await downloadUrl(media.storageKey, config.media.downloadTtlSeconds()),
       };
+    },
+  );
+
+  app.patch<{
+    Params: OwnSongParams;
+    Body: {
+      name?: string;
+      author?: string;
+      coverId?: string | null;
+      description?: string | null;
+    };
+  }>(
+    "/songs/:songId",
+    { schema: { body: updateBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!uuidPattern.test(request.params.songId)) return fail(reply, 404, "not_found");
+      if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
+        return fail(reply, 404, "not_found");
+      }
+      const result = await updateOwnSong(
+        request.params.songId as SongId,
+        request.authenticated!.user.id,
+        {
+          name: request.body.name,
+          author: request.body.author,
+          coverId: request.body.coverId as MediaId | null | undefined,
+          description: request.body.description,
+        },
+      );
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "bad_request") return fail(reply, 400, "bad_request");
+        return fail(reply, 404, "not_found");
+      }
+      const [song] = await withCovers([result.song], config.media.downloadTtlSeconds());
+      return song;
     },
   );
 

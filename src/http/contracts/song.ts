@@ -24,3 +24,10 @@ export type CreateSongRequest = {
   coverId?: string | null;
   description?: string | null;
 };
+
+export type UpdateSongRequest = {
+  name?: string;
+  author?: string;
+  coverId?: string | null;
+  description?: string | null;
+};
