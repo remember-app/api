@@ -1,4 +1,4 @@
-import type { MediaId, ProjectId, SongId, UserId } from "./id.ts";
+import type { MediaId, SongId, UserId } from "./id.ts";
 import type { AnalysisLevel, AnalysisSegment, AnalysisTags } from "./project.ts";
 
 export type SongAIAnalysis = {
@@ -18,7 +18,6 @@ export type Song = {
   mediaId: MediaId;
   coverId: MediaId | null;
   description: string | null;
-  projectId: ProjectId | null;
   uploadedBy: UserId | null;
   analysis: SongAIAnalysis | null;
 };

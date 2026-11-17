@@ -3,7 +3,7 @@ import { sql } from "../../integrations/db/index.ts";
 import { downloadUrl } from "../../integrations/storage/s3.ts";
 import type { Page } from "../../types/api.ts";
 import type { Consumable } from "../../types/consumables.ts";
-import type { ProjectId, UserId } from "../../types/id.ts";
+import type { ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
 
 type ConsumableRow = {
@@ -42,6 +42,7 @@ export type ProjectCardView = {
   eventEnd: Date | null;
   consumables: Consumable;
   previewUrls: string[];
+  songIds: SongId[];
   members: ProjectMemberFace[];
   itemCount: number;
   memberCount: number;
@@ -81,6 +82,14 @@ export async function homeCards(
         from project_members m
         where m.project_id = p.id and m.contribution = 'done'
       ) as "sharedCount",
+      coalesce(
+        (
+          select array_agg(ps.song_id order by ps.added_at, ps.song_id)
+          from project_songs ps
+          where ps.project_id = p.id
+        ),
+        '{}'
+      ) as "songIds",
       coalesce(previews.keys, '{}') as "previewKeys",
       coalesce(faces.faces, '[]'::json) as "memberFaces"
     from projects p
@@ -167,7 +176,15 @@ export async function projectView(
         select count(*)::int
         from project_members m
         where m.project_id = p.id and m.contribution = 'done'
-      ) as "sharedCount"
+      ) as "sharedCount",
+      coalesce(
+        (
+          select array_agg(ps.song_id order by ps.added_at, ps.song_id)
+          from project_songs ps
+          where ps.project_id = p.id
+        ),
+        '{}'
+      ) as "songIds"
     from projects p
     join project_members pm on pm.project_id = p.id and pm.user_id = ${viewerId}
     where p.id = ${projectId}

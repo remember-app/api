@@ -13,7 +13,20 @@ export async function getSong(id: SongId): Promise<Song | undefined> {
 
 export async function listLibrarySongs(limit: number, offset: number): Promise<Page<Song>> {
   const rows = await sql<Song[]>`
-    select ${songColumns} from songs where project_id is null
+    select ${songColumns} from songs where uploaded_by is null
+    order by name, id
+    limit ${limit + 1} offset ${offset}
+  `;
+  return page(rows, limit, offset);
+}
+
+export async function listOwnSongs(
+  viewerId: UserId,
+  limit: number,
+  offset: number,
+): Promise<Page<Song>> {
+  const rows = await sql<Song[]>`
+    select ${songColumns} from songs where uploaded_by = ${viewerId}
     order by name, id
     limit ${limit + 1} offset ${offset}
   `;
@@ -28,8 +41,11 @@ export async function listProjectSongs(
 ): Promise<Page<Song> | undefined> {
   if (!(await accessOf(projectId, viewerId))) return undefined;
   const rows = await sql<Song[]>`
-    select ${songColumns} from songs where project_id = ${projectId}
-    order by name, id
+    select ${songColumns}
+    from songs s
+    join project_songs ps on ps.song_id = s.id
+    where ps.project_id = ${projectId}
+    order by s.name, s.id
     limit ${limit + 1} offset ${offset}
   `;
   return page(rows, limit, offset);
@@ -39,9 +55,15 @@ export async function songsForOrder(projectId: ProjectId, mediaIds: MediaId[]): 
   if (mediaIds.length === 0) return [];
   return sql<Song[]>`
     select ${songColumns}
-    from songs
-    where media_id = any(${mediaIds})
-      and (project_id is null or project_id = ${projectId})
-    order by name, id
+    from songs s
+    where s.media_id = any(${mediaIds})
+      and (
+        s.uploaded_by is null
+        or exists (
+          select 1 from project_songs ps
+          where ps.song_id = s.id and ps.project_id = ${projectId}
+        )
+      )
+    order by s.name, s.id
   `;
 }

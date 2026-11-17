@@ -15,6 +15,7 @@ export type ProjectResponse = {
   itemCount: number;
   memberCount: number;
   sharedCount: number;
+  songIds: string[];
   myRole: Role;
   myContribution: ContributionStatus;
 };

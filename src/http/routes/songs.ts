@@ -3,8 +3,13 @@ import { config } from "../../config.ts";
 import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
 import { pageOf, pageQuerySchema } from "../../pagination.ts";
 import { getMedia } from "../../services/media/queries.ts";
-import { createSong, deleteSongWithMedia } from "../../services/song/commands.ts";
-import { getSong, listLibrarySongs, listProjectSongs } from "../../services/song/queries.ts";
+import { attachSong, createSong, deleteOwnSong, detachSong } from "../../services/song/commands.ts";
+import {
+  getSong,
+  listLibrarySongs,
+  listOwnSongs,
+  listProjectSongs,
+} from "../../services/song/queries.ts";
 import type { MediaId, ProjectId, SongId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -25,6 +30,7 @@ const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
 type ProjectParams = { projectId: string };
 type SongParams = { projectId: string; songId: string };
+type OwnSongParams = { songId: string };
 
 async function withCovers<T extends { coverId: string | null }>(items: T[], ttl: number) {
   return Promise.all(
@@ -42,6 +48,16 @@ export function songRoutes(app: FastifyInstance) {
     async (request) => {
       const { limit, offset } = pageOf(request.query);
       const page = await listLibrarySongs(limit, offset);
+      return { ...page, items: await withCovers(page.items, config.media.downloadTtlSeconds()) };
+    },
+  );
+
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/songs/mine",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      const page = await listOwnSongs(request.authenticated!.user.id, limit, offset);
       return { ...page, items: await withCovers(page.items, config.media.downloadTtlSeconds()) };
     },
   );
@@ -126,14 +142,14 @@ export function songRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete<{ Params: SongParams }>(
+  app.post<{ Params: SongParams }>(
     "/projects/:projectId/songs/:songId",
     { preHandler: app.authenticate },
     async (request, reply) => {
       if (!uuidPattern.test(request.params.projectId) || !uuidPattern.test(request.params.songId)) {
         return fail(reply, 404, "not_found");
       }
-      const result = await deleteSongWithMedia(
+      const result = await attachSong(
         request.params.projectId as ProjectId,
         request.params.songId as SongId,
         request.authenticated!.user.id,
@@ -143,8 +159,49 @@ export function songRoutes(app: FastifyInstance) {
           ? fail(reply, 403, "forbidden")
           : fail(reply, 404, "not_found");
       }
-      if (result.key === undefined) return fail(reply, 404, "not_found");
-      await deleteObjects([result.key]);
+      const [song] = await withCovers([result.song], config.media.downloadTtlSeconds());
+      return song;
+    },
+  );
+
+  app.delete<{ Params: SongParams }>(
+    "/projects/:projectId/songs/:songId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!uuidPattern.test(request.params.projectId) || !uuidPattern.test(request.params.songId)) {
+        return fail(reply, 404, "not_found");
+      }
+      const result = await detachSong(
+        request.params.projectId as ProjectId,
+        request.params.songId as SongId,
+        request.authenticated!.user.id,
+      );
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return result;
+    },
+  );
+
+  app.delete<{ Params: OwnSongParams }>(
+    "/songs/:songId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!uuidPattern.test(request.params.songId)) {
+        return fail(reply, 404, "not_found");
+      }
+      const result = await deleteOwnSong(
+        request.params.songId as SongId,
+        request.authenticated!.user.id,
+      );
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      if (result.keys.length > 0) await deleteObjects(result.keys);
       return { ok: true };
     },
   );

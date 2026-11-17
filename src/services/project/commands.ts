@@ -159,8 +159,6 @@ export async function deleteProject(
         select thumbnail_id from movies where project_id = ${id} and thumbnail_id is not null
         union
         select preview_id from movies where project_id = ${id} and preview_id is not null
-        union
-        select media_id from songs where project_id = ${id}
       )
     `;
     const pending = await tx<{ storageKey: string; multipartId: string | null }[]>`

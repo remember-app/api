@@ -43,9 +43,9 @@ export async function seedMusic(): Promise<void> {
           duration = excluded.duration
     `;
     await sql`
-      insert into songs (id, name, author, media_id, project_id, uploaded_by, cover_id, analysis)
+      insert into songs (id, name, author, media_id, uploaded_by, cover_id, analysis)
       values (
-        ${songId}, ${track.name}, ${track.author}, ${mediaId}, null, null,
+        ${songId}, ${track.name}, ${track.author}, ${mediaId}, null,
         ${COVER_ID},
         ${analysis === null ? null : sql.json(analysis as never)}
       )
@@ -53,7 +53,6 @@ export async function seedMusic(): Promise<void> {
       set name = excluded.name,
           author = excluded.author,
           media_id = excluded.media_id,
-          project_id = excluded.project_id,
           uploaded_by = excluded.uploaded_by,
           cover_id = excluded.cover_id,
           analysis = excluded.analysis
@@ -63,8 +62,7 @@ export async function seedMusic(): Promise<void> {
 
   await sql`
     delete from songs
-    where project_id is null
-      and uploaded_by is null
+    where uploaded_by is null
       and id::text <> all(${songIds})
   `;
   await sql`
