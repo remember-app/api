@@ -31,8 +31,10 @@ async function coverAllowed(coverId: MediaId | null | undefined): Promise<boolea
   return cover?.kind === "photo";
 }
 
-async function insertSong(db: Db, viewerId: UserId, input: SongInput): Promise<Song> {
-  const [row] = await db<Song[]>`
+type InsertedSong = Omit<Song, "duration">;
+
+async function insertSong(db: Db, viewerId: UserId, input: SongInput): Promise<InsertedSong> {
+  const [row] = await db<InsertedSong[]>`
     insert into songs (name, author, media_id, uploaded_by, cover_id, description)
     values (
       ${input.name},
@@ -67,15 +69,17 @@ export async function createSong(
     if (!owned) return { denial: "bad_request" };
   }
   if (!(await coverAllowed(input.coverId))) return { denial: "bad_request" };
-  const song = await sql.begin(async (tx) => {
+  const songId = await sql.begin(async (tx) => {
     const row = await insertSong(tx, viewerId, { ...input, mediaId: media.id });
     await tx`
       insert into project_songs (project_id, song_id, added_by)
       values (${projectId}, ${row.id}, ${viewerId})
       on conflict do nothing
     `;
-    return row;
+    return row.id;
   });
+  const song = await getSong(songId);
+  if (!song) throw new Error("song disappeared after insert");
   return { song };
 }
 
@@ -88,7 +92,10 @@ export async function createOwnSong(
     return { denial: "bad_request" };
   }
   if (!(await coverAllowed(input.coverId))) return { denial: "bad_request" };
-  return { song: await insertSong(sql, viewerId, { ...input, mediaId: media.id }) };
+  const row = await insertSong(sql, viewerId, { ...input, mediaId: media.id });
+  const song = await getSong(row.id);
+  if (!song) throw new Error("song disappeared after insert");
+  return { song };
 }
 
 export async function updateOwnSong(
@@ -102,7 +109,7 @@ export async function updateOwnSong(
     return { denial: "forbidden" };
   }
   if (!(await coverAllowed(patch.coverId))) return { denial: "bad_request" };
-  const [row] = await sql<Song[]>`
+  const [row] = await sql<InsertedSong[]>`
     update songs
     set name = ${patch.name ?? song.name},
         author = ${patch.author === undefined ? song.author : patch.author},
@@ -112,7 +119,9 @@ export async function updateOwnSong(
     returning ${songColumns}
   `;
   if (!row) throw new Error("song update returned no row");
-  return { song: row };
+  const updated = await getSong(songId);
+  if (!updated) throw new Error("song disappeared after update");
+  return { song: updated };
 }
 
 export async function attachSong(

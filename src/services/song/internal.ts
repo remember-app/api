@@ -10,3 +10,15 @@ export const songColumns = sql`
   uploaded_by as "uploadedBy",
   analysis
 `;
+
+export const songSelect = sql`
+  s.id,
+  s.name,
+  s.author,
+  s.media_id as "mediaId",
+  s.cover_id as "coverId",
+  s.description,
+  s.uploaded_by as "uploadedBy",
+  s.analysis,
+  m.duration
+`;

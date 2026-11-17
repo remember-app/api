@@ -18,6 +18,7 @@ export type Song = {
   mediaId: MediaId;
   coverId: MediaId | null;
   description: string | null;
+  duration: number | null;
   uploadedBy: UserId | null;
   analysis: SongAIAnalysis | null;
 };

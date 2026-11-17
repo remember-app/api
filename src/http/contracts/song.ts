@@ -8,6 +8,7 @@ export type SongResponse = {
   coverId: string | null;
   coverUrl: string | null;
   description: string | null;
+  duration: number | null;
   uploadedBy: string | null;
 };
 

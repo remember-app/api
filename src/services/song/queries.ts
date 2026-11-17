@@ -4,17 +4,25 @@ import type { Page } from "../../types/api.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
 import { accessOf } from "../project/access.ts";
-import { songColumns } from "./internal.ts";
+import { songSelect } from "./internal.ts";
 
 export async function getSong(id: SongId): Promise<Song | undefined> {
-  const [row] = await sql<Song[]>`select ${songColumns} from songs where id = ${id}`;
+  const [row] = await sql<Song[]>`
+    select ${songSelect}
+    from songs s
+    join media_items m on m.id = s.media_id
+    where s.id = ${id}
+  `;
   return row;
 }
 
 export async function listLibrarySongs(limit: number, offset: number): Promise<Page<Song>> {
   const rows = await sql<Song[]>`
-    select ${songColumns} from songs where uploaded_by is null
-    order by name, id
+    select ${songSelect}
+    from songs s
+    join media_items m on m.id = s.media_id
+    where s.uploaded_by is null
+    order by s.name, s.id
     limit ${limit + 1} offset ${offset}
   `;
   return page(rows, limit, offset);
@@ -26,8 +34,11 @@ export async function listOwnSongs(
   offset: number,
 ): Promise<Page<Song>> {
   const rows = await sql<Song[]>`
-    select ${songColumns} from songs where uploaded_by = ${viewerId}
-    order by name, id
+    select ${songSelect}
+    from songs s
+    join media_items m on m.id = s.media_id
+    where s.uploaded_by = ${viewerId}
+    order by s.name, s.id
     limit ${limit + 1} offset ${offset}
   `;
   return page(rows, limit, offset);
@@ -41,8 +52,9 @@ export async function listProjectSongs(
 ): Promise<Page<Song> | undefined> {
   if (!(await accessOf(projectId, viewerId))) return undefined;
   const rows = await sql<Song[]>`
-    select ${songColumns}
+    select ${songSelect}
     from songs s
+    join media_items m on m.id = s.media_id
     join project_songs ps on ps.song_id = s.id
     where ps.project_id = ${projectId}
     order by s.name, s.id
@@ -54,8 +66,9 @@ export async function listProjectSongs(
 export async function songsForOrder(projectId: ProjectId, mediaIds: MediaId[]): Promise<Song[]> {
   if (mediaIds.length === 0) return [];
   return sql<Song[]>`
-    select ${songColumns}
+    select ${songSelect}
     from songs s
+    join media_items m on m.id = s.media_id
     where s.media_id = any(${mediaIds})
       and (
         s.uploaded_by is null
