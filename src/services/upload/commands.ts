@@ -19,7 +19,7 @@ import type {
   MediaVideoFormat,
 } from "../../types/mediaItem.ts";
 import type { Upload } from "../../types/upload.ts";
-import { StorageFullError, spendProjectStorage } from "../consumable/commands.ts";
+import { StorageFullError, spendProjectStorage, spendUserStorage } from "../consumable/commands.ts";
 import { createMedia, type NewMedia } from "../media/commands.ts";
 import { accessOf, canContribute } from "../project/access.ts";
 import { createItem } from "../project/item/commands.ts";
@@ -96,21 +96,22 @@ const storageKeyOf = (format: string, id: UploadId): string => `remember/${forma
 
 async function ownedUpload(
   id: UploadId,
-  projectId: ProjectId,
+  projectId: ProjectId | null,
   userId: UserId,
 ): Promise<UploadRow | undefined> {
   const [row] = await sql<UploadRow[]>`
     select ${columns}
     from uploads
-    where id = ${id} and project_id = ${projectId} and uploaded_by = ${userId}
+    where id = ${id} and project_id is not distinct from ${projectId} and uploaded_by = ${userId}
   `;
   return row;
 }
 
 async function mayUpload(
-  projectId: ProjectId,
+  projectId: ProjectId | null,
   userId: UserId,
 ): Promise<"ok" | "not_found" | "forbidden"> {
+  if (projectId === null) return "ok";
   const access = await accessOf(projectId, userId);
   if (!access) return "not_found";
   if (!canContribute(access)) return "forbidden";
@@ -125,7 +126,7 @@ export type UploadPlan = {
 };
 
 export type StartUpload = {
-  projectId: ProjectId;
+  projectId: ProjectId | null;
   userId: UserId;
   kind: MediaKind;
   sizeBytes: number;
@@ -172,18 +173,30 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if (maxSeconds !== null && input.durationSeconds !== null && input.durationSeconds > maxSeconds) {
     return { denial: "too_long" };
   }
-  const [open] = await sql<{ count: number }[]>`
-    select count(*)::int as count from uploads
-    where project_id = ${input.projectId} and status in ('pending', 'uploading')
-  `;
-  if ((await countItems(input.projectId)) + (open?.count ?? 0) >= config.media.projectMaxFiles()) {
-    return { denial: "too_many_files" };
-  }
-  const [space] = await sql<{ available: string }[]>`
-    select storage_bytes - storage_spend as available from projects where id = ${input.projectId}
-  `;
-  if (!space || Number(space.available) < input.sizeBytes) {
-    return { denial: "insufficient_storage" };
+  if (input.projectId !== null) {
+    const [open] = await sql<{ count: number }[]>`
+      select count(*)::int as count from uploads
+      where project_id = ${input.projectId} and status in ('pending', 'uploading')
+    `;
+    if (
+      (await countItems(input.projectId)) + (open?.count ?? 0) >=
+      config.media.projectMaxFiles()
+    ) {
+      return { denial: "too_many_files" };
+    }
+    const [space] = await sql<{ available: string }[]>`
+      select storage_bytes - storage_spend as available from projects where id = ${input.projectId}
+    `;
+    if (!space || Number(space.available) < input.sizeBytes) {
+      return { denial: "insufficient_storage" };
+    }
+  } else {
+    const [space] = await sql<{ available: string }[]>`
+      select storage_bytes - storage_spend as available from users where id = ${input.userId}
+    `;
+    if (!space || Number(space.available) < input.sizeBytes) {
+      return { denial: "insufficient_storage" };
+    }
   }
   const id = randomUUID() as UploadId;
   const storageKey = storageKeyOf(format, id);
@@ -210,7 +223,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
 
 export async function resumeUpload(
   id: UploadId,
-  projectId: ProjectId,
+  projectId: ProjectId | null,
   userId: UserId,
 ): Promise<UploadPlan | undefined> {
   const allowed = await mayUpload(projectId, userId);
@@ -229,13 +242,13 @@ export async function resumeUpload(
 
 export type CompleteUpload = {
   id: UploadId;
-  projectId: ProjectId;
+  projectId: ProjectId | null;
   userId: UserId;
   parts: { part_number: number; etag: string }[];
 };
 
 export type CompleteResult =
-  | { media: MediaItem; itemId: ProjectItemId }
+  | { media: MediaItem; itemId: ProjectItemId | null }
   | {
       denial: "not_found" | "forbidden" | "storage_error" | "too_large" | "insufficient_storage";
     };
@@ -303,9 +316,15 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
             media_id = ${media.id}, updated_at = now()
         where id = ${row.id}
       `;
-      const itemId = await createItem(input.projectId, media.id, row.kind, tx);
-      const spent = await spendProjectStorage(tx, input.projectId, input.userId, bytes);
-      if (!spent) throw new StorageFullError();
+      let itemId: ProjectItemId | null = null;
+      if (row.projectId === null) {
+        const spent = await spendUserStorage(tx, input.userId, bytes);
+        if (!spent) throw new StorageFullError();
+      } else {
+        itemId = await createItem(row.projectId, media.id, row.kind, tx);
+        const spent = await spendProjectStorage(tx, row.projectId, input.userId, bytes);
+        if (!spent) throw new StorageFullError();
+      }
       await enqueue("media_derive", row.id, tx);
       return { media, itemId };
     });
@@ -329,7 +348,7 @@ async function markFailed(id: UploadId, code: string, message: string | null): P
 
 export async function cancelUpload(
   id: UploadId,
-  projectId: ProjectId,
+  projectId: ProjectId | null,
   userId: UserId,
   purge = false,
 ): Promise<"ok" | "not_found" | "forbidden"> {

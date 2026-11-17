@@ -8,7 +8,7 @@ import { accessOf } from "../project/access.ts";
 
 export type UploadView = {
   id: UploadId;
-  projectId: ProjectId;
+  projectId: ProjectId | null;
   kind: MediaKind;
   fileName: string;
   declaredBytes: string;

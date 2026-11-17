@@ -1,7 +1,7 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { MediaId, ProjectId, SongId, UserId } from "../../types/id.ts";
 import type { Song } from "../../types/song.ts";
-import { adjustStorageSpend } from "../consumable/commands.ts";
+import { adjustStorageSpend, adjustUserStorageSpend } from "../consumable/commands.ts";
 import { deleteMediaRows } from "../media/commands.ts";
 import { getMedia } from "../media/queries.ts";
 import { accessOf, isAdmin } from "../project/access.ts";
@@ -26,12 +26,14 @@ export async function createSong(
   if (!isAdmin(access)) return { denial: "forbidden" };
   const media = await getMedia(input.mediaId);
   if (!media || media.kind !== "audio") return { denial: "bad_request" };
-  const [owned] = await sql<{ one: number }[]>`
-    select 1 as one from project_items
-    where project_id = ${projectId} and media_id = ${media.id}
-    limit 1
-  `;
-  if (!owned) return { denial: "bad_request" };
+  if (media.uploadedBy !== viewerId) {
+    const [owned] = await sql<{ one: number }[]>`
+      select 1 as one from project_items
+      where project_id = ${projectId} and media_id = ${media.id}
+      limit 1
+    `;
+    if (!owned) return { denial: "bad_request" };
+  }
   if (input.coverId) {
     const cover = await getMedia(input.coverId);
     if (cover?.kind !== "photo") return { denial: "bad_request" };
@@ -111,13 +113,15 @@ export async function deleteOwnSong(
     await tx`delete from songs where id = ${songId}`;
     const media = await getMedia(song.mediaId);
     if (media?.uploadedBy) {
-      const [origin] = await tx<{ projectId: ProjectId }[]>`
+      const [origin] = await tx<{ projectId: ProjectId | null }[]>`
         select project_id as "projectId" from uploads
         where media_id = ${media.id}
         limit 1
       `;
-      if (origin) {
+      if (origin?.projectId) {
         await adjustStorageSpend(tx, origin.projectId, media.uploadedBy, -media.bytes);
+      } else if (origin) {
+        await adjustUserStorageSpend(tx, media.uploadedBy, -media.bytes);
       }
     }
     return deleteMediaRows([song.mediaId], tx);

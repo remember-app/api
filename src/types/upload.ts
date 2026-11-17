@@ -3,7 +3,7 @@ import type { MediaKind } from "./mediaItem.ts";
 
 export type Upload = {
   id: UploadId;
-  projectId: ProjectId;
+  projectId: ProjectId | null;
   uploadedBy: UserId;
   kind: MediaKind;
   storageKey: string;

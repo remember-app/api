@@ -118,6 +118,30 @@ export async function adjustStorageSpend(
   `;
 }
 
+export async function spendUserStorage(db: Db, userId: UserId, bytes: number): Promise<boolean> {
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) return true;
+  const [row] = await db<{ ok: boolean }[]>`
+    update users
+    set storage_spend = storage_spend + ${bytes}
+    where id = ${userId} and storage_bytes - storage_spend >= ${bytes}
+    returning true as ok
+  `;
+  return row !== undefined;
+}
+
+export async function adjustUserStorageSpend(
+  db: Db,
+  userId: UserId,
+  deltaBytes: number,
+): Promise<void> {
+  if (!Number.isFinite(deltaBytes) || deltaBytes === 0) return;
+  await db`
+    update users
+    set storage_spend = greatest(0, storage_spend + ${deltaBytes})
+    where id = ${userId}
+  `;
+}
+
 export async function donateToProject(
   projectId: ProjectId,
   userId: UserId,

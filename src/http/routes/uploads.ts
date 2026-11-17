@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../../config.ts";
 import { decodeCursor, limitOf } from "../../pagination.ts";
 import {
@@ -15,7 +15,23 @@ import { allow } from "../rate-limit.ts";
 const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 
 type ProjectParams = { projectId: string };
-type UploadParams = { projectId: string; uploadId: string };
+type UploadParams = { projectId?: string; uploadId: string };
+
+type StartBody = {
+  kind: "photo" | "video" | "audio";
+  sizeBytes: number;
+  fileName: string;
+  capturedAt?: string | null;
+  durationSeconds?: number | null;
+  fingerprint?: string | null;
+};
+
+type CompleteBody = { parts: { part_number: number; etag: string }[] };
+
+function projectOf(params: { projectId?: string }): ProjectId | null | undefined {
+  if (params.projectId === undefined) return null;
+  return uuidPattern.test(params.projectId) ? (params.projectId as ProjectId) : undefined;
+}
 
 const startBody = {
   type: "object",
@@ -91,123 +107,147 @@ export function uploadRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{
-    Params: ProjectParams;
-    Body: {
-      kind: "photo" | "video" | "audio";
-      sizeBytes: number;
-      fileName: string;
-      capturedAt?: string | null;
-      durationSeconds?: number | null;
-      fingerprint?: string | null;
-    };
-  }>(
-    "/projects/:projectId/uploads",
-    { schema: { body: startBody }, preHandler: app.authenticate },
-    async (request, reply) => {
-      const projectId = request.params.projectId;
-      if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
-      if (
-        !allow(
-          "uploads",
-          request.authenticated!.user.id,
-          config.rate.uploads(),
-          config.rate.windowMs(),
-        )
-      ) {
-        return fail(reply, 429, "capacity_exceeded");
-      }
-      const result = await startUpload({
-        projectId: projectId as ProjectId,
-        userId: request.authenticated!.user.id,
-        kind: request.body.kind,
-        sizeBytes: request.body.sizeBytes,
-        fileName: request.body.fileName,
-        capturedAt: request.body.capturedAt ? new Date(request.body.capturedAt) : null,
-        durationSeconds: request.body.durationSeconds ?? null,
-        fingerprint: request.body.fingerprint?.toLowerCase() ?? null,
-      });
-      if ("denial" in result) {
-        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
-        if (result.denial === "not_found") return fail(reply, 404, "not_found");
-        if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
-        if (result.denial === "too_long") return fail(reply, 400, "too_long");
-        if (result.denial === "insufficient_storage") {
-          return fail(reply, 409, "capacity_exceeded");
-        }
-        if (result.denial === "unsupported_format") {
-          return fail(reply, 400, "bad_request");
-        }
-        if (result.denial === "storage_unavailable") {
-          return fail(reply, 503, "storage_unavailable");
-        }
+  const start = async (
+    request: FastifyRequest<{ Params: { projectId?: string }; Body: StartBody }>,
+    reply: FastifyReply,
+  ) => {
+    const projectId = projectOf(request.params);
+    if (projectId === undefined) return fail(reply, 404, "not_found");
+    if (
+      !allow(
+        "uploads",
+        request.authenticated!.user.id,
+        config.rate.uploads(),
+        config.rate.windowMs(),
+      )
+    ) {
+      return fail(reply, 429, "capacity_exceeded");
+    }
+    const result = await startUpload({
+      projectId,
+      userId: request.authenticated!.user.id,
+      kind: request.body.kind,
+      sizeBytes: request.body.sizeBytes,
+      fileName: request.body.fileName,
+      capturedAt: request.body.capturedAt ? new Date(request.body.capturedAt) : null,
+      durationSeconds: request.body.durationSeconds ?? null,
+      fingerprint: request.body.fingerprint?.toLowerCase() ?? null,
+    });
+    if ("denial" in result) {
+      if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+      if (result.denial === "not_found") return fail(reply, 404, "not_found");
+      if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
+      if (result.denial === "too_long") return fail(reply, 400, "too_long");
+      if (result.denial === "insufficient_storage") {
         return fail(reply, 409, "capacity_exceeded");
       }
-      return result.plan;
-    },
-  );
+      if (result.denial === "unsupported_format") return fail(reply, 400, "bad_request");
+      if (result.denial === "storage_unavailable") {
+        return fail(reply, 503, "storage_unavailable");
+      }
+      return fail(reply, 409, "capacity_exceeded");
+    }
+    return result.plan;
+  };
 
+  const startOptions = { schema: { body: startBody }, preHandler: app.authenticate };
+  app.post<{ Params: { projectId?: string }; Body: StartBody }>(
+    "/projects/:projectId/uploads",
+    startOptions,
+    start,
+  );
+  app.post<{ Params: { projectId?: string }; Body: StartBody }>("/uploads", startOptions, start);
+
+  const resume = async (request: FastifyRequest<{ Params: UploadParams }>, reply: FastifyReply) => {
+    const uploadId = request.params.uploadId;
+    if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
+    const projectId = projectOf(request.params);
+    if (projectId === undefined) return fail(reply, 404, "not_found");
+    const plan = await resumeUpload(
+      uploadId as UploadId,
+      projectId,
+      request.authenticated!.user.id,
+    );
+    if (!plan) return fail(reply, 404, "not_found");
+    return plan;
+  };
+
+  const resumeOptions = { preHandler: app.authenticate };
   app.get<{ Params: UploadParams }>(
     "/projects/:projectId/uploads/:uploadId",
-    { preHandler: app.authenticate },
-    async (request, reply) => {
-      const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
-      const plan = await resumeUpload(
-        uploadId as UploadId,
-        request.params.projectId as ProjectId,
-        request.authenticated!.user.id,
-      );
-      if (!plan) return fail(reply, 404, "not_found");
-      return plan;
-    },
+    resumeOptions,
+    resume,
   );
+  app.get<{ Params: UploadParams }>("/uploads/:uploadId", resumeOptions, resume);
 
-  app.post<{
-    Params: UploadParams;
-    Body: { parts: { part_number: number; etag: string }[] };
-  }>(
-    "/projects/:projectId/uploads/:uploadId/complete",
-    { schema: { body: completeBody }, preHandler: app.authenticate },
-    async (request, reply) => {
-      const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
-      const result = await completeMediaUpload({
-        id: uploadId as UploadId,
-        projectId: request.params.projectId as ProjectId,
-        userId: request.authenticated!.user.id,
-        parts: request.body.parts,
-      });
-      if ("denial" in result) {
-        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
-        if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
-        if (result.denial === "insufficient_storage") {
-          return fail(reply, 409, "capacity_exceeded");
-        }
-        if (result.denial === "storage_error") {
-          return fail(reply, 502, "storage_unavailable");
-        }
-        return fail(reply, 404, "not_found");
+  const complete = async (
+    request: FastifyRequest<{ Params: UploadParams; Body: CompleteBody }>,
+    reply: FastifyReply,
+  ) => {
+    const uploadId = request.params.uploadId;
+    if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
+    const projectId = projectOf(request.params);
+    if (projectId === undefined) return fail(reply, 404, "not_found");
+    const result = await completeMediaUpload({
+      id: uploadId as UploadId,
+      projectId,
+      userId: request.authenticated!.user.id,
+      parts: request.body.parts,
+    });
+    if ("denial" in result) {
+      if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+      if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
+      if (result.denial === "insufficient_storage") {
+        return fail(reply, 409, "capacity_exceeded");
       }
-      return { mediaId: result.media.id, itemId: result.itemId, status: "processing" };
-    },
+      if (result.denial === "storage_error") {
+        return fail(reply, 502, "storage_unavailable");
+      }
+      return fail(reply, 404, "not_found");
+    }
+    return { mediaId: result.media.id, itemId: result.itemId, status: "processing" };
+  };
+
+  const completeOptions = { schema: { body: completeBody }, preHandler: app.authenticate };
+  app.post<{ Params: UploadParams; Body: CompleteBody }>(
+    "/projects/:projectId/uploads/:uploadId/complete",
+    completeOptions,
+    complete,
+  );
+  app.post<{ Params: UploadParams; Body: CompleteBody }>(
+    "/uploads/:uploadId/complete",
+    completeOptions,
+    complete,
   );
 
+  const cancel = async (
+    request: FastifyRequest<{ Params: UploadParams; Querystring: { purge?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const uploadId = request.params.uploadId;
+    if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
+    const projectId = projectOf(request.params);
+    if (projectId === undefined) return fail(reply, 404, "not_found");
+    const result = await cancelUpload(
+      uploadId as UploadId,
+      projectId,
+      request.authenticated!.user.id,
+      request.query.purge === "1",
+    );
+    if (result === "forbidden") return fail(reply, 403, "forbidden");
+    if (result === "not_found") return fail(reply, 404, "not_found");
+    return { ok: true };
+  };
+
+  const cancelOptions = { preHandler: app.authenticate };
   app.delete<{ Params: UploadParams; Querystring: { purge?: string } }>(
     "/projects/:projectId/uploads/:uploadId",
-    { preHandler: app.authenticate },
-    async (request, reply) => {
-      const uploadId = request.params.uploadId;
-      if (!uuidPattern.test(uploadId)) return fail(reply, 404, "not_found");
-      const result = await cancelUpload(
-        uploadId as UploadId,
-        request.params.projectId as ProjectId,
-        request.authenticated!.user.id,
-        request.query.purge === "1",
-      );
-      if (result === "forbidden") return fail(reply, 403, "forbidden");
-      if (result === "not_found") return fail(reply, 404, "not_found");
-      return { ok: true };
-    },
+    cancelOptions,
+    cancel,
+  );
+  app.delete<{ Params: UploadParams; Querystring: { purge?: string } }>(
+    "/uploads/:uploadId",
+    cancelOptions,
+    cancel,
   );
 }
