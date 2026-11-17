@@ -12,7 +12,7 @@ export type SongDenial = { denial: "not_found" | "forbidden" | "bad_request" };
 
 export type SongInput = {
   name: string;
-  author: string;
+  author?: string | null;
   mediaId: MediaId;
   coverId?: MediaId | null;
   description?: string | null;
@@ -20,7 +20,7 @@ export type SongInput = {
 
 export type SongPatch = {
   name?: string;
-  author?: string;
+  author?: string | null;
   coverId?: MediaId | null;
   description?: string | null;
 };
@@ -36,7 +36,7 @@ async function insertSong(db: Db, viewerId: UserId, input: SongInput): Promise<S
     insert into songs (name, author, media_id, uploaded_by, cover_id, description)
     values (
       ${input.name},
-      ${input.author},
+      ${input.author ?? null},
       ${input.mediaId},
       ${viewerId},
       ${input.coverId ?? null},
@@ -105,7 +105,7 @@ export async function updateOwnSong(
   const [row] = await sql<Song[]>`
     update songs
     set name = ${patch.name ?? song.name},
-        author = ${patch.author ?? song.author},
+        author = ${patch.author === undefined ? song.author : patch.author},
         cover_id = ${patch.coverId === undefined ? song.coverId : patch.coverId},
         description = ${patch.description === undefined ? song.description : patch.description}
     where id = ${songId}

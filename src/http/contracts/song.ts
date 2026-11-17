@@ -3,7 +3,7 @@ import type { PageResponse } from "./common.ts";
 export type SongResponse = {
   id: string;
   name: string;
-  author: string;
+  author: string | null;
   mediaId: string;
   coverId: string | null;
   coverUrl: string | null;
@@ -19,7 +19,7 @@ export type SongsPageResponse = PageResponse<SongResponse>;
 
 export type CreateSongRequest = {
   name: string;
-  author: string;
+  author?: string | null;
   mediaId: string;
   coverId?: string | null;
   description?: string | null;
@@ -27,7 +27,7 @@ export type CreateSongRequest = {
 
 export type UpdateSongRequest = {
   name?: string;
-  author?: string;
+  author?: string | null;
   coverId?: string | null;
   description?: string | null;
 };

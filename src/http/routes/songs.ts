@@ -22,11 +22,11 @@ import { fail } from "../errors.ts";
 
 const createBody = {
   type: "object",
-  required: ["name", "author", "mediaId"],
+  required: ["name", "mediaId"],
   additionalProperties: false,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
-    author: { type: "string", minLength: 1, maxLength: 200 },
+    author: { type: ["string", "null"], minLength: 1, maxLength: 200 },
     mediaId: { type: "string" },
     coverId: { type: ["string", "null"] },
     description: { type: ["string", "null"], maxLength: 1000 },
@@ -38,7 +38,7 @@ const updateBody = {
   additionalProperties: false,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
-    author: { type: "string", minLength: 1, maxLength: 200 },
+    author: { type: ["string", "null"], minLength: 1, maxLength: 200 },
     coverId: { type: ["string", "null"] },
     description: { type: ["string", "null"], maxLength: 1000 },
   },
@@ -83,7 +83,7 @@ export function songRoutes(app: FastifyInstance) {
   app.post<{
     Body: {
       name: string;
-      author: string;
+      author?: string | null;
       mediaId: string;
       coverId?: string | null;
       description?: string | null;
@@ -136,7 +136,7 @@ export function songRoutes(app: FastifyInstance) {
     Params: ProjectParams;
     Body: {
       name: string;
-      author: string;
+      author?: string | null;
       mediaId: string;
       coverId?: string | null;
       description?: string | null;
@@ -197,7 +197,7 @@ export function songRoutes(app: FastifyInstance) {
     Params: OwnSongParams;
     Body: {
       name?: string;
-      author?: string;
+      author?: string | null;
       coverId?: string | null;
       description?: string | null;
     };
