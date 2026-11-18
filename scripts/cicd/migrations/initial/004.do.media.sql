@@ -12,10 +12,12 @@ create table media_items (
         jsonb_typeof(meta) = 'object'
         and (
             meta->'place' is null
+            or meta->'place' = 'null'::jsonb
             or (meta->'place' ? 'latitude' and meta->'place' ? 'longitude')
         )
         and (
             meta->'dimensions' is null
+            or meta->'dimensions' = 'null'::jsonb
             or (meta->'dimensions' ? 'width' and meta->'dimensions' ? 'height')
         )
         and (kind <> 'photo' or meta->>'duration' is null)

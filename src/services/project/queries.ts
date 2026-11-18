@@ -99,7 +99,7 @@ export async function homeCards(
       from (
         select m.storage_key as key
         from project_items ci
-        join media_items m on m.id = ci.thumbnail_id
+        join media_items m on m.id = (ci.previews_ids ->> 'small')::uuid
         where ci.project_id = p.id
         order by ci.created_at desc
         limit 4

@@ -11,7 +11,7 @@ import {
   mediaView,
 } from "../../services/media/queries.ts";
 import { accessOf } from "../../services/project/access.ts";
-import { updateItemDescription } from "../../services/project/item/commands.ts";
+import { updateItemComment } from "../../services/project/item/commands.ts";
 import { getItemByMedia } from "../../services/project/item/queries.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
@@ -24,9 +24,9 @@ type ItemParams = { projectId: string; itemId: string };
 
 const itemBody = {
   type: "object",
-  required: ["description"],
+  required: ["comment"],
   additionalProperties: false,
-  properties: { description: { type: ["string", "null"], maxLength: 4000 } },
+  properties: { comment: { type: ["string", "null"], maxLength: 4000 } },
 } as const;
 
 const mediaBody = {
@@ -193,18 +193,18 @@ export function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  app.patch<{ Params: ItemParams; Body: { description: string | null } }>(
+  app.patch<{ Params: ItemParams; Body: { comment: string | null } }>(
     "/projects/:projectId/items/:itemId",
     { schema: { body: itemBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const projectId = request.params.projectId as ProjectId;
       const itemId = request.params.itemId as ProjectItemId;
       if (!uuidPattern.test(itemId)) return fail(reply, 404, "not_found");
-      const result = await updateItemDescription(
+      const result = await updateItemComment(
         projectId,
         itemId,
         request.authenticated!.user.id,
-        request.body.description,
+        request.body.comment,
       );
       if ("denial" in result) {
         return result.denial === "forbidden"

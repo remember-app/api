@@ -76,15 +76,12 @@ export async function createProject(input: NewProject): Promise<CreateProjectRes
       select language from users where id = ${input.creatorId}
     `;
     await tx`
-      insert into labels (project_id, owner_id, name, color_hex, description, shared, locked)
+      insert into labels (project_id, owner_id, name, color)
       values (
         ${created.id},
         ${input.creatorId},
         ${creator?.language === "en" ? "Cover" : "Обложка"},
-        '#FFB547',
-        null,
-        true,
-        true
+        '#FFB547'
       )
     `;
     if (storageBytes > 0) {
@@ -146,17 +143,19 @@ export async function deleteProject(
       select id, storage_key as "storageKey"
       from media_items
       where id in (
-        select media_id from project_items where project_id = ${id}
+        select original_id from project_items where project_id = ${id}
         union
-        select thumbnail_id from project_items
-          where project_id = ${id} and thumbnail_id is not null
+        select compressed_id from project_items
+          where project_id = ${id} and compressed_id is not null
         union
-        select preview_id from project_items
-          where project_id = ${id} and preview_id is not null
+        select (value)::uuid
+        from project_items pi, jsonb_each_text(pi.previews_ids)
+        where pi.project_id = ${id}
         union
-        select video_id from movies where project_id = ${id}
+        select original_id from movies where project_id = ${id}
         union
-        select thumbnail_id from movies where project_id = ${id} and thumbnail_id is not null
+        select compressed_id from movies
+          where project_id = ${id} and compressed_id is not null
         union
         select preview_id from movies where project_id = ${id} and preview_id is not null
       )

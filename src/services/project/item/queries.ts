@@ -1,46 +1,31 @@
 import { sql } from "../../../integrations/db/index.ts";
 import { type Cursor, type CursorPage, cursorPage } from "../../../pagination.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../../types/id.ts";
-import type { ProjectItem, ProjectItemCommon } from "../../../types/project.ts";
+import type { ProjectItem } from "../../../types/project.ts";
 
-type ItemRow = ProjectItemCommon & {
-  thumbnailId: MediaId | null;
-  previewId: MediaId | null;
-};
+type ItemRow = ProjectItem;
 
 const itemColumns = sql`
   pi.id,
   pi.kind,
-  pi.media_id as "mediaId",
+  pi.original_id as "originalId",
+  pi.compressed_id as "compressedId",
+  pi.previews_ids as "previewsIds",
   pi.project_id as "projectId",
-  pi.description,
+  pi.uploaded_by as "uploadedBy",
+  pi.comment,
   pi.analysis,
-  pi.thumbnail_id as "thumbnailId",
-  pi.preview_id as "previewId",
   pi.created_at as "createdAt",
-  array(
-    select l.label_id
-    from project_item_labels l
-    where l.project_item_id = pi.id
-    order by l.label_id
+  coalesce(
+    array(
+      select l.label_id
+      from project_item_labels l
+      where l.project_item_id = pi.id
+      order by l.label_id
+    ),
+    '{}'
   ) as "labelIds"
 `;
-
-const toItem = ({ thumbnailId, previewId, ...common }: ItemRow): ProjectItem => {
-  const base = {
-    id: common.id,
-    mediaId: common.mediaId,
-    projectId: common.projectId,
-    description: common.description,
-    labelIds: common.labelIds,
-    analysis: common.analysis,
-    createdAt: common.createdAt,
-  };
-  if (common.kind === "audio") {
-    return { ...base, kind: "audio", derivedMedia: { thumbnailId } };
-  }
-  return { ...base, kind: common.kind, derivedMedia: { thumbnailId, previewId } };
-};
 
 export async function listItems(
   projectId: ProjectId,
@@ -59,7 +44,7 @@ export async function listItems(
     order by date_trunc('milliseconds', pi.created_at), pi.id
     limit ${limit + 1}
   `;
-  return cursorPage(rows.map(toItem), limit, (item) => ({ at: item.createdAt, id: item.id }));
+  return cursorPage(rows, limit, (item) => ({ at: item.createdAt, id: item.id }));
 }
 
 export async function getItem(
@@ -71,7 +56,7 @@ export async function getItem(
     from project_items pi
     where pi.project_id = ${projectId} and pi.id = ${itemId}
   `;
-  return row && toItem(row);
+  return row;
 }
 
 export async function getItemByMedia(
@@ -81,9 +66,9 @@ export async function getItemByMedia(
   const [row] = await sql<ItemRow[]>`
     select ${itemColumns}
     from project_items pi
-    where pi.project_id = ${projectId} and pi.media_id = ${mediaId}
+    where pi.project_id = ${projectId} and pi.original_id = ${mediaId}
   `;
-  return row && toItem(row);
+  return row;
 }
 
 export async function countItems(projectId: ProjectId): Promise<number> {

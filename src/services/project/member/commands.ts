@@ -153,31 +153,30 @@ export async function removeMember(
     const rows = await tx<
       {
         itemId: string;
-        mediaId: string;
-        thumbnailId: string | null;
-        previewId: string | null;
+        originalId: string;
+        compressedId: string | null;
+        previewsIds: Record<string, string> | null;
       }[]
     >`
       select
         pi.id as "itemId",
-        pi.media_id as "mediaId",
-        pi.thumbnail_id as "thumbnailId",
-        pi.preview_id as "previewId"
+        pi.original_id as "originalId",
+        pi.compressed_id as "compressedId",
+        pi.previews_ids as "previewsIds"
       from project_items pi
-      join media_items m on m.id = pi.media_id
-      where pi.project_id = ${projectId} and m.uploaded_by = ${targetId}
+      where pi.project_id = ${projectId} and pi.uploaded_by = ${targetId}
     `;
     const itemIds = rows.map((row) => row.itemId);
     const mediaIds = rows.flatMap((row) => [
-      row.mediaId,
-      ...(row.thumbnailId ? [row.thumbnailId] : []),
-      ...(row.previewId ? [row.previewId] : []),
+      row.originalId,
+      ...(row.compressedId ? [row.compressedId] : []),
+      ...Object.values(row.previewsIds ?? {}),
     ]);
     if (itemIds.length > 0) {
       const [spent] = await tx<{ bytes: string }[]>`
         select coalesce(sum(bytes), 0)::text as bytes
         from media_items
-        where id = any(${mediaIds}) and parent_media_id is null and uploaded_by = ${targetId}
+        where id = any(${rows.map((row) => row.originalId) as MediaId[]})
       `;
       if (spent && Number(spent.bytes) > 0) {
         await adjustStorageSpend(tx, projectId, targetId, -Number(spent.bytes));
@@ -191,13 +190,9 @@ export async function removeMember(
     `;
     const keys = await deleteMediaRows(mediaIds as MediaId[], tx);
     await tx`
-      delete from labels
-      where project_id = ${projectId} and owner_id = ${targetId} and not shared
-    `;
-    await tx`
       update labels
       set owner_id = ${adminId}
-      where project_id = ${projectId} and owner_id = ${targetId} and shared
+      where project_id = ${projectId} and owner_id = ${targetId}
     `;
     await tx`
       delete from project_members where project_id = ${projectId} and user_id = ${targetId}

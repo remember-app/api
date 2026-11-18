@@ -76,12 +76,12 @@ export async function validateOrder(
   >`
     select
       pi.id as "itemId",
-      pi.media_id as "mediaId",
+      pi.original_id as "mediaId",
       pi.kind,
-      m.duration,
+      nullif(m.meta->>'duration', '')::float8 as "duration",
       pi.analysis
     from project_items pi
-    join media_items m on m.id = pi.media_id
+    join media_items m on m.id = pi.original_id
     where pi.project_id = ${projectId} and pi.id = any(${config.includeItemIds})
   `;
   const items: ResolvedOrderItem[] = rows.map((row) => ({
@@ -104,7 +104,8 @@ export async function validateOrder(
   const durations =
     config.musicIds.length > 0
       ? await sql<{ mediaId: MediaId; duration: number | null }[]>`
-          select id as "mediaId", duration from media_items where id = any(${config.musicIds})
+          select id as "mediaId", nullif(meta->>'duration', '')::float8 as "duration"
+          from media_items where id = any(${config.musicIds})
         `
       : [];
   const durationOf = new Map(durations.map((row) => [row.mediaId, row.duration]));

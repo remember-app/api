@@ -45,7 +45,8 @@ async function freshMedia(
   const rows = await db<
     { mediaId: MediaId; kind: MediaKind; analysis: unknown; duration: number | null }[]
   >`
-    select pi.media_id as "mediaId", pi.kind, pi.analysis, m.duration
+    select pi.original_id as "mediaId", pi.kind, pi.analysis,
+           nullif(m.meta->>'duration', '')::float8 as "duration"
     from project_items pi
     join media_items m on m.id = pi.media_id
     where pi.project_id = ${projectId}
@@ -114,7 +115,7 @@ export async function analyzeItems(
           await tx`
             update project_items
             set analysis = null
-            where project_id = ${projectId} and media_id = ${candidate.mediaId}
+            where project_id = ${projectId} and original_id = ${candidate.mediaId}
           `;
         }
       }
@@ -150,7 +151,7 @@ export async function listAnalysisJobs(
   const rows = await sql<AnalysisJobRow[]>`
     select
       pi.id as "itemId",
-      pi.media_id as "mediaId",
+      pi.original_id as "mediaId",
       pi.kind,
       pi.analysis,
       j.status as "jobStatus",
@@ -159,7 +160,7 @@ export async function listAnalysisJobs(
     left join lateral (
       select status, error, updated_at
       from jobs
-      where kind = 'media_analysis' and ref = pi.media_id
+      where kind = 'media_analysis' and ref = pi.original_id
       order by id desc
       limit 1
     ) j on true

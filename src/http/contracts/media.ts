@@ -90,6 +90,6 @@ export type MediaPatchRequest = {
   longitude?: number | null;
 };
 
-export type ItemDescriptionRequest = {
-  description: string | null;
+export type ItemCommentRequest = {
+  comment: string | null;
 };
