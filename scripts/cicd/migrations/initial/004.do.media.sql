@@ -21,7 +21,11 @@ create table media_items (
             or (meta->'dimensions' ? 'width' and meta->'dimensions' ? 'height')
         )
         and (kind <> 'photo' or meta->>'duration' is null)
-        and (kind <> 'audio' or meta->'dimensions' is null)
+        and (
+            kind <> 'audio'
+            or meta->'dimensions' is null
+            or meta->'dimensions' = 'null'::jsonb
+        )
     )
 );
 
