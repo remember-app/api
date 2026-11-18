@@ -27,34 +27,41 @@ export async function seedMusic(): Promise<void> {
     const analysis = (analysisByFile as Record<string, unknown>)[track.file] ?? null;
     await putObject(key, file, "audio/mpeg");
     await sql`
-      insert into media_items (
-        id, kind, storage_key, fingerprint, uploaded_by, format, bytes, duration
-      )
+      insert into media_items (id, kind, storage_key, fingerprint, format, bytes, meta)
       values (
-        ${mediaId}, 'audio', ${key}, ${fingerprint}, null, 'mp3', ${file.length}, ${track.seconds}
+        ${mediaId}, 'audio', ${key}, ${fingerprint}, 'mp3', ${file.length},
+        ${sql.json({
+          dimensions: null,
+          duration: track.seconds,
+          at: null,
+          place: null,
+          camera: null,
+        })}
       )
       on conflict (id) do update
       set kind = excluded.kind,
           storage_key = excluded.storage_key,
           fingerprint = excluded.fingerprint,
-          uploaded_by = excluded.uploaded_by,
           format = excluded.format,
           bytes = excluded.bytes,
-          duration = excluded.duration
+          meta = excluded.meta
     `;
     await sql`
-      insert into songs (id, name, author, media_id, uploaded_by, cover_id, analysis)
+      insert into songs (
+        id, name, author, original_id, uploaded_by, cover_id, preview_cover_id, analysis
+      )
       values (
         ${songId}, ${track.name}, ${track.author}, ${mediaId}, null,
-        ${COVER_ID},
+        ${COVER_ID}, ${COVER_ID},
         ${analysis === null ? null : sql.json(analysis as never)}
       )
       on conflict (id) do update
       set name = excluded.name,
           author = excluded.author,
-          media_id = excluded.media_id,
+          original_id = excluded.original_id,
           uploaded_by = excluded.uploaded_by,
           cover_id = excluded.cover_id,
+          preview_cover_id = excluded.preview_cover_id,
           analysis = excluded.analysis
     `;
     console.log(`essentials: track ${track.name}`);
@@ -67,8 +74,8 @@ export async function seedMusic(): Promise<void> {
   `;
   await sql`
     delete from media_items
-    where uploaded_by is null
-      and kind = 'audio'
+    where kind = 'audio'
       and id::text <> all(${mediaIds})
+      and not exists (select 1 from uploads where uploads.media_id = media_items.id)
   `;
 }

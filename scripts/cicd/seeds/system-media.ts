@@ -15,29 +15,32 @@ export async function seedSystemMedia(): Promise<void> {
     const key = systemMediaKey(entry);
     await putObject(key, file, entry.contentType);
     await sql`
-      insert into media_items (
-        id, kind, storage_key, fingerprint, uploaded_by, format, bytes, width, height
-      )
+      insert into media_items (id, kind, storage_key, fingerprint, format, bytes, meta)
       values (
         ${entry.mediaId},
         'photo',
         ${key},
         ${fingerprint},
-        null,
         ${entry.format},
         ${file.length},
-        ${entry.width},
-        ${entry.height}
+        ${sql.json({
+          dimensions:
+            entry.width !== null && entry.height !== null
+              ? { width: entry.width, height: entry.height }
+              : null,
+          duration: null,
+          at: null,
+          place: null,
+          camera: null,
+        })}
       )
       on conflict (id) do update
       set kind = excluded.kind,
           storage_key = excluded.storage_key,
           fingerprint = excluded.fingerprint,
-          uploaded_by = excluded.uploaded_by,
           format = excluded.format,
           bytes = excluded.bytes,
-          width = excluded.width,
-          height = excluded.height
+          meta = excluded.meta
     `;
     console.log(`essentials: ${entry.name} ${entry.mediaId}`);
   }

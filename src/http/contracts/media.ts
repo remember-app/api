@@ -37,6 +37,7 @@ export type MediaMetaResponse = {
 
 export type MediaResponse = {
   id: string;
+  kind: MediaKind;
   fingerprint: string;
   perceptualHash: string;
   format: string;
