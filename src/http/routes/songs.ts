@@ -22,14 +22,14 @@ import { fail } from "../errors.ts";
 
 const createBody = {
   type: "object",
-  required: ["name", "mediaId"],
+  required: ["name", "originalId"],
   additionalProperties: false,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 200 },
     author: { type: ["string", "null"], minLength: 1, maxLength: 200 },
-    mediaId: { type: "string" },
+    originalId: { type: "string" },
     coverId: { type: ["string", "null"] },
-    description: { type: ["string", "null"], maxLength: 1000 },
+    previewCoverId: { type: ["string", "null"] },
   },
 } as const;
 
@@ -40,7 +40,7 @@ const updateBody = {
     name: { type: "string", minLength: 1, maxLength: 200 },
     author: { type: ["string", "null"], minLength: 1, maxLength: 200 },
     coverId: { type: ["string", "null"] },
-    description: { type: ["string", "null"], maxLength: 1000 },
+    previewCoverId: { type: ["string", "null"] },
   },
 } as const;
 
@@ -50,11 +50,20 @@ type ProjectParams = { projectId: string };
 type SongParams = { projectId: string; songId: string };
 type OwnSongParams = { songId: string };
 
-async function withCovers<T extends { coverId: string | null }>(items: T[], ttl: number) {
+type CoverSong = { coverId: string | null; previewCoverId: string | null };
+
+async function withCovers<T extends CoverSong>(items: T[], ttl: number) {
   return Promise.all(
     items.map(async (song) => {
-      const cover = song.coverId ? await getMedia(song.coverId as MediaId) : undefined;
-      return { ...song, coverUrl: cover ? await downloadUrl(cover.storageKey, ttl) : null };
+      const [cover, previewCover] = await Promise.all([
+        song.coverId ? getMedia(song.coverId as MediaId) : undefined,
+        song.previewCoverId ? getMedia(song.previewCoverId as MediaId) : undefined,
+      ]);
+      return {
+        ...song,
+        coverUrl: cover ? await downloadUrl(cover.storageKey, ttl) : null,
+        previewCoverUrl: previewCover ? await downloadUrl(previewCover.storageKey, ttl) : null,
+      };
     }),
   );
 }
@@ -84,24 +93,27 @@ export function songRoutes(app: FastifyInstance) {
     Body: {
       name: string;
       author?: string | null;
-      mediaId: string;
+      originalId: string;
       coverId?: string | null;
-      description?: string | null;
+      previewCoverId?: string | null;
     };
   }>(
     "/songs",
     { schema: { body: createBody }, preHandler: app.authenticate },
     async (request, reply) => {
-      if (!uuidPattern.test(request.body.mediaId)) return fail(reply, 404, "not_found");
+      if (!uuidPattern.test(request.body.originalId)) return fail(reply, 404, "not_found");
       if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
+        return fail(reply, 404, "not_found");
+      }
+      if (request.body.previewCoverId && !uuidPattern.test(request.body.previewCoverId)) {
         return fail(reply, 404, "not_found");
       }
       const result = await createOwnSong(request.authenticated!.user.id, {
         name: request.body.name,
         author: request.body.author,
-        mediaId: request.body.mediaId as MediaId,
+        originalId: request.body.originalId as MediaId,
         coverId: request.body.coverId as MediaId | null | undefined,
-        description: request.body.description,
+        previewCoverId: request.body.previewCoverId as MediaId | null | undefined,
       });
       if ("denial" in result) {
         if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
@@ -137,9 +149,9 @@ export function songRoutes(app: FastifyInstance) {
     Body: {
       name: string;
       author?: string | null;
-      mediaId: string;
+      originalId: string;
       coverId?: string | null;
-      description?: string | null;
+      previewCoverId?: string | null;
     };
   }>(
     "/projects/:projectId/songs",
@@ -148,10 +160,13 @@ export function songRoutes(app: FastifyInstance) {
       if (!uuidPattern.test(request.params.projectId)) {
         return fail(reply, 404, "not_found");
       }
-      if (!uuidPattern.test(request.body.mediaId)) {
+      if (!uuidPattern.test(request.body.originalId)) {
         return fail(reply, 404, "not_found");
       }
       if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
+        return fail(reply, 404, "not_found");
+      }
+      if (request.body.previewCoverId && !uuidPattern.test(request.body.previewCoverId)) {
         return fail(reply, 404, "not_found");
       }
       const result = await createSong(
@@ -160,9 +175,9 @@ export function songRoutes(app: FastifyInstance) {
         {
           name: request.body.name,
           author: request.body.author,
-          mediaId: request.body.mediaId as MediaId,
+          originalId: request.body.originalId as MediaId,
           coverId: request.body.coverId as MediaId | null | undefined,
-          description: request.body.description,
+          previewCoverId: request.body.previewCoverId as MediaId | null | undefined,
         },
       );
       if ("denial" in result) {
@@ -170,7 +185,8 @@ export function songRoutes(app: FastifyInstance) {
         if (result.denial === "bad_request") return fail(reply, 400, "bad_request");
         return fail(reply, 404, "not_found");
       }
-      return result.song;
+      const [song] = await withCovers([result.song], config.media.downloadTtlSeconds());
+      return song;
     },
   );
 
@@ -183,7 +199,7 @@ export function songRoutes(app: FastifyInstance) {
       }
       const song = await getSong(request.params.songId as SongId);
       if (!song) return fail(reply, 404, "not_found");
-      const media = await getMedia(song.mediaId);
+      const media = await getMedia(song.originalId);
       if (!media) return fail(reply, 404, "not_found");
       const [signed] = await withCovers([song], config.media.downloadTtlSeconds());
       return {
@@ -199,7 +215,7 @@ export function songRoutes(app: FastifyInstance) {
       name?: string;
       author?: string | null;
       coverId?: string | null;
-      description?: string | null;
+      previewCoverId?: string | null;
     };
   }>(
     "/songs/:songId",
@@ -209,6 +225,9 @@ export function songRoutes(app: FastifyInstance) {
       if (request.body.coverId && !uuidPattern.test(request.body.coverId)) {
         return fail(reply, 404, "not_found");
       }
+      if (request.body.previewCoverId && !uuidPattern.test(request.body.previewCoverId)) {
+        return fail(reply, 404, "not_found");
+      }
       const result = await updateOwnSong(
         request.params.songId as SongId,
         request.authenticated!.user.id,
@@ -216,7 +235,7 @@ export function songRoutes(app: FastifyInstance) {
           name: request.body.name,
           author: request.body.author,
           coverId: request.body.coverId as MediaId | null | undefined,
-          description: request.body.description,
+          previewCoverId: request.body.previewCoverId as MediaId | null | undefined,
         },
       );
       if ("denial" in result) {

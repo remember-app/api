@@ -16,13 +16,11 @@ export type MovieResponse = {
   createdBy: string;
   createdAt: string;
   montageId: string;
-  videoId: string;
+  originalId: string;
+  compressedId: string | null;
+  previewId: string | null;
   video: MovieVideoResponse | null;
   montage: MontageResponse | null;
-  derived: {
-    thumbnailId: string | null;
-    previewId: string | null;
-  };
   video_url: string | null;
   poster_url: string | null;
   preview_url: string | null;

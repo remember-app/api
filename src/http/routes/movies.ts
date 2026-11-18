@@ -29,27 +29,27 @@ const renameBody = {
 async function view(movieId: MovieId, ttl: number) {
   const movie = await getMovie(movieId);
   if (!movie) return undefined;
-  const [source, montage, thumbnail, preview] = await Promise.all([
-    getMedia(movie.videoId),
+  const [source, montage, poster, compressed] = await Promise.all([
+    getMedia(movie.originalId),
     getMontage(movie.montageId),
-    movie.derived.thumbnailId ? getMedia(movie.derived.thumbnailId) : undefined,
-    movie.derived.previewId ? getMedia(movie.derived.previewId) : undefined,
+    movie.previewId ? getMedia(movie.previewId) : undefined,
+    movie.compressedId ? getMedia(movie.compressedId) : undefined,
   ]);
   return {
     ...movie,
     video: source
       ? {
-          durationSeconds: source.kind === "photo" ? null : source.duration,
-          bytes: Number(source.bytes),
-          width: source.kind === "audio" ? null : (source.dimensions?.width ?? null),
-          height: source.kind === "audio" ? null : (source.dimensions?.height ?? null),
+          durationSeconds: source.meta.duration,
+          bytes: source.bytes,
+          width: source.meta.dimensions?.width ?? null,
+          height: source.meta.dimensions?.height ?? null,
           format: source.format,
         }
       : null,
     montage: montage ?? null,
     video_url: source ? await downloadUrl(source.storageKey, ttl) : null,
-    poster_url: thumbnail ? await downloadUrl(thumbnail.storageKey, ttl) : null,
-    preview_url: preview ? await downloadUrl(preview.storageKey, ttl) : null,
+    poster_url: poster ? await downloadUrl(poster.storageKey, ttl) : null,
+    preview_url: compressed ? await downloadUrl(compressed.storageKey, ttl) : null,
   };
 }
 

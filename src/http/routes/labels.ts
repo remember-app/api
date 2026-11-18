@@ -18,13 +18,11 @@ type LabelParams = { projectId: string; labelId: string };
 
 const createBody = {
   type: "object",
-  required: ["name", "colorHex", "shared"],
+  required: ["name", "color"],
   additionalProperties: false,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 100 },
-    colorHex: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
-    description: { type: ["string", "null"], maxLength: 1000 },
-    shared: { type: "boolean" },
+    color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
   },
 } as const;
 
@@ -33,8 +31,7 @@ const patchBody = {
   additionalProperties: false,
   properties: {
     name: { type: "string", minLength: 1, maxLength: 100 },
-    colorHex: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
-    description: { type: ["string", "null"], maxLength: 1000 },
+    color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
   },
 } as const;
 
@@ -77,9 +74,7 @@ export function labelRoutes(app: FastifyInstance) {
     Params: ProjectParams;
     Body: {
       name: string;
-      colorHex: `#${string}`;
-      shared: boolean;
-      description?: string | null;
+      color: `#${string}`;
     };
   }>(
     "/projects/:projectId/labels",
@@ -91,9 +86,7 @@ export function labelRoutes(app: FastifyInstance) {
         request.authenticated!.user.id,
         {
           name: request.body.name,
-          colorHex: request.body.colorHex,
-          description: request.body.description ?? null,
-          shared: request.body.shared,
+          color: request.body.color,
         },
       );
       if ("denial" in result) return denial(reply, result.denial);
@@ -103,7 +96,7 @@ export function labelRoutes(app: FastifyInstance) {
 
   app.patch<{
     Params: LabelParams;
-    Body: { name?: string; colorHex?: `#${string}`; description?: string | null };
+    Body: { name?: string; color?: `#${string}` };
   }>(
     "/projects/:projectId/labels/:labelId",
     { schema: { body: patchBody }, preHandler: app.authenticate },

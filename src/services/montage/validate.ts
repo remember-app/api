@@ -97,7 +97,7 @@ export async function validateOrder(
   }
 
   const songs = await songsForOrder(projectId, config.musicIds);
-  const foundSongs = new Set(songs.map((song) => song.mediaId));
+  const foundSongs = new Set(songs.map((song) => song.originalId));
   for (const id of config.musicIds) {
     if (!foundSongs.has(id)) problems.push(`song ${id} is not available to this project`);
   }
@@ -114,8 +114,8 @@ export async function validateOrder(
     problems,
     items,
     songs: songs.map((song) => ({
-      mediaId: song.mediaId,
-      duration: durationOf.get(song.mediaId) ?? null,
+      mediaId: song.originalId,
+      duration: durationOf.get(song.originalId) ?? null,
       analyzed: analysisSatisfies(song.analysis, effectiveAnalysisLevel("audio", level)),
     })),
   };

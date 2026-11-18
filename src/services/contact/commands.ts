@@ -1,7 +1,6 @@
 import { sql } from "../../integrations/db/index.ts";
 import type { Contact } from "../../types/contact.ts";
 import type { UserId } from "../../types/id.ts";
-import { avatarUrls } from "../avatar/queries.ts";
 import { findByUsername } from "../user/queries.ts";
 import { contactColumns } from "./internal.ts";
 
@@ -15,7 +14,7 @@ export async function addContact(
   const target = await findByUsername(username);
   if (!target) return { denial: "not_found" };
   if (target.id === ownerId) return { denial: "bad_request" };
-  const [row] = await sql<Omit<Contact, "avatarUrl">[]>`
+  const [row] = await sql<Contact[]>`
     with contact as (
       insert into contacts (owner_id, contact_id, name)
       values (${ownerId}, ${target.id}, ${name})
@@ -27,7 +26,7 @@ export async function addContact(
     join users u on u.id = c.contact_id
   `;
   if (!row) throw new Error("contact insert returned no row");
-  return { contact: { ...row, avatarUrl: target.avatarUrl } };
+  return { contact: row };
 }
 
 export async function renameContact(
@@ -35,7 +34,7 @@ export async function renameContact(
   contactId: UserId,
   name: string | null,
 ): Promise<Contact | undefined> {
-  const [row] = await sql<Omit<Contact, "avatarUrl">[]>`
+  const [row] = await sql<Contact[]>`
     with contact as (
       update contacts set name = ${name}
       where owner_id = ${ownerId} and contact_id = ${contactId}
@@ -46,8 +45,7 @@ export async function renameContact(
     join users u on u.id = c.contact_id
   `;
   if (!row) return undefined;
-  const avatars = await avatarUrls([row.contactId]);
-  return { ...row, avatarUrl: avatars.get(row.contactId) ?? null };
+  return row;
 }
 
 export async function removeContact(ownerId: UserId, contactId: UserId): Promise<boolean> {

@@ -10,16 +10,16 @@ const columns = sql`
   project_id as "projectId",
   owner_id as "ownerId",
   name,
-  color_hex as "colorHex",
-  description,
-  shared,
-  locked,
-  (
-    select count(*)::int
-    from project_item_labels l
-    where l.label_id = labels.id
-  ) as "itemCount",
-  created_at as "createdAt"
+  color,
+  coalesce(
+    array(
+      select l.project_item_id
+      from project_item_labels l
+      where l.label_id = labels.id
+      order by l.project_item_id
+    ),
+    '{}'
+  ) as "itemsIds"
 `;
 
 export async function getLabel(id: LabelId): Promise<Label | undefined> {
@@ -37,8 +37,8 @@ export async function listLabels(
   const rows = await sql<Label[]>`
     select ${columns}
     from labels
-    where project_id = ${projectId} and (shared or owner_id = ${viewerId})
-    order by shared desc, name, id
+    where project_id = ${projectId}
+    order by name, id
     limit ${limit + 1} offset ${offset}
   `;
   return page(rows, limit, offset);

@@ -4,9 +4,10 @@ export const songColumns = sql`
   id,
   name,
   author,
-  media_id as "mediaId",
+  original_id as "originalId",
+  compressed_id as "compressedId",
   cover_id as "coverId",
-  description,
+  preview_cover_id as "previewCoverId",
   uploaded_by as "uploadedBy",
   analysis
 `;
@@ -15,10 +16,11 @@ export const songSelect = sql`
   s.id,
   s.name,
   s.author,
-  s.media_id as "mediaId",
+  s.original_id as "originalId",
+  s.compressed_id as "compressedId",
   s.cover_id as "coverId",
-  s.description,
+  s.preview_cover_id as "previewCoverId",
   s.uploaded_by as "uploadedBy",
   s.analysis,
-  m.duration
+  nullif(m.meta->>'duration', '')::float8 as "duration"
 `;

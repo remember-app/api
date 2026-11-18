@@ -5,7 +5,6 @@ export type ContactResponse = {
   contactId: string;
   username: string | null;
   name: string | null;
-  avatarUrl: string | null;
 };
 
 export type ContactsPageResponse = PageResponse<ContactResponse>;

@@ -6,8 +6,8 @@ import { getLabel } from "./queries.ts";
 
 export type LabelDenial = { denial: "not_found" | "forbidden" };
 
-const canEdit = (label: Label, access: ProjectAccess, viewerId: UserId): boolean =>
-  label.shared ? canContribute(access) : label.ownerId === viewerId;
+const canEdit = (_label: Label, access: ProjectAccess, _viewerId: UserId): boolean =>
+  canContribute(access);
 
 async function labelForEdit(
   projectId: ProjectId,
@@ -24,9 +24,7 @@ async function labelForEdit(
 
 export type NewLabel = {
   name: string;
-  colorHex: `#${string}`;
-  description: string | null;
-  shared: boolean;
+  color: `#${string}`;
 };
 
 export async function createLabel(
@@ -36,17 +34,10 @@ export async function createLabel(
 ): Promise<{ label: Label } | LabelDenial> {
   const access = await accessOf(projectId, viewerId);
   if (!access) return { denial: "not_found" };
-  if (input.shared && !canContribute(access)) return { denial: "forbidden" };
+  if (!canContribute(access)) return { denial: "forbidden" };
   const [row] = await sql<{ id: LabelId }[]>`
-    insert into labels (project_id, owner_id, name, color_hex, description, shared)
-    values (
-      ${projectId},
-      ${viewerId},
-      ${input.name},
-      ${input.colorHex},
-      ${input.description},
-      ${input.shared}
-    )
+    insert into labels (project_id, owner_id, name, color)
+    values (${projectId}, ${viewerId}, ${input.name}, ${input.color})
     returning id
   `;
   if (!row) throw new Error("label insert returned no row");
@@ -55,7 +46,7 @@ export async function createLabel(
   return { label };
 }
 
-export type LabelPatch = Partial<Pick<Label, "name" | "colorHex" | "description">>;
+export type LabelPatch = Partial<Pick<Label, "name" | "color">>;
 
 export async function updateLabel(
   projectId: ProjectId,
@@ -68,7 +59,7 @@ export async function updateLabel(
   const next = { ...found.label, ...patch };
   await sql`
     update labels
-    set name = ${next.name}, color_hex = ${next.colorHex}, description = ${next.description}
+    set name = ${next.name}, color = ${next.color}
     where id = ${labelId} and project_id = ${projectId}
   `;
   const label = await getLabel(labelId);
@@ -83,7 +74,6 @@ export async function deleteLabel(
 ): Promise<{ ok: true } | LabelDenial> {
   const found = await labelForEdit(projectId, labelId, viewerId);
   if ("denial" in found) return found;
-  if (found.label.locked) return { denial: "forbidden" };
   await sql`delete from labels where id = ${labelId} and project_id = ${projectId}`;
   return { ok: true };
 }
