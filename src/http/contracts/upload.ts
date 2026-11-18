@@ -6,16 +6,25 @@ export type UploadStatus = "pending" | "uploading" | "completed" | "failed";
 
 export type DeriveStatus = "queued" | "running" | "done" | "failed";
 
+export type UploadFileResponse = {
+  name: string;
+  format: string;
+  bytes: number;
+};
+
+export type UploadFailureResponse = {
+  code: string | null;
+  message: string | null;
+};
+
 export type UploadResponse = {
   id: string;
-  projectId: string;
+  projectId: string | null;
   kind: MediaKind;
-  fileName: string;
-  declaredBytes: string;
+  file: UploadFileResponse;
   status: UploadStatus;
   derive: DeriveStatus | null;
-  errorCode: string | null;
-  error: string | null;
+  failure: UploadFailureResponse | null;
   mediaId: string | null;
   uploader: PublicUserResponse | null;
   createdAt: string;
@@ -27,9 +36,6 @@ export type StartUploadRequest = {
   kind: MediaKind;
   sizeBytes: number;
   fileName: string;
-  capturedAt?: string | null;
-  durationSeconds?: number | null;
-  fingerprint?: string | null;
 };
 
 export type CompleteUploadRequest = {

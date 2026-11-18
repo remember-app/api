@@ -21,9 +21,6 @@ type StartBody = {
   kind: "photo" | "video" | "audio";
   sizeBytes: number;
   fileName: string;
-  capturedAt?: string | null;
-  durationSeconds?: number | null;
-  fingerprint?: string | null;
 };
 
 type CompleteBody = { parts: { part_number: number; etag: string }[] };
@@ -41,9 +38,6 @@ const startBody = {
     kind: { type: "string", enum: ["photo", "video", "audio"] },
     sizeBytes: { type: "integer", minimum: 1 },
     fileName: { type: "string", minLength: 1, maxLength: 255 },
-    capturedAt: { type: ["string", "null"], format: "date-time" },
-    durationSeconds: { type: ["number", "null"], minimum: 0 },
-    fingerprint: { type: ["string", "null"], pattern: "^[a-fA-F0-9]{64}$" },
   },
 } as const;
 
@@ -129,15 +123,11 @@ export function uploadRoutes(app: FastifyInstance) {
       kind: request.body.kind,
       sizeBytes: request.body.sizeBytes,
       fileName: request.body.fileName,
-      capturedAt: request.body.capturedAt ? new Date(request.body.capturedAt) : null,
-      durationSeconds: request.body.durationSeconds ?? null,
-      fingerprint: request.body.fingerprint?.toLowerCase() ?? null,
     });
     if ("denial" in result) {
       if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
       if (result.denial === "not_found") return fail(reply, 404, "not_found");
       if (result.denial === "too_large") return fail(reply, 413, "capacity_exceeded");
-      if (result.denial === "too_long") return fail(reply, 400, "too_long");
       if (result.denial === "insufficient_storage") {
         return fail(reply, 409, "capacity_exceeded");
       }

@@ -11,16 +11,10 @@ import {
   storageConfigured,
 } from "../../integrations/storage/s3.ts";
 import type { ProjectId, ProjectItemId, UploadId, UserId } from "../../types/id.ts";
-import type {
-  MediaAudioFormat,
-  MediaItem,
-  MediaKind,
-  MediaPhotoFormat,
-  MediaVideoFormat,
-} from "../../types/mediaItem.ts";
+import type { MediaFormat, MediaItem, MediaKind } from "../../types/mediaItem.ts";
 import type { Upload } from "../../types/upload.ts";
 import { StorageFullError, spendProjectStorage, spendUserStorage } from "../consumable/commands.ts";
-import { createMedia, type NewMedia } from "../media/commands.ts";
+import { createMedia } from "../media/commands.ts";
 import { accessOf, canContribute } from "../project/access.ts";
 import { createItem } from "../project/item/commands.ts";
 import { countItems } from "../project/item/queries.ts";
@@ -32,26 +26,15 @@ const columns = sql`
   uploaded_by as "uploadedBy",
   kind,
   storage_key as "storageKey",
-  fingerprint,
-  declared_bytes as "declaredBytes",
-  file_name as "fileName",
-  format,
-  captured_at as "capturedAt",
-  duration_seconds as "durationSeconds",
   status,
+  file,
+  failure,
   multipart_id as "multipartId"
 `;
 
-type UploadRow = Omit<Upload, "createdAt"> & {
-  fileName: string;
-  format: string;
-  capturedAt: Date | null;
-  durationSeconds: number | null;
-  fingerprint: string | null;
-  multipartId: string | null;
-};
+type UploadRow = Omit<Upload, "createdAt"> & { multipartId: string | null };
 
-const photoFormats: Record<string, MediaPhotoFormat> = {
+const photoFormats: Record<string, MediaFormat> = {
   jpg: "jpeg",
   jpeg: "jpeg",
   png: "png",
@@ -59,18 +42,18 @@ const photoFormats: Record<string, MediaPhotoFormat> = {
   webp: "webp",
 };
 
-const videoFormats: Record<string, MediaVideoFormat> = {
+const videoFormats: Record<string, MediaFormat> = {
   mp4: "mp4",
   mov: "mov",
 };
 
-const audioFormats: Record<string, MediaAudioFormat> = {
+const audioFormats: Record<string, MediaFormat> = {
   mp3: "mp3",
   m4a: "m4a",
   wav: "wav",
 };
 
-const formatOf = (kind: MediaKind, fileName: string): string | undefined => {
+const formatOf = (kind: MediaKind, fileName: string): MediaFormat | undefined => {
   const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
   if (kind === "photo") return photoFormats[extension];
   if (kind === "video") return videoFormats[extension];
@@ -131,9 +114,6 @@ export type StartUpload = {
   kind: MediaKind;
   sizeBytes: number;
   fileName: string;
-  capturedAt: Date | null;
-  durationSeconds: number | null;
-  fingerprint: string | null;
 };
 
 export type StartResult =
@@ -144,7 +124,6 @@ export type StartResult =
         | "forbidden"
         | "storage_unavailable"
         | "too_large"
-        | "too_long"
         | "too_many_files"
         | "insufficient_storage"
         | "unsupported_format";
@@ -152,7 +131,7 @@ export type StartResult =
 
 async function plan(row: UploadRow, multipartId: string): Promise<UploadPlan> {
   const partBytes = config.media.partBytes();
-  const count = Math.ceil(row.declaredBytes / partBytes);
+  const count = Math.ceil(row.file.bytes / partBytes);
   const parts = await partUrls(row.storageKey, multipartId, count, config.media.uploadTtlSeconds());
   return { id: row.id, path: row.storageKey, partBytes, parts };
 }
@@ -164,15 +143,6 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   if (input.sizeBytes > config.media.maxFileBytes()) return { denial: "too_large" };
   const format = formatOf(input.kind, input.fileName);
   if (!format) return { denial: "unsupported_format" };
-  const maxSeconds =
-    input.kind === "video"
-      ? config.media.maxVideoSeconds()
-      : input.kind === "audio"
-        ? config.media.maxAudioSeconds()
-        : null;
-  if (maxSeconds !== null && input.durationSeconds !== null && input.durationSeconds > maxSeconds) {
-    return { denial: "too_long" };
-  }
   if (input.projectId !== null) {
     const [open] = await sql<{ count: number }[]>`
       select count(*)::int as count from uploads
@@ -201,14 +171,10 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
   const id = randomUUID() as UploadId;
   const storageKey = storageKeyOf(format, id);
   await sql`
-    insert into uploads (
-      id, project_id, uploaded_by, kind, storage_key, fingerprint, declared_bytes, file_name, format,
-      captured_at, duration_seconds, status
-    )
+    insert into uploads (id, project_id, uploaded_by, kind, storage_key, status, file)
     values (
-      ${id}, ${input.projectId}, ${input.userId}, ${input.kind}, ${storageKey},
-      ${input.fingerprint}, ${input.sizeBytes}, ${input.fileName}, ${format}, ${input.capturedAt},
-      ${input.durationSeconds}, 'pending'
+      ${id}, ${input.projectId}, ${input.userId}, ${input.kind}, ${storageKey}, 'pending',
+      ${sql.json({ name: input.fileName, format, bytes: input.sizeBytes })}
     )
   `;
   const multipartId = await createUpload(storageKey, mimeOf(format));
@@ -230,7 +196,7 @@ export async function resumeUpload(
   if (allowed !== "ok") return undefined;
   const row = await ownedUpload(id, projectId, userId);
   if (!row || row.status === "completed" || row.status === "failed") return undefined;
-  const multipartId = row.multipartId ?? (await createUpload(row.storageKey, mimeOf(row.format)));
+  const multipartId = row.multipartId ?? (await createUpload(row.storageKey, mimeOf(row.file.format)));
   if (!row.multipartId) {
     await sql`
       update uploads set multipart_id = ${multipartId}, status = 'uploading', updated_at = now()
@@ -268,52 +234,22 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
     await markFailed(row.id, "capacity_exceeded", "file exceeds the maximum size");
     return { denial: "too_large" };
   }
-  const newMedia: NewMedia =
-    row.kind === "photo"
-      ? {
-          kind: "photo",
-          storageKey: row.storageKey,
-          fingerprint: row.fingerprint ?? "",
-          uploadedBy: row.uploadedBy,
-          format: photoFormats[row.format] as MediaPhotoFormat,
-          bytes,
-          dimensions: null,
-          capturedAt: row.capturedAt,
-          place: null,
-          camera: null,
-        }
-      : row.kind === "video"
-        ? {
-            kind: "video",
-            storageKey: row.storageKey,
-            fingerprint: row.fingerprint ?? "",
-            uploadedBy: row.uploadedBy,
-            format: videoFormats[row.format] as MediaVideoFormat,
-            bytes,
-            dimensions: null,
-            duration: row.durationSeconds,
-            capturedAt: row.capturedAt,
-            place: null,
-            camera: null,
-          }
-        : {
-            kind: "audio",
-            storageKey: row.storageKey,
-            fingerprint: row.fingerprint ?? "",
-            uploadedBy: row.uploadedBy,
-            format: audioFormats[row.format] as MediaAudioFormat,
-            bytes,
-            duration: row.durationSeconds,
-            capturedAt: row.capturedAt,
-            place: null,
-          };
   try {
     return await sql.begin(async (tx) => {
-      const media = await createMedia(newMedia, tx);
+      const media = await createMedia(
+        {
+          kind: row.kind,
+          storageKey: row.storageKey,
+          fingerprint: "",
+          format: row.file.format as MediaFormat,
+          bytes,
+          meta: { dimensions: null, duration: null, at: null, place: null, camera: null },
+        },
+        tx,
+      );
       await tx`
         update uploads
-        set status = 'completed', error_code = null, error = null,
-            media_id = ${media.id}, updated_at = now()
+        set status = 'completed', failure = null, media_id = ${media.id}, updated_at = now()
         where id = ${row.id}
       `;
       let itemId: ProjectItemId | null = null;
@@ -321,7 +257,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
         const spent = await spendUserStorage(tx, input.userId, bytes);
         if (!spent) throw new StorageFullError();
       } else {
-        itemId = await createItem(row.projectId, media.id, row.kind, tx);
+        itemId = await createItem(row.projectId, media.id, row.kind, row.uploadedBy, tx);
         const spent = await spendProjectStorage(tx, row.projectId, input.userId, bytes);
         if (!spent) throw new StorageFullError();
       }
@@ -341,7 +277,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
 async function markFailed(id: UploadId, code: string, message: string | null): Promise<void> {
   await sql`
     update uploads
-    set status = 'failed', error_code = ${code}, error = ${message}, updated_at = now()
+    set status = 'failed', failure = ${sql.json({ code, message })}, updated_at = now()
     where id = ${id}
   `;
 }

@@ -2,7 +2,7 @@ import { sql } from "../../integrations/db/index.ts";
 import { type Cursor, type CursorPage, cursorPage } from "../../pagination.ts";
 import type { MediaId, ProjectId, UploadId, UserId } from "../../types/id.ts";
 import type { MediaKind } from "../../types/mediaItem.ts";
-import type { UploadStatus } from "../../types/upload.ts";
+import type { UploadFailure, UploadFile, UploadStatus } from "../../types/upload.ts";
 import { avatarUrls } from "../avatar/queries.ts";
 import { accessOf } from "../project/access.ts";
 
@@ -10,12 +10,10 @@ export type UploadView = {
   id: UploadId;
   projectId: ProjectId | null;
   kind: MediaKind;
-  fileName: string;
-  declaredBytes: string;
+  file: UploadFile;
   status: UploadStatus;
   createdAt: Date;
-  errorCode: string | null;
-  error: string | null;
+  failure: UploadFailure | null;
   mediaId: MediaId | null;
   derive: "queued" | "running" | "done" | "failed" | null;
   uploader: {
@@ -38,12 +36,10 @@ const viewColumns = sql`
   u.id,
   u.project_id as "projectId",
   u.kind,
-  u.file_name as "fileName",
-  u.declared_bytes as "declaredBytes",
+  u.file,
   u.status,
   u.created_at as "createdAt",
-  u.error_code as "errorCode",
-  u.error,
+  u.failure,
   u.media_id as "mediaId",
   j.status as "derive",
   u.uploaded_by as "uploaderId",

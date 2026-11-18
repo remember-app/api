@@ -12,13 +12,11 @@ export async function setAvatar(
   userId: UserId,
   mediaId: MediaId,
 ): Promise<{ url: string } | AvatarDenial> {
-  const [media] = await sql<
-    { kind: string; storageKey: string; bytes: string; uploadedBy: UserId | null }[]
-  >`
-    select kind, storage_key as "storageKey", bytes, uploaded_by as "uploadedBy"
+  const [media] = await sql<{ kind: string; storageKey: string; bytes: string }[]>`
+    select kind, storage_key as "storageKey", bytes
     from media_items where id = ${mediaId}
   `;
-  if (!media || media.uploadedBy !== userId) return { denial: "not_found" };
+  if (!media) return { denial: "not_found" };
   if (media.kind !== "photo") return { denial: "bad_request" };
   const [owned] = await sql<{ one: number }[]>`
     select 1 as one from uploads
