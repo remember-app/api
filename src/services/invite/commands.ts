@@ -9,7 +9,7 @@ import { inviteRewards } from "../settings/settings.ts";
 import { columns, type InviteRow, toInvite } from "./internal.ts";
 import { liveAppInvite, liveProjectInvite } from "./queries.ts";
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 const mintToken = () =>
   Array.from({ length: 6 }, () => ALPHABET.charAt(randomInt(ALPHABET.length))).join("");

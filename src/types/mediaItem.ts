@@ -1,64 +1,33 @@
-import type { MediaId, UserId } from "./id.ts";
+import type { MediaId } from "./id.ts";
 
-export type MediaItem = PhotoMedia | VideoMedia | AudioMedia;
-
-export type MediaKind = MediaItem["kind"];
-
-export type PhotoMedia = MediaItemCommon & {
-  kind: "photo";
-  format: MediaPhotoFormat;
-  bytes: number;
-  dimensions: MediaDimension | null;
-  metadata: PhotoMediaMetadata;
-};
-
-export type VideoMedia = MediaItemCommon & {
-  kind: "video";
-  format: MediaVideoFormat;
-  bytes: number;
-  dimensions: MediaDimension | null;
-  duration: number | null;
-  metadata: VideoMediaMetadata;
-};
-
-export type AudioMedia = MediaItemCommon & {
-  kind: "audio";
-  format: MediaAudioFormat;
-  bytes: number;
-  duration: number | null;
-  metadata: AudioMediaMetadata;
-};
-
-export type MediaItemCommon = {
+export type MediaItem = {
   id: MediaId;
+  kind: MediaKind;
   storageKey: string;
+  format: MediaFormat;
+  bytes: number;
   fingerprint: string;
   perceptualHash: string;
-  uploadedBy: UserId | null;
+  meta: MediaMeta;
 };
 
-export type PhotoMediaMetadata = {
-  at: Date | null;
-  place: MediaPlace | null;
-  camera: MediaCamera | null;
-};
+export type MediaKind = "photo" | "video" | "audio";
 
-export type VideoMediaMetadata = {
-  at: Date | null;
-  place: MediaPlace | null;
-  camera: MediaCamera | null;
-};
-
-export type AudioMediaMetadata = {
-  at: Date | null;
-  place: MediaPlace | null;
-};
+export type MediaFormat = MediaPhotoFormat | MediaVideoFormat | MediaAudioFormat;
 
 export type MediaPhotoFormat = "jpeg" | "png" | "heic" | "webp";
 
 export type MediaVideoFormat = "mp4" | "mov";
 
 export type MediaAudioFormat = "mp3" | "m4a" | "wav";
+
+export type MediaMeta = {
+  dimensions: MediaDimension | null;
+  duration: number | null;
+  at: Date | null;
+  place: MediaPlace | null;
+  camera: MediaCamera | null;
+};
 
 export type MediaDimension = {
   width: number;
@@ -81,5 +50,4 @@ export type MediaCamera = {
 export type MediaPlace = {
   latitude: number;
   longitude: number;
-  editedAt: Date | null;
 };

@@ -2,10 +2,11 @@ create table songs (
     id uuid primary key default gen_random_uuid (),
     name text not null,
     author text,
-    media_id uuid not null references media_items (id) on delete cascade,
+    original_id uuid not null references media_items (id) on delete cascade,
+    compressed_id uuid references media_items (id) on delete set null,
     cover_id uuid references media_items (id) on delete set null,
+    preview_cover_id uuid references media_items (id) on delete set null,
     uploaded_by uuid references users (id) on delete set null,
-    description text,
     analysis jsonb,
     created_at timestamptz not null default now()
 );

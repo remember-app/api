@@ -7,8 +7,20 @@ export type Upload = {
   uploadedBy: UserId;
   kind: MediaKind;
   storageKey: string;
-  declaredBytes: number;
   status: UploadStatus;
+  file: UploadFile;
+  failure: UploadFailure | null;
+};
+
+export type UploadFile = {
+  name: string;
+  format: string;
+  bytes: number;
+};
+
+export type UploadFailure = {
+  code: string | null;
+  message: string | null;
 };
 
 export type UploadKind = Upload["kind"];

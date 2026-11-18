@@ -1,14 +1,10 @@
-import type { LabelId, ProjectId, UserId } from "./id.ts";
+import type { LabelId, ProjectId, ProjectItemId, UserId } from "./id.ts";
 
 export type Label = {
   id: LabelId;
   projectId: ProjectId;
   ownerId: UserId;
   name: string;
-  colorHex: `#${string}`;
-  description: string | null;
-  shared: boolean;
-  locked: boolean;
-  itemCount: number;
-  createdAt: Date;
+  color: `#${string}`;
+  itemsIds: ProjectItemId[];
 };

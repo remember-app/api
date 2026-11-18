@@ -14,38 +14,23 @@ export type ProjectMember = {
   avatarUrl: string | null;
 };
 
-export type ProjectItem = ProjectPhoto | ProjectVideo | ProjectAudio;
-
-export type ProjectPhoto = ProjectItemCommon & {
-  derivedMedia: {
-    thumbnailId: MediaId | null;
-    previewId: MediaId | null;
-  };
-};
-
-export type ProjectVideo = ProjectItemCommon & {
-  derivedMedia: {
-    thumbnailId: MediaId | null;
-    previewId: MediaId | null;
-  };
-};
-
-export type ProjectAudio = ProjectItemCommon & {
-  derivedMedia: {
-    thumbnailId: MediaId | null;
-  };
-};
-
-export type ProjectItemCommon = {
+export type ProjectItem = {
   id: ProjectItemId;
   kind: MediaKind;
-  mediaId: MediaId;
   projectId: ProjectId;
-  description: string | null;
+  uploadedBy: UserId;
+  comment: string | null;
   labelIds: LabelId[];
+  originalId: MediaId;
+  compressedId: MediaId | null;
+  previewsIds: ProjectItemPreviews | null;
   analysis: ProjectMediaItemAIAnalysis | null;
   createdAt: Date;
 };
+
+export type ProjectItemPreviewSizes = "small" | "middle" | "large";
+
+export type ProjectItemPreviews = Partial<Record<ProjectItemPreviewSizes, MediaId>>;
 
 export type AnalysisLevel = "low" | "medium" | "high";
 

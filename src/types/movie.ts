@@ -7,9 +7,7 @@ export type Movie = {
   createdBy: UserId;
   createdAt: Date;
   montageId: MontageId;
-  videoId: MediaId;
-  derived: {
-    thumbnailId: MediaId | null;
-    previewId: MediaId | null;
-  };
+  originalId: MediaId;
+  compressedId: MediaId | null;
+  previewId: MediaId | null;
 };

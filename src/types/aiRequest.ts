@@ -1,4 +1,4 @@
-import type { AIRequestId, MediaId, MontageId } from "./id.ts";
+import type { AIRequestId, JobId } from "./id.ts";
 
 export type AIProvider = "gemini";
 
@@ -8,21 +8,24 @@ export type AIRequestStatus = "ok" | "failed";
 
 export type AIRequest = {
   id: AIRequestId;
-  mediaId: MediaId | null;
-  montageId: MontageId | null;
+  jobId: JobId;
   operation: AIRequestOperation;
   provider: AIProvider;
   model: string;
   status: AIRequestStatus;
+  usage: AIUsage;
+  createdAt: Date;
+};
+
+export type AIUsage = {
   tokens: {
-    input: number | null;
-    output: number | null;
-    total: number | null;
-    cached: number | null;
-    reasoning: number | null;
-  };
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    cachedTokens: number | null;
+    reasoningTokens: number | null;
+  }
   duration: number | null;
   costUsd: number | null;
   error: string | null;
-  createdAt: Date;
 };

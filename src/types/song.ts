@@ -1,9 +1,7 @@
 import type { MediaId, SongId, UserId } from "./id.ts";
-import type { AnalysisLevel, AnalysisSegment, AnalysisTags } from "./project.ts";
+import type { AnalysisSegment, AnalysisTags } from "./project.ts";
 
 export type SongAIAnalysis = {
-  level: AnalysisLevel;
-  score: number;
   summary: string;
   description: string;
   tags: AnalysisTags | null;
@@ -15,9 +13,10 @@ export type Song = {
   id: SongId;
   name: string;
   author: string | null;
-  mediaId: MediaId;
+  originalId: MediaId;
+  compressedId: MediaId | null;
   coverId: MediaId | null;
-  description: string | null;
+  previewCoverId: MediaId | null;
   duration: number | null;
   uploadedBy: UserId | null;
   analysis: SongAIAnalysis | null;
