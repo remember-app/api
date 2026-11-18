@@ -22,6 +22,8 @@ create table media_items (
     longitude double precision,
     place_edited_at timestamptz,
     created_at timestamptz not null default now(),
+    fingerprint text not null default '',
+    perceptual_hash text not null default '',
     check (
         (latitude is null) = (longitude is null)
     ),
@@ -42,6 +44,10 @@ create table media_items (
 create index media_items_uploaded_by_idx on media_items (uploaded_by);
 
 create index media_items_parent_idx on media_items (parent_media_id);
+
+create index media_items_fingerprint_idx on media_items (fingerprint)
+where
+    fingerprint <> '';
 
 alter table users
 add constraint users_profile_media_fk foreign key (profile_media_id) references media_items (id) on delete set null;
@@ -75,7 +81,7 @@ create index project_item_labels_label_idx on project_item_labels (label_id);
 
 create table uploads (
     id uuid primary key,
-    project_id uuid not null references projects (id) on delete cascade,
+    project_id uuid references projects (id) on delete cascade,
     uploaded_by uuid not null references users (id) on delete cascade,
     kind text not null check (
         kind in ('photo', 'video', 'audio')
@@ -98,6 +104,7 @@ create table uploads (
     error text,
     media_id uuid references media_items (id) on delete cascade,
     multipart_id text,
+    fingerprint text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );

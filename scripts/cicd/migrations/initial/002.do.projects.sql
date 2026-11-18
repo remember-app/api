@@ -108,6 +108,7 @@ create table labels (
     ),
     description text,
     shared boolean not null default false,
+    locked boolean not null default false,
     created_at timestamptz not null default now()
 );
 
