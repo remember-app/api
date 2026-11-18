@@ -196,7 +196,8 @@ export async function resumeUpload(
   if (allowed !== "ok") return undefined;
   const row = await ownedUpload(id, projectId, userId);
   if (!row || row.status === "completed" || row.status === "failed") return undefined;
-  const multipartId = row.multipartId ?? (await createUpload(row.storageKey, mimeOf(row.file.format)));
+  const multipartId =
+    row.multipartId ?? (await createUpload(row.storageKey, mimeOf(row.file.format)));
   if (!row.multipartId) {
     await sql`
       update uploads set multipart_id = ${multipartId}, status = 'uploading', updated_at = now()

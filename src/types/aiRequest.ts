@@ -24,7 +24,7 @@ export type AIUsage = {
     totalTokens: number | null;
     cachedTokens: number | null;
     reasoningTokens: number | null;
-  }
+  };
   duration: number | null;
   costUsd: number | null;
   error: string | null;

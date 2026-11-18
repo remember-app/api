@@ -114,7 +114,8 @@ async function itemViews(items: ProjectItem[]): Promise<ItemView[]> {
       if (item.previewsIds) {
         for (const [size, id] of Object.entries(item.previewsIds)) {
           const file = id ? byId.get(id) : undefined;
-          if (file) previews[size as ProjectItemPreviewSizes] = await downloadUrl(file.storageKey, ttl);
+          if (file)
+            previews[size as ProjectItemPreviewSizes] = await downloadUrl(file.storageKey, ttl);
         }
       }
       return {

@@ -199,9 +199,10 @@ export async function deleteOwnSong(
         await adjustUserStorageSpend(tx, song.uploadedBy!, -media.bytes);
       }
     }
-    return deleteMediaRows([song.originalId, song.compressedId].filter(
-      (id): id is MediaId => id !== null,
-    ), tx);
+    return deleteMediaRows(
+      [song.originalId, song.compressedId].filter((id): id is MediaId => id !== null),
+      tx,
+    );
   });
   return { keys };
 }

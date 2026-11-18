@@ -37,14 +37,15 @@ async function setMediaPlace(
   id: MediaId,
   place: { latitude: number; longitude: number } | null,
 ): Promise<boolean> {
-  const rows = place === null
-    ? await sql`
+  const rows =
+    place === null
+      ? await sql`
         update media_items
         set meta = jsonb_set(meta, '{place}', 'null'::jsonb)
         where id = ${id}
         returning id
       `
-    : await sql`
+      : await sql`
         update media_items
         set meta = jsonb_set(meta, '{place}', ${sql.json(place)})
         where id = ${id}
@@ -54,14 +55,15 @@ async function setMediaPlace(
 }
 
 async function setCapturedAt(id: MediaId, capturedAt: Date | null): Promise<boolean> {
-  const rows = capturedAt === null
-    ? await sql`
+  const rows =
+    capturedAt === null
+      ? await sql`
         update media_items
         set meta = jsonb_set(meta, '{at}', 'null'::jsonb)
         where id = ${id}
         returning id
       `
-    : await sql`
+      : await sql`
         update media_items
         set meta = jsonb_set(meta, '{at}', to_jsonb(${capturedAt.toISOString()}::text))
         where id = ${id}
