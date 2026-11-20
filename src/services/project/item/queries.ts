@@ -39,9 +39,9 @@ export async function listItems(
       and (
         ${after?.at ?? null}::timestamptz is null
         or (date_trunc('milliseconds', pi.created_at), pi.id)
-          > (${after?.at ?? null}::timestamptz, ${after?.id ?? null}::uuid)
+          < (${after?.at ?? null}::timestamptz, ${after?.id ?? null}::uuid)
       )
-    order by date_trunc('milliseconds', pi.created_at), pi.id
+    order by date_trunc('milliseconds', pi.created_at) desc, pi.id desc
     limit ${limit + 1}
   `;
   return cursorPage(rows, limit, (item) => ({ at: item.createdAt, id: item.id }));
