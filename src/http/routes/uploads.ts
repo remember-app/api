@@ -22,6 +22,7 @@ type StartBody = {
   sizeBytes: number;
   fileName: string;
   capturedAt?: string | null;
+  durationSeconds?: number | null;
 };
 
 type CompleteBody = { parts: { part_number: number; etag: string }[] };
@@ -40,6 +41,7 @@ const startBody = {
     sizeBytes: { type: "integer", minimum: 1 },
     fileName: { type: "string", minLength: 1, maxLength: 255 },
     capturedAt: { type: ["string", "null"], maxLength: 40 },
+    durationSeconds: { type: ["number", "null"], minimum: 0 },
   },
 } as const;
 
@@ -126,6 +128,7 @@ export function uploadRoutes(app: FastifyInstance) {
       sizeBytes: request.body.sizeBytes,
       fileName: request.body.fileName,
       capturedAt: request.body.capturedAt ?? null,
+      durationSeconds: request.body.durationSeconds ?? null,
     });
     if ("denial" in result) {
       if (result.denial === "forbidden") return fail(reply, 403, "forbidden");

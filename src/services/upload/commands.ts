@@ -116,6 +116,8 @@ export type StartUpload = {
   fileName: string;
   /** Дата съёмки, как её знает устройство: ею кадр живёт, пока файл не расскажет свою. */
   capturedAt?: string | null;
+  /** Длительность, известная телефону на момент выбора файла. */
+  durationSeconds?: number | null;
 };
 
 export type StartResult =
@@ -181,6 +183,7 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
         format,
         bytes: input.sizeBytes,
         capturedAt: input.capturedAt ?? null,
+        durationSeconds: input.durationSeconds ?? null,
       })}
     )
   `;
@@ -254,7 +257,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
           bytes,
           meta: {
             dimensions: null,
-            duration: null,
+            duration: row.file.durationSeconds ?? null,
             at: Number.isNaN(captured) ? null : new Date(captured),
             place: null,
             camera: null,

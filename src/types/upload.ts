@@ -17,6 +17,7 @@ export type UploadFile = {
   format: string;
   bytes: number;
   capturedAt?: string | null;
+  durationSeconds?: number | null;
 };
 
 export type UploadFailure = {
