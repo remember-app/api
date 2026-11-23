@@ -16,6 +16,7 @@ export type UploadFile = {
   name: string;
   format: string;
   bytes: number;
+  capturedAt?: string | null;
 };
 
 export type UploadFailure = {

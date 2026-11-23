@@ -10,6 +10,7 @@ export type UploadFileResponse = {
   name: string;
   format: string;
   bytes: number;
+  capturedAt?: string | null;
 };
 
 export type UploadFailureResponse = {
@@ -36,6 +37,7 @@ export type StartUploadRequest = {
   kind: MediaKind;
   sizeBytes: number;
   fileName: string;
+  capturedAt?: string | null;
 };
 
 export type CompleteUploadRequest = {

@@ -114,6 +114,8 @@ export type StartUpload = {
   kind: MediaKind;
   sizeBytes: number;
   fileName: string;
+  /** Дата съёмки, как её знает устройство: ею кадр живёт, пока файл не расскажет свою. */
+  capturedAt?: string | null;
 };
 
 export type StartResult =
@@ -174,7 +176,12 @@ export async function startUpload(input: StartUpload): Promise<StartResult> {
     insert into uploads (id, project_id, uploaded_by, kind, storage_key, status, file)
     values (
       ${id}, ${input.projectId}, ${input.userId}, ${input.kind}, ${storageKey}, 'pending',
-      ${sql.json({ name: input.fileName, format, bytes: input.sizeBytes })}
+      ${sql.json({
+        name: input.fileName,
+        format,
+        bytes: input.sizeBytes,
+        capturedAt: input.capturedAt ?? null,
+      })}
     )
   `;
   const multipartId = await createUpload(storageKey, mimeOf(format));
