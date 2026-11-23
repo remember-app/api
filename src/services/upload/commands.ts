@@ -244,6 +244,7 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
   }
   try {
     return await sql.begin(async (tx) => {
+      const captured = row.file.capturedAt ? Date.parse(row.file.capturedAt) : Number.NaN;
       const media = await createMedia(
         {
           kind: row.kind,
@@ -251,7 +252,13 @@ export async function completeMediaUpload(input: CompleteUpload): Promise<Comple
           fingerprint: "",
           format: row.file.format as MediaFormat,
           bytes,
-          meta: { dimensions: null, duration: null, at: null, place: null, camera: null },
+          meta: {
+            dimensions: null,
+            duration: null,
+            at: Number.isNaN(captured) ? null : new Date(captured),
+            place: null,
+            camera: null,
+          },
         },
         tx,
       );
