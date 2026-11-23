@@ -5,6 +5,17 @@ import type { AuthSession } from "../../types/auth.ts";
 import type { UserId } from "../../types/id.ts";
 import { hashToken, normalizeEmail, sessionColumns } from "./internal.ts";
 
+export async function isEmailRegistered(email: string): Promise<boolean> {
+  const address = normalizeEmail(email);
+  const [row] = await sql<{ registered: boolean }[]>`
+    select u.registered
+    from auth_identities i
+    join users u on u.id = i.user_id
+    where i.provider = 'email' and i.provider_account_id = ${address}
+  `;
+  return row?.registered ?? false;
+}
+
 export async function findUserByEmail(email: string): Promise<UserId | undefined> {
   const address = normalizeEmail(email);
   const [row] = await sql<{ userId: UserId }[]>`

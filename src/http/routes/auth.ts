@@ -12,7 +12,7 @@ import {
   verifyLoginCode,
 } from "../../services/auth/commands.ts";
 import { normalizeEmail } from "../../services/auth/internal.ts";
-import { findUserByEmail, listSessions } from "../../services/auth/queries.ts";
+import { findUserByEmail, isEmailRegistered, listSessions } from "../../services/auth/queries.ts";
 import { getUser } from "../../services/user/queries.ts";
 import type { SessionId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
@@ -48,6 +48,21 @@ const sessionParams = {
 const mintCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 export function authRoutes(app: FastifyInstance) {
+  app.post<{ Body: { email: string } }>(
+    "/auth/email/check",
+    { schema: { body: emailBody } },
+    async (request, reply) => {
+      const windowMs = config.auth.rateWindowMs();
+      if (
+        !allow("email", request.body.email, config.auth.rateMaxPerEmail(), windowMs) ||
+        !allow("email-ip", request.ip, config.auth.rateMaxPerIp(), windowMs)
+      ) {
+        return fail(reply, 429, "capacity_exceeded");
+      }
+      return { registered: await isEmailRegistered(request.body.email) };
+    },
+  );
+
   app.post<{ Body: { email: string } }>(
     "/auth/email/start",
     { schema: { body: emailBody } },
