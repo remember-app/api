@@ -1,6 +1,9 @@
+import { fileURLToPath } from "node:url";
 import { createTransport } from "nodemailer";
 import { config } from "../../config.ts";
 import { type Language, loginCodeLetter } from "./letters/login-code.ts";
+
+const logoPath = fileURLToPath(new URL("../../../assets/mail/logo.png", import.meta.url));
 
 export const mailConfigured = () => config.smtp.configured();
 
@@ -9,7 +12,10 @@ export async function sendLoginCode(
   code: string,
   language: Language = "ru",
 ): Promise<void> {
-  const { subject, text } = loginCodeLetter[language](code, config.auth.emailLoginTtlMinutes());
+  const { subject, text, html } = loginCodeLetter[language](
+    code,
+    config.auth.emailLoginTtlMinutes(),
+  );
   const transport = createTransport({
     host: config.smtp.host(),
     port: config.smtp.port(),
@@ -21,5 +27,12 @@ export async function sendLoginCode(
     greetingTimeout: config.smtp.timeoutMs,
     socketTimeout: config.smtp.timeoutMs,
   });
-  await transport.sendMail({ from: config.smtp.from(), to: email, subject, text });
+  await transport.sendMail({
+    from: config.smtp.from(),
+    to: email,
+    subject,
+    text,
+    html,
+    attachments: [{ filename: "remember-logo.png", path: logoPath, cid: "remember-logo" }],
+  });
 }
