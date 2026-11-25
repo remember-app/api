@@ -9,9 +9,8 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch src/server.ts",
     "start": "node --env-file-if-exists=.env src/server.ts",
-    "migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
-    "storage:check": "node --env-file-if-exists=.env scripts/storage-check.ts",
-    "test": "node --env-file-if-exists=.env scripts/test.ts",
+    "migrate": "node --env-file-if-exists=.env scripts/cicd/migrations/index.ts",
+    "seed:essentials": "node --env-file-if-exists=.env scripts/cicd/seeds/index.ts",
     "lint": "biome check",
     "format": "biome format --write",
     "typecheck": "tsc --noEmit"
@@ -19,19 +18,13 @@
   "dependencies": {
     "aws4fetch": "^1.0.20",
     "fastify": "^5.12.1",
-    "jose": "^6.2.10",
     "nodemailer": "^10.0.10",
     "postgrator": "^8.0.0",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
-    "@types/mailparser": "^3.4.6",
     "@types/node": "^24.0.0",
-    "@types/smtp-server": "^3.5.13",
-    "mailparser": "^3.9.28",
-    "smtp-server": "^3.19.13",
-    "typescript": "^5.9.0",
-    "vitest": "^4.1.11"
+    "typescript": "^5.9.0"
   }
 }

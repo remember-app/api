@@ -1,4 +1,0 @@
-DROP TABLE IF EXISTS push_tokens;
-DROP TABLE IF EXISTS invites;
-DROP TABLE IF EXISTS memory_members;
-DROP TABLE IF EXISTS memories;

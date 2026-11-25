@@ -1,0 +1,474 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { config } from "../../config.ts";
+import { sendPush } from "../../integrations/push/index.ts";
+import { abortUploads, deleteObjects } from "../../integrations/storage/s3.ts";
+import { pageOf, pageQuerySchema } from "../../pagination.ts";
+import { donateToProject } from "../../services/consumable/commands.ts";
+import {
+  acceptInvite,
+  checkInvite,
+  createAppInvite,
+  createProjectInvite,
+  rotateProjectInvite,
+} from "../../services/invite/commands.ts";
+import { accessOf } from "../../services/project/access.ts";
+import { createProject, deleteProject, updateProject } from "../../services/project/commands.ts";
+import {
+  addMember,
+  removeMember,
+  setContribution,
+  setRole,
+} from "../../services/project/member/commands.ts";
+import { listMembers } from "../../services/project/member/queries.ts";
+import { homeCards, projectTitle, projectView } from "../../services/project/queries.ts";
+import { removeTokens } from "../../services/push/commands.ts";
+import { inviteMessage } from "../../services/push/messages.ts";
+import { tokensOfUser } from "../../services/push/queries.ts";
+import type { ProjectId, UserId } from "../../types/id.ts";
+import type { ProjectContributionStatus, ProjectMemberRole } from "../../types/project.ts";
+import { fail } from "../errors.ts";
+import { allow } from "../rate-limit.ts";
+
+const uuidPattern = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
+
+const projectBody = {
+  type: "object",
+  required: ["title", "eventStart"],
+  additionalProperties: false,
+  properties: {
+    title: { type: "string", minLength: 1, maxLength: 200 },
+    description: { type: "string", maxLength: 2000 },
+    eventStart: { type: "string", format: "date-time" },
+    eventEnd: { type: ["string", "null"], format: "date-time" },
+    storageBytes: { type: "integer", minimum: 0 },
+  },
+} as const;
+
+const patchBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    title: { type: "string", minLength: 1, maxLength: 200 },
+    description: { type: "string", maxLength: 2000 },
+    eventStart: { type: "string", format: "date-time" },
+    eventEnd: { type: ["string", "null"], format: "date-time" },
+  },
+} as const;
+
+const memberBody = {
+  type: "object",
+  required: ["username", "role"],
+  additionalProperties: false,
+  properties: {
+    username: { type: "string", minLength: 3, maxLength: 30 },
+    role: { type: "string", enum: ["admin", "contributor", "viewer"] },
+  },
+} as const;
+
+const memberRoleBody = {
+  type: "object",
+  required: ["role"],
+  additionalProperties: false,
+  properties: {
+    role: { type: "string", enum: ["admin", "contributor", "viewer"] },
+  },
+} as const;
+
+const contributionBody = {
+  type: "object",
+  required: ["status"],
+  additionalProperties: false,
+  properties: {
+    status: { type: "string", enum: ["not_started", "more_coming", "done"] },
+  },
+} as const;
+
+const consumablesBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    tokens: { type: "integer", minimum: 0 },
+    storageBytes: { type: "integer", minimum: 0 },
+  },
+} as const;
+
+const inviteBody = {
+  type: ["object", "null"],
+  additionalProperties: false,
+  properties: {
+    role: { type: "string", enum: ["admin", "contributor", "viewer"] },
+    maxUses: { type: ["integer", "null"], minimum: 1 },
+  },
+} as const;
+
+const appInviteBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    maxUses: { type: ["integer", "null"], minimum: 1 },
+    expiresAt: { type: ["string", "null"], format: "date-time" },
+  },
+} as const;
+
+const acceptBody = {
+  type: "object",
+  required: ["token"],
+  additionalProperties: false,
+  properties: { token: { type: "string", pattern: "^[0-9A-Z]{6}$" } },
+} as const;
+
+type ProjectParams = { projectId: string };
+async function accessOr404(
+  request: FastifyRequest<{ Params: ProjectParams }>,
+  reply: FastifyReply,
+) {
+  const projectId = request.params.projectId;
+  if (!uuidPattern.test(projectId)) {
+    await fail(reply, 404, "not_found");
+    return undefined;
+  }
+  const access = await accessOf(projectId as ProjectId, request.authenticated!.user.id);
+  if (!access) {
+    await fail(reply, 404, "not_found");
+    return undefined;
+  }
+  return access;
+}
+
+export function projectRoutes(app: FastifyInstance) {
+  app.post<{
+    Body: {
+      title: string;
+      description?: string;
+      eventStart: string;
+      eventEnd?: string | null;
+      storageBytes?: number;
+    };
+  }>(
+    "/projects",
+    { schema: { body: projectBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const created = await createProject({
+        title: request.body.title,
+        description: request.body.description?.trim() ?? "",
+        eventStart: new Date(request.body.eventStart),
+        eventEnd: request.body.eventEnd ? new Date(request.body.eventEnd) : null,
+        creatorId: request.authenticated!.user.id,
+        storageBytes: request.body.storageBytes,
+      });
+      if ("denial" in created) {
+        return created.denial === "invalid"
+          ? fail(reply, 400, "bad_request")
+          : fail(reply, 409, "capacity_exceeded");
+      }
+      return projectView(created.id, request.authenticated!.user.id);
+    },
+  );
+
+  app.get<{ Querystring: { limit?: number; offset?: number } }>(
+    "/projects",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request) => {
+      const { limit, offset } = pageOf(request.query);
+      return homeCards(request.authenticated!.user.id, limit, offset);
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    "/projects/:projectId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!(await accessOr404(request, reply))) return reply;
+      const view = await projectView(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+      );
+      if (!view) return fail(reply, 404, "not_found");
+      return view;
+    },
+  );
+
+  app.patch<{
+    Params: ProjectParams;
+    Body: {
+      title?: string;
+      description?: string;
+      eventStart?: string;
+      eventEnd?: string | null;
+    };
+  }>(
+    "/projects/:projectId",
+    { schema: { body: patchBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const body = request.body;
+      const patch = {
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.description === undefined ? {} : { description: body.description.trim() }),
+        ...(body.eventStart === undefined ? {} : { eventStart: new Date(body.eventStart) }),
+        ...(body.eventEnd === undefined
+          ? {}
+          : { eventEnd: body.eventEnd === null ? null : new Date(body.eventEnd) }),
+      };
+      const projectId = request.params.projectId as ProjectId;
+      const result = await updateProject(projectId, request.authenticated!.user.id, patch);
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return projectView(projectId, request.authenticated!.user.id);
+    },
+  );
+
+  app.delete<{ Params: { projectId: string; userId: string } }>(
+    "/projects/:projectId/members/:userId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const targetId = request.params.userId;
+      if (!uuidPattern.test(targetId)) return fail(reply, 404, "not_found");
+      const result = await removeMember(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        targetId as UserId,
+      );
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "conflict") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      if (result.storageKeys.length > 0) await deleteObjects(result.storageKeys);
+      return { ok: true };
+    },
+  );
+
+  app.patch<{
+    Params: { projectId: string; userId: string };
+    Body: { role: ProjectMemberRole };
+  }>(
+    "/projects/:projectId/members/:userId",
+    { schema: { body: memberRoleBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const targetId = request.params.userId;
+      if (!uuidPattern.test(targetId)) return fail(reply, 404, "not_found");
+      const result = await setRole(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        targetId as UserId,
+        request.body.role,
+      );
+      if ("denial" in result) {
+        if (result.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (result.denial === "conflict") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      return result.member;
+    },
+  );
+
+  app.delete<{ Params: ProjectParams }>(
+    "/projects/:projectId",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await deleteProject(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+      );
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      if (result.deletion.multiparts.length > 0) await abortUploads(result.deletion.multiparts);
+      if (result.deletion.storageKeys.length > 0) await deleteObjects(result.deletion.storageKeys);
+      return { ok: true };
+    },
+  );
+
+  app.get<{ Params: ProjectParams; Querystring: { limit?: number; offset?: number } }>(
+    "/projects/:projectId/members",
+    { schema: { querystring: pageQuerySchema }, preHandler: app.authenticate },
+    async (request, reply) => {
+      if (!(await accessOr404(request, reply))) return reply;
+      const { limit, offset } = pageOf(request.query);
+      return listMembers(request.params.projectId as ProjectId, limit, offset);
+    },
+  );
+
+  app.post<{ Params: ProjectParams; Body: { username: string; role: ProjectMemberRole } }>(
+    "/projects/:projectId/members",
+    { schema: { body: memberBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const added = await addMember(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        request.body.username,
+        request.body.role,
+      );
+      if ("denial" in added) {
+        if (added.denial === "forbidden") return fail(reply, 403, "forbidden");
+        if (added.denial === "conflict") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      const member = added.member;
+      const tokens = await tokensOfUser(member.userId);
+      if (tokens.length > 0) {
+        const title = (await projectTitle(request.params.projectId as ProjectId)) ?? "a project";
+        const message = inviteMessage(title, request.params.projectId);
+        const push = await sendPush(tokens.map((entry) => ({ token: entry.token, ...message })));
+        if (!push.ok) {
+          request.log.warn({ status: push.status, error: push.error }, "invite push not sent");
+        }
+        if (push.deadTokens.length > 0) await removeTokens(push.deadTokens);
+      }
+      return member;
+    },
+  );
+
+  app.post<{
+    Params: ProjectParams;
+    Body: { status: ProjectContributionStatus };
+  }>(
+    "/projects/:projectId/contribution",
+    { schema: { body: contributionBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await setContribution(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        request.body.status,
+      );
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { status: result.status };
+    },
+  );
+
+  app.post<{
+    Params: ProjectParams;
+    Body: { tokens?: number; storageBytes?: number };
+  }>(
+    "/projects/:projectId/consumables",
+    { schema: { body: consumablesBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await donateToProject(
+        request.params.projectId as ProjectId,
+        request.authenticated!.user.id,
+        request.body,
+      );
+      if ("denial" in result) {
+        if (result.denial === "invalid") return fail(reply, 400, "bad_request");
+        if (result.denial === "insufficient") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      return { project: result.project, member: result.member };
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    "/projects/:projectId/invite",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await createProjectInvite({
+        projectId: request.params.projectId as ProjectId,
+        role: "contributor",
+        createdBy: request.authenticated!.user.id,
+        maxUses: null,
+        expiresAt: null,
+      });
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { token: result.invite.token, role: result.invite.role };
+    },
+  );
+
+  app.post<{
+    Params: ProjectParams;
+    Body: { role?: ProjectMemberRole; maxUses?: number | null } | null;
+  }>(
+    "/projects/:projectId/invite",
+    { schema: { body: inviteBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      if (
+        !allow(
+          "invites",
+          request.authenticated!.user.id,
+          config.rate.invites(),
+          config.rate.windowMs(),
+        )
+      ) {
+        return fail(reply, 429, "capacity_exceeded");
+      }
+      const result = await rotateProjectInvite({
+        projectId: request.params.projectId as ProjectId,
+        role: request.body?.role ?? "contributor",
+        createdBy: request.authenticated!.user.id,
+        maxUses: request.body?.maxUses ?? null,
+        expiresAt: null,
+      });
+      if ("denial" in result) {
+        return result.denial === "forbidden"
+          ? fail(reply, 403, "forbidden")
+          : fail(reply, 404, "not_found");
+      }
+      return { token: result.invite.token, role: result.invite.role };
+    },
+  );
+
+  app.post<{
+    Body: {
+      maxUses?: number | null;
+      expiresAt?: string | null;
+    };
+  }>(
+    "/invites/app",
+    { schema: { body: appInviteBody }, preHandler: app.authenticate },
+    async (request) => {
+      const invite = await createAppInvite({
+        createdBy: request.authenticated!.user.id,
+        maxUses: request.body.maxUses ?? null,
+        expiresAt: request.body.expiresAt ? new Date(request.body.expiresAt) : null,
+      });
+      return { token: invite.token, maxUses: invite.maxUses };
+    },
+  );
+
+  app.post<{ Body: { token: string } }>(
+    "/invites/check",
+    { schema: { body: acceptBody } },
+    async (request, reply) => {
+      if (!allow("invite-check", request.ip, config.rate.invites(), config.rate.windowMs())) {
+        return fail(reply, 429, "capacity_exceeded");
+      }
+      const result = await checkInvite(request.body.token);
+      if (result === "ok") return { ok: true };
+      if (result === "expired") return fail(reply, 410, "not_found");
+      if (result === "exhausted") return fail(reply, 409, "conflict");
+      return fail(reply, 404, "not_found");
+    },
+  );
+
+  app.post<{ Body: { token: string } }>(
+    "/invites/accept",
+    { schema: { body: acceptBody }, preHandler: app.authenticate },
+    async (request, reply) => {
+      const result = await acceptInvite(
+        request.body.token,
+        request.authenticated!.user.id as UserId,
+      );
+      if ("denial" in result) {
+        if (result.denial === "expired") return fail(reply, 410, "not_found");
+        if (result.denial === "exhausted") return fail(reply, 409, "conflict");
+        return fail(reply, 404, "not_found");
+      }
+      if (result.invite.kind === "memory") {
+        return projectView(result.invite.projectId, request.authenticated!.user.id);
+      }
+      return { joined: true };
+    },
+  );
+}

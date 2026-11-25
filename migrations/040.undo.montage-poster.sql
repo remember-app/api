@@ -1,1 +1,0 @@
-ALTER TABLE montages DROP COLUMN IF EXISTS poster_key;
