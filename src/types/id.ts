@@ -8,7 +8,7 @@ export type MediaId = string & { readonly __brand: "MediaId" };
 export type UploadId = string & { readonly __brand: "UploadId" };
 
 export type JobId = number & { readonly __brand: "JobId" };
-export type AIRequestId = number & { readonly __brand: "AIRequestId" };
+export type AISessionId = number & { readonly __brand: "AISessionId" };
 
 export type SongId = string & { readonly __brand: "SongId" };
 

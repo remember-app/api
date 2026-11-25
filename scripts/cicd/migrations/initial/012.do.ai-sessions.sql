@@ -1,4 +1,4 @@
-create table ai_requests (
+create table ai_sessions (
     id bigserial primary key,
     job_id bigint not null references jobs (id) on delete cascade,
     operation text not null check (
@@ -12,9 +12,14 @@ create table ai_requests (
     usage jsonb not null default '{}'::jsonb check (
         jsonb_typeof(usage) = 'object'
     ),
-    created_at timestamptz not null default now()
+    error text,
+    transcript jsonb not null default '[]'::jsonb check (
+        jsonb_typeof(transcript) = 'array'
+    ),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
-create index ai_requests_job_idx on ai_requests (job_id);
+create index ai_sessions_job_idx on ai_sessions (job_id);
 
-create index ai_requests_created_idx on ai_requests (created_at);
+create index ai_sessions_created_idx on ai_sessions (created_at);

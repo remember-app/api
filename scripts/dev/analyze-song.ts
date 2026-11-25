@@ -23,9 +23,9 @@ async function main(): Promise<void> {
 
   if (id === "--all") {
     const tracks = await sql<Track[]>`
-      select distinct on (media_id) name, media_id as "mediaId"
+      select distinct on (original_id) name, original_id as "mediaId"
       from songs
-      order by media_id, name
+      order by original_id, name
     `;
     let queued = 0;
     for (const track of tracks) if (await queue(track)) queued += 1;
@@ -35,7 +35,7 @@ async function main(): Promise<void> {
 
   if (!uuid.test(id)) throw new Error(`not a song id: ${id}`);
   const [track] = await sql<Track[]>`
-    select name, media_id as "mediaId" from songs where id = ${id}
+    select name, original_id as "mediaId" from songs where id = ${id}
   `;
   if (!track) throw new Error(`song ${id} not found`);
   await queue(track);
