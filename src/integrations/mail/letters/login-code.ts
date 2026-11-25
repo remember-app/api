@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 export type Language = "ru" | "en";
 
 export type Letter = {
@@ -5,6 +8,18 @@ export type Letter = {
   text: string;
   html: string;
 };
+
+const logo = readFileSync(
+  fileURLToPath(new URL("../../../../assets/mail/logo.svg", import.meta.url)),
+  "utf8",
+)
+  .replace(
+    'width="2048" height="2048"',
+    'width="64" height="64" style="display:block;margin:0 auto 14px;"',
+  )
+  .replace('fill="#f5f3ee"', 'class="logo-ink"')
+  .replace('fill="#4b5bff"', 'class="logo-blue"')
+  .replace('fill="#e4ff4f"', 'class="logo-spark"');
 
 type Copy = {
   subject: string;
@@ -71,10 +86,15 @@ const layout = (copy: Copy, lang: Language, code: string, minutes: number): stri
 <meta name="color-scheme" content="light dark">
 <title>${copy.subject}</title>
 <style>
+.logo-ink { fill:#15151C; }
+.logo-blue { fill:#3B3FE0; }
+.logo-spark { fill:#DCF531; }
 @media only screen and (prefers-color-scheme: dark) {
   body, .mail-bg { background:#0B0B12 !important; }
   .card { background:#16161F !important; border-color:#2C2C3A !important; }
-  .logo-plate { background:#0B0B12 !important; }
+  .logo-ink { fill:#F5F3EE !important; }
+  .logo-blue { fill:#4B5BFF !important; }
+  .logo-spark { fill:#E4FF4F !important; }
   .accent { background:#4B5BFF !important; }
   .ink { color:#F5F3EE !important; }
   .subtle { color:#D8D5E0 !important; }
@@ -96,9 +116,7 @@ const layout = (copy: Copy, lang: Language, code: string, minutes: number): stri
   <tr><td align="center">
     <table class="card" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-collapse:separate;border:1px solid #E4DFD3;border-radius:18px;background:#FFFFFF;">
       <tr><td class="card-body" align="center" style="padding:40px 32px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Onest,Arial,sans-serif;">
-        <div class="logo-plate" style="display:inline-block;width:80px;height:80px;line-height:80px;border-radius:50%;background:#15151C;margin:0 auto 14px;">
-          <img src="cid:remember-logo" width="56" height="56" alt="Remember" style="display:inline-block;vertical-align:middle;width:56px;height:56px;border:0;">
-        </div>
+        ${logo}
         <div class="ink" style="font-size:20px;line-height:24px;font-weight:600;letter-spacing:.4px;color:#15151C;">Remember</div>
         <div class="accent" style="width:44px;height:3px;margin:20px auto 26px;border-radius:2px;background:#3B3FE0;font-size:0;line-height:0;">&nbsp;</div>
         <div class="ink" style="font-size:25px;line-height:30px;font-weight:700;letter-spacing:-.7px;color:#15151C;">${copy.title}</div>

@@ -19,6 +19,14 @@ test("letter declares both color schemes instead of relying on client inversion"
   assert.match(html, /@media only screen and \(prefers-color-scheme: dark\)/);
 });
 
+test("letter inlines the full three-color logo without an attachment", () => {
+  const { html } = loginCodeLetter.ru("482916", 15);
+  assert.match(html, /<svg[^>]*viewBox/);
+  for (const color of ["logo-ink", "logo-blue", "logo-spark"])
+    assert.match(html, new RegExp(color));
+  assert.doesNotMatch(html, /cid:remember-logo/);
+});
+
 test("Russian expiry uses the right word for any TTL", () => {
   assert.match(loginCodeLetter.ru("000000", 1).html, /1 минуту/);
   assert.match(loginCodeLetter.ru("000000", 2).html, /2 минуты/);
