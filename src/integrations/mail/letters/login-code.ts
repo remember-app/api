@@ -52,8 +52,8 @@ const en: Copy = {
 
 const cell =
   'class="code-cell" width="52" height="66" align="center" valign="middle" ' +
-  'style="width:52px;height:66px;border:1px solid #45424F;border-radius:10px;background:#1A1A24;' +
-  'font-size:30px;line-height:66px;font-weight:700;color:#F5F3EE;font-variant-numeric:tabular-nums;"';
+  'style="width:52px;height:66px;border:1px solid #C4BCA8;border-radius:10px;background:#F7F4EC;' +
+  'font-size:30px;line-height:66px;font-weight:700;color:#15151C;font-variant-numeric:tabular-nums;"';
 const gap = 'class="code-gap" width="8" style="width:8px;font-size:0;line-height:0;"';
 
 const digits = (code: string): string =>
@@ -68,9 +68,21 @@ const layout = (copy: Copy, lang: Language, code: string, minutes: number): stri
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <title>${copy.subject}</title>
 <style>
+@media only screen and (prefers-color-scheme: dark) {
+  body, .mail-bg { background:#0B0B12 !important; }
+  .card { background:#16161F !important; border-color:#2C2C3A !important; }
+  .logo-plate { background:#0B0B12 !important; }
+  .accent { background:#4B5BFF !important; }
+  .ink { color:#F5F3EE !important; }
+  .subtle { color:#D8D5E0 !important; }
+  .muted { color:#A4A1B2 !important; }
+  .code-cell { background:#1A1A24 !important; border-color:#45424F !important; color:#F5F3EE !important; }
+  .divider { background:#2C2C3A !important; }
+  .preheader { color:#0B0B12 !important; }
+}
 @media only screen and (max-width: 440px) {
   .card-body { padding: 32px 16px 24px !important; }
   .code-cell { width: 44px !important; height: 56px !important; line-height: 56px !important; font-size: 26px !important; }
@@ -78,21 +90,23 @@ const layout = (copy: Copy, lang: Language, code: string, minutes: number): stri
 }
 </style>
 </head>
-<body style="margin:0;padding:0;background:#0B0B12;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#0B0B12;font-size:1px;line-height:1px;">${copy.preheader}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0B0B12;padding:32px 12px;">
+<body style="margin:0;padding:0;background:#ECE8DE;">
+<div class="preheader" style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ECE8DE;font-size:1px;line-height:1px;">${copy.preheader}</div>
+<table class="mail-bg" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ECE8DE;padding:32px 12px;">
   <tr><td align="center">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-collapse:separate;border:1px solid #2C2C3A;border-radius:18px;background:#16161F;">
+    <table class="card" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-collapse:separate;border:1px solid #E4DFD3;border-radius:18px;background:#FFFFFF;">
       <tr><td class="card-body" align="center" style="padding:40px 32px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Onest,Arial,sans-serif;">
-        <img src="cid:remember-logo" width="64" height="64" alt="Remember" style="display:block;width:64px;height:64px;margin:0 auto 14px;border:0;">
-        <div style="font-size:20px;line-height:24px;font-weight:600;letter-spacing:.4px;color:#F5F3EE;">Remember</div>
-        <div style="width:44px;height:3px;margin:20px auto 26px;border-radius:2px;background:#4B5BFF;font-size:0;line-height:0;">&nbsp;</div>
-        <div style="font-size:25px;line-height:30px;font-weight:700;letter-spacing:-.7px;color:#F5F3EE;">${copy.title}</div>
+        <div class="logo-plate" style="display:inline-block;width:80px;height:80px;line-height:80px;border-radius:50%;background:#15151C;margin:0 auto 14px;">
+          <img src="cid:remember-logo" width="56" height="56" alt="Remember" style="display:inline-block;vertical-align:middle;width:56px;height:56px;border:0;">
+        </div>
+        <div class="ink" style="font-size:20px;line-height:24px;font-weight:600;letter-spacing:.4px;color:#15151C;">Remember</div>
+        <div class="accent" style="width:44px;height:3px;margin:20px auto 26px;border-radius:2px;background:#3B3FE0;font-size:0;line-height:0;">&nbsp;</div>
+        <div class="ink" style="font-size:25px;line-height:30px;font-weight:700;letter-spacing:-.7px;color:#15151C;">${copy.title}</div>
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:26px auto 22px;border-collapse:separate;"><tr>${digits(code)}</tr></table>
-        <p style="margin:0;font-size:15px;line-height:22px;color:#D8D5E0;">${copy.hint}</p>
-        <div style="height:1px;margin:28px 0 20px;background:#2C2C3A;font-size:0;line-height:0;">&nbsp;</div>
-        <p style="margin:0 0 8px;font-size:13px;line-height:19px;color:#A4A1B2;">${copy.expiry(minutes)}</p>
-        <p style="margin:0;font-size:13px;line-height:19px;color:#A4A1B2;">${copy.ignore}</p>
+        <p class="subtle" style="margin:0;font-size:15px;line-height:22px;color:#15151C;">${copy.hint}</p>
+        <div class="divider" style="height:1px;margin:28px 0 20px;background:#E4DFD3;font-size:0;line-height:0;">&nbsp;</div>
+        <p class="muted" style="margin:0 0 8px;font-size:13px;line-height:19px;color:#6C6979;">${copy.expiry(minutes)}</p>
+        <p class="muted" style="margin:0;font-size:13px;line-height:19px;color:#6C6979;">${copy.ignore}</p>
       </td></tr>
     </table>
   </td></tr>

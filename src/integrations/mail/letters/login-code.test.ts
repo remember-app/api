@@ -13,6 +13,12 @@ test("both letters put every code digit into its own cell", () => {
   }
 });
 
+test("letter declares both color schemes instead of relying on client inversion", () => {
+  const { html } = loginCodeLetter.ru("482916", 15);
+  assert.match(html, /name="color-scheme" content="light dark"/);
+  assert.match(html, /@media only screen and \(prefers-color-scheme: dark\)/);
+});
+
 test("Russian expiry uses the right word for any TTL", () => {
   assert.match(loginCodeLetter.ru("000000", 1).html, /1 минуту/);
   assert.match(loginCodeLetter.ru("000000", 2).html, /2 минуты/);
