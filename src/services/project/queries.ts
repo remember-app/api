@@ -35,8 +35,7 @@ function coverKeys(keys: string[], projectId: string): string[] {
   const seed = `${projectId}:${Math.floor(Date.now() / COVER_SLOT_MS)}`;
   for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) | 0;
   const pick = keys[(hash >>> 0) % keys.length] ?? keys[0];
-  if (!pick) return [];
-  return [pick, ...keys.filter((key) => key !== pick)].slice(0, 4);
+  return pick ? [pick] : [];
 }
 
 export type ProjectMemberFace = {
@@ -121,7 +120,7 @@ export async function homeCards(
           ) as covered
         from project_items ci
         join media_items original on original.id = ci.original_id and original.kind = 'photo'
-        join media_items preview on preview.id = (ci.previews_ids ->> 'middle')::uuid
+        join media_items preview on preview.id = (ci.previews_ids ->> 'large')::uuid
         where ci.project_id = p.id
         order by covered desc, ci.created_at desc
         limit 24
