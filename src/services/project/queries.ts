@@ -27,6 +27,18 @@ function toConsumable(row: ConsumableRow): Consumable {
   };
 }
 
+const COVER_SLOT_MS = 5 * 60 * 60 * 1000;
+
+function coverKeys(keys: string[], projectId: string): string[] {
+  if (keys.length === 0) return [];
+  let hash = 0;
+  const seed = `${projectId}:${Math.floor(Date.now() / COVER_SLOT_MS)}`;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  const pick = keys[(hash >>> 0) % keys.length] ?? keys[0];
+  if (!pick) return [];
+  return [pick, ...keys.filter((key) => key !== pick)].slice(0, 4);
+}
+
 export type ProjectMemberFace = {
   userId: UserId;
   name: string | null;
@@ -95,14 +107,24 @@ export async function homeCards(
     from projects p
     join project_members pm on pm.project_id = p.id and pm.user_id = ${viewerId}
     left join lateral (
-      select array_agg(key) as keys
+      select array_agg(key order by covered desc, created_at desc) as keys
       from (
-        select m.storage_key as key
+        select
+          preview.storage_key as key,
+          ci.created_at,
+          exists (
+            select 1
+            from project_item_labels pil
+            join labels l on l.id = pil.label_id
+            where pil.project_item_id = ci.id
+              and lower(btrim(l.name)) in ('обложка', 'cover')
+          ) as covered
         from project_items ci
-        join media_items m on m.id = (ci.previews_ids ->> 'small')::uuid
+        join media_items original on original.id = ci.original_id and original.kind = 'photo'
+        join media_items preview on preview.id = (ci.previews_ids ->> 'small')::uuid
         where ci.project_id = p.id
-        order by ci.created_at desc
-        limit 4
+        order by covered desc, ci.created_at desc
+        limit 24
       ) recent
     ) previews on true
     left join lateral (
@@ -135,7 +157,9 @@ export async function homeCards(
       return {
         ...card,
         consumables: toConsumable({ tokens, tokensSpend, storageBytes, storageSpend }),
-        previewUrls: await Promise.all(previewKeys.map((key) => downloadUrl(key, ttl))),
+        previewUrls: await Promise.all(
+          coverKeys(previewKeys, row.id).map((key) => downloadUrl(key, ttl)),
+        ),
         members: await Promise.all(
           memberFaces.map(async ({ avatarKey, ...face }) => ({
             ...face,
