@@ -72,21 +72,26 @@ export type ItemResponse = {
 
 export type GalleryPageResponse = CursorPageResponse<ItemResponse>;
 
-export type DownloadLinkResponse = {
+export type ItemLinkVariant = "large" | "detail" | "playback" | "original";
+
+export type ItemLinkRequest = {
   itemId: string;
+  variant: ItemLinkVariant;
+};
+
+export type ItemLinkResponse = {
+  itemId: string;
+  variant: ItemLinkVariant;
   url: string;
+  expiresAt: string;
 };
 
-export type MediaDownloadResponse = {
-  url: string;
+export type ItemLinksRequest = {
+  items: ItemLinkRequest[];
 };
 
-export type DownloadLinksRequest = {
-  itemIds: string[];
-};
-
-export type DownloadLinksResponse = {
-  items: DownloadLinkResponse[];
+export type ItemLinksResponse = {
+  items: ItemLinkResponse[];
 };
 
 export type MediaPatchRequest = {

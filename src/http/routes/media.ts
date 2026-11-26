@@ -1,18 +1,16 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { config } from "../../config.ts";
-import { deleteObjects, downloadUrl } from "../../integrations/storage/s3.ts";
+import type { FastifyInstance } from "fastify";
+import { deleteObjects } from "../../integrations/storage/s3.ts";
 import { cursorQuerySchema, decodeCursor, limitOf } from "../../pagination.ts";
 import { type MediaPatch, removeMedia, updateMedia } from "../../services/media/commands.ts";
 import {
-  downloadLinks,
+  type ItemLinkRequest,
+  type ItemLinkVariant,
   galleryPage,
-  getMedia,
+  itemLinks,
   itemView,
   mediaView,
 } from "../../services/media/queries.ts";
-import { accessOf } from "../../services/project/access.ts";
 import { updateItemComment } from "../../services/project/item/commands.ts";
-import { getItemByMedia } from "../../services/project/item/queries.ts";
 import type { MediaId, ProjectId, ProjectItemId } from "../../types/id.ts";
 import { fail } from "../errors.ts";
 
@@ -41,37 +39,29 @@ const mediaBody = {
   },
 } as const;
 
-const downloadBody = {
+const linksBody = {
   type: "object",
-  required: ["itemIds"],
+  required: ["items"],
   additionalProperties: false,
   properties: {
-    itemIds: {
+    items: {
       type: "array",
       minItems: 1,
       maxItems: 200,
-      uniqueItems: true,
-      items: { type: "string" },
+      items: {
+        type: "object",
+        required: ["itemId", "variant"],
+        additionalProperties: false,
+        properties: {
+          itemId: { type: "string" },
+          variant: { enum: ["large", "detail", "playback", "original"] },
+        },
+      },
     },
   },
 } as const;
 
-async function accessOr404(
-  request: FastifyRequest<{ Params: ProjectParams }>,
-  reply: FastifyReply,
-) {
-  const projectId = request.params.projectId;
-  if (!uuidPattern.test(projectId)) {
-    await fail(reply, 404, "not_found");
-    return undefined;
-  }
-  const access = await accessOf(projectId as ProjectId, request.authenticated!.user.id);
-  if (!access) {
-    await fail(reply, 404, "not_found");
-    return undefined;
-  }
-  return access;
-}
+type LinksBody = { items: { itemId: string; variant: ItemLinkVariant }[] };
 
 export function mediaRoutes(app: FastifyInstance) {
   app.get<{ Params: ProjectParams; Querystring: { limit?: number; cursor?: string } }>(
@@ -113,37 +103,22 @@ export function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Params: ProjectParams; Body: { itemIds: string[] } }>(
+  app.post<{ Params: ProjectParams; Body: LinksBody }>(
     "/projects/:projectId/download-links",
-    { schema: { body: downloadBody }, preHandler: app.authenticate },
+    { schema: { body: linksBody }, preHandler: app.authenticate },
     async (request, reply) => {
       const projectId = request.params.projectId;
       if (!uuidPattern.test(projectId)) return fail(reply, 404, "not_found");
-      if (request.body.itemIds.some((id) => !uuidPattern.test(id))) {
+      if (request.body.items.some(({ itemId }) => !uuidPattern.test(itemId))) {
         return fail(reply, 400, "bad_request");
       }
-      const items = await downloadLinks(
+      const items = await itemLinks(
         projectId as ProjectId,
         request.authenticated!.user.id,
-        request.body.itemIds as ProjectItemId[],
+        request.body.items as ItemLinkRequest[],
       );
       if (!items) return fail(reply, 404, "not_found");
       return { items };
-    },
-  );
-
-  app.get<{ Params: MediaParams }>(
-    "/projects/:projectId/media/:mediaId/download",
-    { preHandler: app.authenticate },
-    async (request, reply) => {
-      if (!(await accessOr404(request, reply))) return reply;
-      const mediaId = request.params.mediaId;
-      if (!uuidPattern.test(mediaId)) return fail(reply, 404, "not_found");
-      const item = await getItemByMedia(request.params.projectId as ProjectId, mediaId as MediaId);
-      if (!item) return fail(reply, 404, "not_found");
-      const media = await getMedia(mediaId as MediaId);
-      if (!media) return fail(reply, 404, "not_found");
-      return { url: await downloadUrl(media.storageKey, config.media.downloadTtlSeconds()) };
     },
   );
 

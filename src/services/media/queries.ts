@@ -75,9 +75,18 @@ export type ItemView = {
   };
 };
 
-export type DownloadLinkView = {
+export type ItemLinkVariant = "large" | "detail" | "playback" | "original";
+
+export type ItemLinkRequest = {
   itemId: ProjectItemId;
+  variant: ItemLinkVariant;
+};
+
+export type ItemLinkView = {
+  itemId: ProjectItemId;
+  variant: ItemLinkVariant;
   url: string;
+  expiresAt: string;
 };
 
 export function mediaView(media: MediaItem): MediaView {
@@ -169,24 +178,53 @@ export async function itemView(
   return view;
 }
 
-export async function downloadLinks(
+export async function itemLinks(
   projectId: ProjectId,
   viewerId: UserId,
-  itemIds: ProjectItemId[],
-): Promise<DownloadLinkView[] | undefined> {
+  requests: ItemLinkRequest[],
+): Promise<ItemLinkView[] | undefined> {
   if (!(await accessOf(projectId, viewerId))) return undefined;
-  if (itemIds.length === 0) return [];
-  const rows = await sql<{ itemId: ProjectItemId; key: string }[]>`
-    select pi.id as "itemId", m.storage_key as key
+  if (requests.length === 0) return [];
+  const itemIds = [...new Set(requests.map((request) => request.itemId))];
+  const rows = await sql<
+    {
+      itemId: ProjectItemId;
+      kind: MediaKind;
+      originalKey: string;
+      compressedKey: string | null;
+      largeKey: string | null;
+    }[]
+  >`
+    select
+      pi.id as "itemId",
+      original.kind,
+      original.storage_key as "originalKey",
+      compressed.storage_key as "compressedKey",
+      preview.storage_key as "largeKey"
     from project_items pi
-    join media_items m on m.id = pi.original_id
+    join media_items original on original.id = pi.original_id
+    left join media_items compressed on compressed.id = pi.compressed_id
+    left join media_items preview on preview.id = (pi.previews_ids ->> 'large')::uuid
     where pi.project_id = ${projectId} and pi.id = any(${itemIds})
   `;
+  const byId = new Map(rows.map((row) => [row.itemId, row]));
   const ttl = config.media.downloadTtlSeconds();
-  return Promise.all(
-    rows.map(async (row) => ({
-      itemId: row.itemId,
-      url: await downloadUrl(row.key, ttl),
-    })),
+  const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+  const links = await Promise.all(
+    requests.map(async ({ itemId, variant }) => {
+      const row = byId.get(itemId);
+      if (!row) return undefined;
+      if (variant === "detail" && row.kind !== "photo") return undefined;
+      if (variant === "playback" && row.kind === "photo") return undefined;
+      const key =
+        variant === "original"
+          ? row.originalKey
+          : variant === "large"
+            ? row.largeKey
+            : row.compressedKey;
+      if (!key) return undefined;
+      return { itemId, variant, url: await downloadUrl(key, ttl), expiresAt };
+    }),
   );
+  return links.filter((link): link is ItemLinkView => link !== undefined);
 }
