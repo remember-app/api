@@ -121,7 +121,7 @@ export async function homeCards(
           ) as covered
         from project_items ci
         join media_items original on original.id = ci.original_id and original.kind = 'photo'
-        join media_items preview on preview.id = (ci.previews_ids ->> 'small')::uuid
+        join media_items preview on preview.id = (ci.previews_ids ->> 'middle')::uuid
         where ci.project_id = p.id
         order by covered desc, ci.created_at desc
         limit 24
