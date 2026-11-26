@@ -59,10 +59,14 @@ export type ItemResponse = {
   };
   media: MediaResponse;
   uploader: PublicUserResponse | null;
-  links: {
-    original: string | null;
+  variants: {
+    original: string;
     compressed: string | null;
     previews: Partial<Record<ProjectItemPreviewSizes, string>>;
+  };
+  links: {
+    small: string | null;
+    middle: string | null;
   };
 };
 

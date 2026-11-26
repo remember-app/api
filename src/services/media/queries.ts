@@ -12,7 +12,7 @@ import type {
 } from "../../types/mediaItem.ts";
 import type {
   ProjectItem,
-  ProjectItemPreviewSizes,
+  ProjectItemPreviews,
   ProjectMediaItemAIAnalysis,
 } from "../../types/project.ts";
 import type { UserPublic } from "../../types/user.ts";
@@ -64,10 +64,14 @@ export type ItemView = {
   };
   media: MediaView;
   uploader: UserPublic | null;
+  variants: {
+    original: MediaId;
+    compressed: MediaId | null;
+    previews: ProjectItemPreviews;
+  };
   links: {
-    original: string | null;
-    compressed: string | null;
-    previews: Partial<Record<ProjectItemPreviewSizes, string>>;
+    small: string | null;
+    middle: string | null;
   };
 };
 
@@ -109,14 +113,14 @@ async function itemViews(items: ProjectItem[]): Promise<ItemView[]> {
     items.map(async (item) => {
       const original = byId.get(item.originalId);
       if (!original) throw new Error(`media ${item.originalId} is missing for item ${item.id}`);
-      const compressed = item.compressedId ? byId.get(item.compressedId) : undefined;
-      const previews: Partial<Record<ProjectItemPreviewSizes, string>> = {};
-      if (item.previewsIds) {
-        for (const [size, id] of Object.entries(item.previewsIds)) {
-          const file = id ? byId.get(id) : undefined;
-          if (file)
-            previews[size as ProjectItemPreviewSizes] = await downloadUrl(file.storageKey, ttl);
-        }
+      const previews: ProjectItemPreviews = {};
+      const links: ItemView["links"] = { small: null, middle: null };
+      for (const size of ["small", "middle", "large"] as const) {
+        const id = item.previewsIds?.[size];
+        const file = id ? byId.get(id) : undefined;
+        if (!id || !file) continue;
+        previews[size] = id;
+        if (size !== "large") links[size] = await downloadUrl(file.storageKey, ttl);
       }
       return {
         item: {
@@ -130,11 +134,13 @@ async function itemViews(items: ProjectItem[]): Promise<ItemView[]> {
         },
         media: mediaView(original),
         uploader: byUser.get(item.uploadedBy) ?? null,
-        links: {
-          original: await downloadUrl(original.storageKey, ttl),
-          compressed: compressed ? await downloadUrl(compressed.storageKey, ttl) : null,
+        variants: {
+          original: item.originalId,
+          compressed:
+            item.compressedId && byId.has(item.compressedId) ? item.compressedId : null,
           previews,
         },
+        links,
       };
     }),
   );
